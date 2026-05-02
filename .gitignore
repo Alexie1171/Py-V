@@ -1,0 +1,28 @@
+# Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Bytecode
+*.pyc
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# HuggingFace cache (optional but recommended)
+.cache/
+hf_cache/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and experiments
+experiments/logs/
+experiments/outputs/
+
+# Model weights (optional if too large for git)
+model/base/
+model/lora/
