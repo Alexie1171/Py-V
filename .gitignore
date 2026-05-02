@@ -11,7 +11,7 @@ venv/
 env/
 .venv/
 
-# HuggingFace cache (optional but recommended)
+# HuggingFace cache
 .cache/
 hf_cache/
 
@@ -23,6 +23,29 @@ Thumbs.db
 experiments/logs/
 experiments/outputs/
 
-# Model weights (optional if too large for git)
+# Model weights
 model/base/
 model/lora/
+
+# ── PY-V specific ──────────────────────
+
+# Raw scraped data (large, reproducible, don't commit)
+data/raw/
+
+# Processed intermediates (reproducible from raw)
+data/processed/
+
+# Final datasets (large binary-ish files)
+data/datasets/
+
+# Pipeline log
+data/pipeline.log
+
+# API keys / secrets (never commit these)
+.env
+*.env
+
+# VS Code extension build artifacts
+extension/node_modules/
+extension/out/
+extension/dist/

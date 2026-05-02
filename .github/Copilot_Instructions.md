@@ -2,225 +2,212 @@
 
 ## 🧠 Purpose
 
-This document defines how AI assistants (e.g., Copilot-style tools) should behave when contributing to the PY-V codebase.
+This document defines strict behavioral and architectural rules for AI assistants contributing to the PY-V codebase.
 
 It ensures:
-
-* Consistency
-* Clean architecture
-* No deviation from project goals
+- Consistency across modules
+- Clean ML system design
+- Reproducible pipeline behavior
+- Low-resource optimization
 
 ---
 
 ## 📌 Core Principles
 
-### 1. Modularity First
-
-* Each file must have a **single responsibility**
-* No monolithic scripts
-* Reusable components only
+### 1. Modular First Design
+- Every file must have a single responsibility
+- No monolithic scripts
+- No mixed concerns (data / training / inference must be separate)
 
 ---
 
-### 2. Strict Folder Discipline
-
+### 2. Strict Architecture Compliance
 AI must NEVER:
-
-* Place files in incorrect directories
-* Mix data, model, and inference logic
-
-Correct placement is mandatory.
+- Place code in incorrect folders
+- Mix inference, training, and dataset logic
+- Create untracked utility scripts outside /scripts or /data/scripts
 
 ---
 
-### 3. No Hardcoding
-
-* All paths must come from:
-
-  * `config.yaml`
-* No absolute paths
-* No inline constants for configs
+### 3. Configuration-Driven System
+- All paths MUST come from configs/config.yaml
+- No hardcoded paths
+- No inline constants for dataset/model locations
 
 ---
 
-### 4. GPU Awareness
-
-All generated code must:
-
-* Be optimized for **low VRAM (4GB)**
-* Use:
-
-  * 4-bit quantization
-  * small batch sizes
-  * gradient accumulation
+### 4. Low-Resource Optimization (Critical)
+All generated code must be optimized for:
+- GPU: GTX 1650 (4GB VRAM)
+- 4-bit quantization (mandatory for inference)
+- Small batch training
+- Gradient accumulation instead of large batch sizes
 
 ---
 
-## 📁 File-Specific Rules
+## 🧠 Model Constraints
 
-### 🔹 data/scripts/
+All work is based on:
+- Phi-2 (Microsoft small language model)
 
-* Only scraping and preprocessing logic
-* No model-related code
-* Must output structured JSON/JSONL
-
----
-
-### 🔹 model/training/
-
-* Training logic only
-* Must support:
-
-  * LoRA
-  * checkpoint saving
-* No API or UI logic
+Rules:
+- No training from scratch
+- No models >7B parameters
+- Always use PEFT / LoRA fine-tuning
 
 ---
 
-### 🔹 inference/engine/
+## 📁 File Responsibility Rules
 
-* Model loading and generation
-* Must be optimized for fast inference
-* Should handle:
-
-  * tokenization
-  * prompt formatting
-
----
-
-### 🔹 inference/api/
-
-* FastAPI routes only
-* No heavy logic inside routes
-* Call engine functions
+### data/scripts/
+- Scraping only (GitHub, StackOverflow)
+- Data cleaning & preprocessing
+- Output must be structured JSON/JSONL
+- No model logic allowed
 
 ---
 
-### 🔹 extension/
-
-* JavaScript/TypeScript only
-* No Python code here
-* Must communicate via HTTP API
+### data/processed/
+- Cleaned datasets only
+- Deduplicated outputs only
 
 ---
 
-## 🧾 Coding Standards
-
-### Python
-
-* Use `snake_case`
-* Type hints required
-* Modular functions
-
-### JavaScript (Extension)
-
-* Use async/await
-* Clean API calls
-* Minimal logic
+### data/datasets/
+- Final training-ready dataset only
+- Must be JSONL format
 
 ---
 
-## 🔧 Model Handling Rules
-
-* Always load models using:
-
-  * quantization (4-bit or 8-bit)
-* Never attempt full fine-tuning
-* Use LoRA for all training
+### model/training/
+- Training logic only
+- LoRA fine-tuning scripts
+- Checkpoint saving logic
+- No inference or API code
 
 ---
 
-## 📊 Dataset Rules
+### inference/engine/
+- Model loading
+- Tokenization
+- Prompt formatting
+- Generation logic
 
-* Input must be structured:
+Must be lightweight and GPU efficient.
 
-```json
+---
+
+### inference/api/
+- FastAPI routes only
+- No heavy logic inside endpoints
+- Must call inference engine only
+
+---
+
+### extension/
+- VS Code extension only
+- JavaScript/TypeScript only
+- Communicates via HTTP API
+
+---
+
+## 🔄 Data Pipeline Rules (PHASE 3 CORE)
+
+Pipeline flow:
+
+Scraping → Cleaning → Deduplication → Formatting → Dataset
+
+---
+
+## 📊 Dataset Format (STRICT)
+
+All training data must follow:
+
 {
-  "input": "...",
-  "output": "..."
+  "input": "Write a Python function to check if a number is prime",
+  "output": "def is_prime(n): ..."
 }
-```
 
-* No raw text training
-* No mixed formats
+OR:
+
+{
+  "instruction": "Generate Python code for sorting a list",
+  "output": "def sort_list(arr): ..."
+}
+
+Rules:
+- No raw text datasets
+- No mixed formats
+- No unstructured dumps
+
+---
+
+## ⚙️ Training Rules
+
+- Always use LoRA fine-tuning
+- Always use 4-bit quantization
+- Always assume low VRAM environment
+- Never attempt full fine-tuning
 
 ---
 
 ## 🚫 Forbidden Actions
 
-AI must NOT:
-
-* Train models from scratch
-* Use large models (>7B)
-* Ignore config system
-* Merge unrelated logic into one file
-* Generate unoptimized GPU code
+AI MUST NOT:
+- Train models from scratch
+- Use large models (>7B)
+- Ignore config system
+- Mix pipeline stages in one file
+- Hardcode file paths
+- Produce non-reproducible scripts
 
 ---
 
 ## ✅ Expected Behaviors
 
 AI SHOULD:
-
-* Suggest modular improvements
-* Optimize memory usage
-* Keep functions small and reusable
-* Follow project architecture strictly
+- Suggest modular improvements
+- Optimize memory usage
+- Keep functions small and reusable
+- Respect architecture strictly
 
 ---
 
 ## 🧪 Testing Expectations
 
-Generated code must:
-
-* Be runnable
-* Be minimal
-* Avoid unnecessary dependencies
-
----
-
-## 🔄 Workflow Awareness
-
-AI must understand pipeline:
-
-```
-Data → Processing → Training → Inference → Extension
-```
-
-No step should overlap improperly.
+All code must:
+- Be runnable locally
+- Be minimal
+- Avoid unnecessary dependencies
+- Respect GPU constraints
 
 ---
 
-## 📌 Prompting Guidelines (for AI usage)
+## 🧭 System Workflow
 
-When using Copilot or similar tools:
+Data → Processing → Dataset → Training → Inference → Extension
 
-### Good Prompt:
-
-> "Write a LoRA training script using HuggingFace for Phi-2 with 4-bit quantization and config.yaml support"
-
-### Bad Prompt:
-
-> "Train a big AI model"
+No step should be skipped or merged incorrectly.
 
 ---
 
-## 🧭 Long-Term Alignment
+## 🧠 Prompt Guidelines
 
-All generated code must align with:
+GOOD:
+"Write a LoRA training script for Phi-2 using HuggingFace with 4-bit quantization and config support"
 
-* Local-first AI
-* Python specialization
-* Low-resource efficiency
+BAD:
+"Train a big AI model"
 
 ---
 
 ## ⚠️ Final Rule
 
 If uncertain:
-
-> Default to simplicity, modularity, and low resource usage.
+Always choose modularity, simplicity, and low-resource efficiency.
 
 ---
 
-**This document is authoritative. All AI-generated code must comply.**
+## 📌 Authority
+
+This document is mandatory. All AI-generated code must comply.

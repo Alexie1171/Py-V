@@ -4,49 +4,61 @@
 
 **PY-V** is a lightweight, locally running AI code assistant designed specifically for Python development. It aims to replicate core features of tools like Copilot—such as code completion, snippet generation, and debugging assistance—while being optimized for low-resource environments (e.g., GTX 1650 4GB GPU).
 
-This project focuses on:
-
-* Efficient fine-tuning of small language models
-* Domain-specific intelligence (Python-only)
-* Full local control (no dependency on external APIs)
-* Modular, production-grade architecture
+This project is built around a fully local machine learning pipeline using a small language model (Phi-2) and parameter-efficient fine-tuning (PEFT).
 
 ---
 
 ## 🎯 Objectives
 
-* Build a Python-focused AI assistant
-* Run inference locally with minimal hardware
-* Implement LoRA-based fine-tuning
-* Create a VS Code extension for real-time suggestions
-* Maintain clean, scalable architecture
+- Build a Python-focused AI assistant
+- Run inference locally with minimal hardware
+- Implement LoRA-based fine-tuning
+- Create a VS Code extension for real-time suggestions
+- Maintain clean, scalable ML architecture
+- Build full dataset pipeline from real-world sources
 
 ---
 
 ## 🏗️ Project Architecture
 
-```
 PY-V/
 │
 ├── data/
-│   ├── raw/                # Unprocessed scraped data
-│   ├── processed/          # Cleaned data
-│   ├── datasets/           # Final training-ready JSONL
-│   └── scripts/            # Scraping & preprocessing scripts
+│   ├── raw/
+│   │   ├── github/
+│   │   └── stackoverflow/
+│   │
+│   ├── processed/
+│   │   ├── cleaned/
+│   │   └── deduped/
+│   │
+│   ├── datasets/
+│   │   ├── train.jsonl
+│   │   └── val.jsonl
+│   │
+│   └── scripts/
+│       ├── github_scraper.py
+│       ├── stackoverflow_scraper.py
+│       ├── cleaner.py
+│       ├── dedupe.py
+│       ├── formatter.py
+│       └── pipeline.py
 │
 ├── model/
-│   ├── base/               # Base model (Phi-2)
-│   ├── lora/               # Fine-tuned adapters
-│   ├── configs/            # Training configs
-│   ├── training/           # Training scripts
-│   └── utils/              # Helper functions
+│   ├── base/
+│   ├── lora/
+│   ├── configs/
+│   ├── training/
+│   └── utils/
 │
 ├── inference/
-│   ├── api/                # FastAPI backend
-│   ├── engine/             # Model loading & generation
-│   └── utils/              # Prompt formatting, tokenization
+│   ├── api/
+│   ├── engine/
+│   │   ├── model_loader.py
+│   │   └── generator.py
+│   └── utils/
 │
-├── extension/              # VS Code extension
+├── extension/
 │   ├── src/
 │   ├── package.json
 │   └── README.md
@@ -59,55 +71,44 @@ PY-V/
 ├── configs/
 │   └── config.yaml
 │
-├── scripts/                # Utility scripts
+├── scripts/
 ├── requirements.txt
 ├── README.md
 └── Copilot_Instructions.md
-```
 
 ---
 
-## 🔄 Workflow Pipeline
+## 🔄 Full Data Pipeline (PHASE 3 CORE)
 
-1. **Data Collection**
+1. Data Collection
+   - GitHub repository scraping
+   - StackOverflow Q/A extraction
+   - Stored in data/raw/
 
-   * Scrape GitHub, StackOverflow
-   * Store raw data in `data/raw/`
+2. Data Processing
+   - Cleaning invalid/noisy code
+   - Normalizing formatting
+   - Output → data/processed/cleaned/
 
-2. **Data Processing**
+3. Deduplication
+   - Remove duplicate samples
+   - Output → data/processed/deduped/
 
-   * Clean & normalize → `data/processed/`
-   * Format into JSONL → `data/datasets/`
+4. Dataset Formatting
+   - Convert to instruction format JSONL
+   - Output → data/datasets/train.jsonl
 
-3. **Model Training**
-
-   * Load base model (Phi-2)
-   * Apply LoRA fine-tuning
-   * Save adapters → `model/lora/`
-
-4. **Inference Engine**
-
-   * Load model + LoRA
-   * Serve via FastAPI
-
-5. **VS Code Extension**
-
-   * Send code context → API
-   * Display suggestions inline
+5. Pipeline Automation
+   - Single command execution via pipeline.py
 
 ---
 
 ## ⚙️ Configuration
 
-All paths and parameters are managed in:
-
-```
 configs/config.yaml
-```
 
 Example:
 
-```yaml
 model:
   name: "phi-2"
   max_tokens: 512
@@ -120,95 +121,94 @@ training:
 paths:
   dataset: "./data/datasets/train.jsonl"
   model_output: "./model/lora"
-```
 
 ---
 
 ## 💻 Requirements
 
-Install dependencies:
-
-```bash
 pip install -r requirements.txt
-```
 
 ---
 
 ## 🚀 Development Phases
 
-### Phase 1: Structure ✅
+Phase 1: Structure ✔
+- Project architecture
+- Config system
 
-* Project layout
-* Config system
+Phase 2: Model Setup ✔
+- Phi-2 inference working
+- 4-bit quantization
+- Modular engine
 
-### Phase 2: Model Setup
+Phase 3: Data Pipeline 🔄 (CURRENT)
+- GitHub scraping
+- StackOverflow scraping
+- Cleaning + deduplication
+- JSONL dataset generation
 
-* Download base model (Phi-2)
-* Test inference
+Phase 4: Fine-Tuning
+- LoRA training
+- PEFT optimization
+- Python specialization
 
-### Phase 3: Data Pipeline
+Phase 5: Backend
+- FastAPI inference server
+- Model serving layer
 
-* Scraping scripts
-* Cleaning & formatting
-
-### Phase 4: Fine-Tuning
-
-* LoRA training
-* Evaluation
-
-### Phase 5: Backend
-
-* FastAPI server
-* Inference pipeline
-
-### Phase 6: VS Code Extension
-
-* Editor integration
-* Real-time suggestions
+Phase 6: VS Code Extension
+- Real-time code suggestions
+- Copilot-like experience
 
 ---
 
 ## ⚠️ Constraints
 
-* GPU: GTX 1650 (4GB VRAM)
-* Requires quantization (4-bit)
-* Small batch sizes only
-* Focus on efficiency over scale
+- GPU: GTX 1650 (4GB VRAM)
+- Requires 4-bit quantization
+- Small batch training only
+- Efficiency over scale
 
 ---
 
 ## 🧪 Expected Capabilities
 
-* Python code completion
-* Function generation
-* Basic debugging suggestions
+- Python code completion
+- Function generation
+- Debugging suggestions
+- Offline AI assistant
 
-Limitations:
+---
 
-* No deep multi-file reasoning
-* Limited context window
+## 🚧 Limitations
+
+- No deep multi-file reasoning
+- Limited context window
+- Dependent on dataset quality
 
 ---
 
 ## 🧭 Future Improvements
 
-* RAG (Retrieval Augmented Generation)
-* AST-aware training
-* Reinforcement tuning
-* Multi-language support
+- Retrieval Augmented Generation (RAG)
+- AST-aware training
+- Reinforcement learning
+- Multi-language support
 
 ---
 
 ## 📌 Notes
 
-* Clean data is more important than large data
-* Modular design is strictly enforced
-* Avoid hardcoding paths
-* Keep training and inference separate
+- Dataset quality > model size
+- Keep training and inference separated
+- Avoid hardcoded paths
+- Modular design is mandatory
+- Pipeline is the core intelligence layer
 
 ---
 
 ## 👨‍💻 Author
-Alexie1171
-Project: PY-V
-Purpose: Experimental AI System
+
+Alexie1171  
+Project: PY-V  
+Purpose: Experimental Local AI Coding System
