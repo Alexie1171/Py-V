@@ -24,52 +24,63 @@ This project is built around a fully local machine learning pipeline using a sma
 PY-V/
 │
 ├── data/
-│   ├── raw/
-│   │   ├── github/
-│   │   └── stackoverflow/
-│   │
-│   ├── processed/
-│   │   ├── cleaned/
-│   │   └── deduped/
-│   │
-│   ├── datasets/
-│   │   ├── train.jsonl
-│   │   └── val.jsonl
-│   │
-│   └── scripts/
-│       ├── github_scraper.py
-│       ├── stackoverflow_scraper.py
-│       ├── cleaner.py
-│       ├── dedupe.py
-│       ├── formatter.py
-│       └── pipeline.py
+│ ├── raw/
+│ │ ├── github/
+│ │ └── stackoverflow/
+│ │
+│ ├── processed/
+│ │ ├── cleaned/
+│ │ └── deduped/
+│ │
+│ ├── datasets/
+│ │ ├── train.jsonl
+│ │ └── val.jsonl
+│ │
+│ └── scripts/
+│ ├── github_scraper.py
+│ ├── stackoverflow_scraper.py
+│ ├── cleaner.py
+│ ├── dedupe.py
+│ ├── formatter.py
+│ └── pipeline.py
 │
 ├── model/
-│   ├── base/
-│   ├── lora/
-│   ├── configs/
-│   ├── training/
-│   └── utils/
+│ ├── base/
+│ ├── lora/
+│ ├── configs/
+│ ├── training/
+│ │ ├── config_loader.py
+│ │ ├── dataset_loader.py
+│ │ └── train_lora.py
+│ │
+│ └── utils/
+│ └── model_loader.py
 │
 ├── inference/
-│   ├── api/
-│   ├── engine/
-│   │   ├── model_loader.py
-│   │   └── generator.py
-│   └── utils/
+│ ├── api/
+│ │ ├── main.py
+│ │ ├── routes.py
+│ │ └── schemas.py
+│ │
+│ ├── engine/
+│ │ ├── model_loader.py
+│ │ ├── generator.py
+│ │ └── prompt_builder.py
+│ │
+│ └── utils/
 │
 ├── extension/
-│   ├── src/
-│   ├── package.json
-│   └── README.md
+│ ├── src/
+│ ├── package.json
+│ └── README.md
 │
 ├── experiments/
-│   ├── logs/
-│   ├── outputs/
-│   └── notebooks/
+│ ├── logs/
+│ ├── outputs/
+│ └── notebooks/
 │
 ├── configs/
-│   └── config.yaml
+│ └── config.yaml
 │
 ├── scripts/
 ├── requirements.txt
