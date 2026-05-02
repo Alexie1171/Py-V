@@ -1,8 +1,27 @@
+# =========================
+# CORE ML STACK
+# =========================
+torch
 transformers
 datasets
-peft
 accelerate
+peft
 bitsandbytes
+
+# =========================
+# INFERENCE / API LAYER
+# =========================
 fastapi
 uvicorn
-torch
+
+# =========================
+# OPTIONAL (recommended for stability)
+# =========================
+sentencepiece
+protobuf
+tqdm
+
+# =========================
+# DEV / DEBUGGING
+# =========================
+ipython
