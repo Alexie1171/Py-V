@@ -1,14 +1,23 @@
 model:
-  name: "phi-2"
+  name: "microsoft/phi-2"
   max_tokens: 512
 
 training:
   batch_size: 1
   gradient_accumulation: 16
   epochs: 3
+  learning_rate: 0.0002
+  warmup_steps: 10
+  save_steps: 50
+  eval_steps: 50
+  lora_r: 8
+  lora_alpha: 32
+  lora_dropout: 0.05
+  max_seq_length: 384
 
 paths:
   raw_data: "./data/raw"
   processed_data: "./data/processed"
   dataset: "./data/datasets/train.jsonl"
+  val_dataset: "./data/datasets/val.jsonl"
   model_output: "./model/lora"
