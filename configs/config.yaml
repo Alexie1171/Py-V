@@ -1,0 +1,14 @@
+model:
+  name: "phi-2"
+  max_tokens: 512
+
+training:
+  batch_size: 1
+  gradient_accumulation: 16
+  epochs: 3
+
+paths:
+  raw_data: "./data/raw"
+  processed_data: "./data/processed"
+  dataset: "./data/datasets/train.jsonl"
+  model_output: "./model/lora"
