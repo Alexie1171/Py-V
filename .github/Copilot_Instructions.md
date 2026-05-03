@@ -22,8 +22,9 @@ It ensures:
 | Phase 4 | LoRA fine-tuning on Python dataset | ✅ Complete |
 | Phase 5 | FastAPI inference server | ✅ Complete |
 | Phase 6 | VS Code extension | ✅ Complete |
-| Phase 7 | Additional training epochs & dataset expansion | 🔜 Next |
+| Phase 7 | Chat system (context-aware assistant + controller) | 🔜 In Progress |
 | Phase 8 | RAG (Retrieval Augmented Generation) | 🔜 Planned |
+| Phase 9 | Multi-LoRA adapters (multi-language support) | 🔜 Planned |
 
 ---
 

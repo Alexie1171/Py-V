@@ -2,24 +2,33 @@
 
 ## 🧠 Overview
 
-**PY-V** is a lightweight, locally running AI code assistant designed specifically for Python development. It replicates core features of tools like GitHub Copilot — code completion, function generation, and debugging assistance — while being fully optimized for low-resource environments (GTX 1650, 4GB VRAM).
+**PY-V** is a lightweight, locally running AI code assistant designed for Python development and expanding into multi-language support. It replicates core features of tools like GitHub Copilot — code completion, function generation, debugging, and chat-based assistance — while being fully optimized for low-resource environments (GTX 1650, 4GB VRAM).
 
-The project is built around a complete local ML pipeline: a custom Python dataset scraped from GitHub and StackOverflow, LoRA fine-tuning on Phi-2, a FastAPI inference server, and a VS Code extension for real-time suggestions.
+The system is built around a complete local ML pipeline: a custom dataset scraped from GitHub and StackOverflow, LoRA fine-tuning on Phi-2, a FastAPI inference server, and a VS Code extension.
 
 ---
 
 ## 🚀 Development Phases
 
 | Phase | Description | Status |
-|-------|-------------|--------|
+|------|-------------|--------|
 | 1 | Project structure & architecture | ✅ Complete |
 | 2 | Phi-2 model setup, 4-bit quantization, modular engine | ✅ Complete |
 | 3 | Full data pipeline (scrape → clean → dedupe → format) | ✅ Complete |
 | 4 | LoRA fine-tuning on Python dataset | ✅ Complete |
 | 5 | FastAPI inference server | ✅ Complete |
 | 6 | VS Code extension | ✅ Complete |
-| 7 | Additional training epochs & dataset expansion | 🔜 Next |
+| 7 | Chat system (context-aware assistant + controller) | 🔜 In Progress |
 | 8 | RAG (Retrieval Augmented Generation) | 🔜 Planned |
+| 9 | Multi-LoRA adapters (multi-language support) | 🔜 Planned |
+
+---
+
+## 🧭 System Evolution Goal
+
+PY-V is evolving from:
+
+> Code generator → Code assistant → Context-aware coding system → Chat-based coding agent
 
 ---
 
@@ -29,7 +38,7 @@ The project is built around a complete local ML pipeline: a custom Python datase
 PY-V/
 │
 ├── configs/
-│   └── config.yaml                  # Single source of truth for all config
+│   └── config.yaml
 │
 ├── data/
 │   ├── raw/
@@ -42,46 +51,33 @@ PY-V/
 │   │   ├── train.jsonl
 │   │   └── val.jsonl
 │   └── scripts/
-│       ├── github_scraper.py
-│       ├── stackoverflow_scraper.py
-│       ├── cleaner.py
-│       ├── dedupe.py
-│       ├── formatter.py
-│       └── pipeline.py
 │
 ├── model/
-│   ├── base/                        # Downloaded Phi-2 weights (gitignored)
-│   ├── lora/                        # Fine-tuned LoRA adapter (gitignored)
+│   ├── base/
+│   ├── lora/
 │   ├── training/
-│   │   ├── config_loader.py         # Parses config.yaml → typed CFG singleton
-│   │   ├── dataset_loader.py        # Loads JSONL, applies prompt format
-│   │   └── train_lora.py            # LoRA fine-tuning script
 │   └── utils/
-│       └── model_loader.py          # Shared base model loader (4-bit quant)
 │
 ├── inference/
 │   ├── engine/
-│   │   ├── model_loader.py          # load_model + load_lora_model
-│   │   ├── prompt_builder.py        # Phi-2 prompt format (shared by train+infer)
-│   │   └── generator.py             # Generation logic
+│   │   ├── model_loader.py
+│   │   ├── prompt_builder.py
+│   │   ├── generator.py
+│   │   ├── controller.py             # NEW (Phase 7)
+│   │   ├── context_manager.py        # NEW (Phase 7)
+│   │   └── chat.py                   # NEW (Phase 7)
 │   └── api/
-│       ├── main.py                  # FastAPI app, lifespan model loading
-│       ├── routes.py                # /health, /generate endpoints
-│       └── schemas.py               # Pydantic request/response types
+│       ├── main.py
+│       ├── routes.py
+│       └── schemas.py
 │
-├── extension/                       # VS Code extension (TypeScript)
-│   ├── src/
-│   │   ├── extension.ts             # Command registration, status bar
-│   │   ├── api.ts                   # HTTP client for the FastAPI server
-│   │   └── provider.ts              # Editor insertion & instruction extraction
-│   ├── package.json
-│   ├── tsconfig.json
-│   └── README.md
+├── retrieval/                        # Phase 8 (RAG)
+│   ├── indexer.py
+│   └── retriever.py
+│
+├── extension/
 │
 ├── experiments/
-│   └── test_phi2.py                 # Fine-tuned model output testing
-│
-├── requirements.txt
 └── README.md
 ```
 
@@ -89,201 +85,128 @@ PY-V/
 
 ## 🔄 Data Pipeline
 
-The full pipeline runs via a single command:
-
 ```bash
 python -m data.scripts.pipeline
 ```
 
 Stages:
 
-1. **GitHub Scraping** — AST-based function extraction from high-star Python repos, quality scoring per function
-2. **StackOverflow Scraping** — accepted answer extraction, Python code filtering, multi-block support
-3. **Cleaning** — AST validation, length bounds, encoding fixes, noise pattern removal
-4. **Deduplication** — exact hash dedup + Jaccard shingling near-dedup (threshold: 0.85)
-5. **Formatting** — instruction/output JSONL, quality sort, 90/10 train/val split
+- GitHub scraping (AST-based extraction)
+- StackOverflow scraping (accepted answers)
+- Cleaning (AST validation, noise removal)
+- Deduplication (hash + Jaccard similarity)
+- Formatting (JSONL dataset creation)
 
-Output: `data/datasets/train.jsonl` + `data/datasets/val.jsonl`
+Output:
+
+- `train.jsonl`
+- `val.jsonl`
 
 ---
 
 ## ⚙️ Configuration
 
-All settings live in `configs/config.yaml`:
-
-```yaml
-model:
-  name: "microsoft/phi-2"
-  max_tokens: 512
-
-training:
-  batch_size: 1
-  gradient_accumulation: 16
-  epochs: 3
-  learning_rate: 0.0002
-  lora_r: 8
-  lora_alpha: 32
-  lora_dropout: 0.05
-  max_seq_length: 384
-
-paths:
-  dataset: "./data/datasets/train.jsonl"
-  val_dataset: "./data/datasets/val.jsonl"
-  model_output: "./model/lora"
-```
-
-Import anywhere with:
-```python
-from model.training.config_loader import CFG
-print(CFG.model.name)      # microsoft/phi-2
-print(CFG.paths.dataset)   # ./data/datasets/train.jsonl
-```
+All configuration is centralized in `configs/config.yaml`.
 
 ---
 
 ## 🧠 Model
 
-- **Base model**: [microsoft/phi-2](https://huggingface.co/microsoft/phi-2) (~2.7B parameters)
-- **Quantization**: 4-bit NF4 via BitsAndBytes (fits in 4GB VRAM)
-- **Fine-tuning**: LoRA (r=8, alpha=32) via PEFT
-- **Training result**: Loss 1.087 → 0.872 over 115 steps (~6.7 hours on GTX 1650)
-- **Prompt format**:
-  ```
-  Instruct: Write a Python function to check if a number is prime.
-  Output:
-  def is_prime(n):
-      ...
-  ```
+- **Base model**: Microsoft Phi-2 (~2.7B parameters)
+- **Quantization**: 4-bit NF4 (BitsAndBytes)
+- **Fine-tuning**: LoRA (r=8, alpha=32)
+- **Training optimized for GTX 1650 (4GB VRAM)**
+
+Prompt format:
+
+```
+Instruct: ...
+Output:
+...
+```
 
 ---
 
 ## 🌐 Inference API
 
-Start the server:
-
 ```bash
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 ```
 
-The server loads the base Phi-2 model and applies the LoRA adapter automatically at startup.
-
-Endpoints:
+### Endpoints
 
 | Method | Route | Description |
 |--------|-------|-------------|
-| GET | `/api/v1/health` | Liveness check |
-| POST | `/api/v1/generate` | Generate Python code |
+| GET | `/api/v1/health` | Health check |
+| POST | `/api/v1/generate` | Code generation |
+| POST | `/api/v1/chat` | Context-aware chat (Phase 7) |
 
-Example request:
+---
 
-```bash
-curl -X POST http://localhost:8000/api/v1/generate \
-  -H "Content-Type: application/json" \
-  -d '{"instruction": "Write a function to check if a string is a palindrome", "max_tokens": 256, "temperature": 0.2}'
-```
+## 💬 Chat System (Phase 7)
 
-PowerShell:
+PY-V is transitioning into a chat-based coding assistant.
 
-```powershell
-Invoke-WebRequest -Uri "http://localhost:8000/api/v1/generate" `
-  -Method POST `
-  -ContentType "application/json" `
-  -UseBasicParsing `
-  -Body '{"instruction": "Write a function to check if a string is a palindrome", "max_tokens": 256, "temperature": 0.2}'
-```
+Features:
+
+- Session-based context memory (context.json)
+- Mode detection (debug / explain / generate / refactor)
+- Language detection (Python initially)
+- Editor context injection
+- Controller-based routing
+- Lightweight conversation history
 
 ---
 
 ## 🔌 VS Code Extension
 
-The extension is fully working in Phase 6. It communicates with the local inference API to provide real-time code suggestions inside VS Code.
+Supports real-time interaction with the model.
 
-### Setup
+### Commands:
 
-```bash
-# 1. Start the inference server first
-uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
+- Generate code from comments
+- Prompt-based generation
+- Chat interface (Phase 7)
 
-# 2. Build the extension
-cd extension
-npm install
-npm run compile
 
-# 3. Press F5 in VS Code to launch dev instance
+
+## 🧠 Context System
+
+Each session maintains:
+
+```json
+{
+  "session_id": "abc123",
+  "language": "python",
+  "mode": "debug",
+  "current_task": "...",
+  "last_summary": "...",
+  "recent_actions": []
+}
 ```
 
-### Usage
+## 🔍 Future Improvements
 
-| Method | How |
-|--------|-----|
-| Generate from comment | Place cursor on a `# comment`, press `Ctrl+Shift+G` |
-| Generate from prompt | Press `Ctrl+Shift+P`, type instruction in input box |
-| Check server status | Click `⟡ PY-V` in the status bar |
-
-### Settings
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `pyv.serverUrl` | `http://localhost:8000` | Inference server URL |
-| `pyv.maxTokens` | `256` | Max tokens to generate |
-| `pyv.temperature` | `0.2` | Sampling temperature |
-
----
-
-## 💻 Installation
-
-```bash
-pip install -r requirements.txt
-```
-
-Set your API keys in `.env`:
-
-```env
-GITHUB_TOKEN=your_token_here
-HF_HOME=C:\Users\YourName\.cache\huggingface
-```
-
----
-
-## 🧪 Smoke Tests
-
-```bash
-# Verify config loads
-python -c "from model.training.config_loader import CFG; print(CFG.model.name)"
-
-# Verify prompt builder
-python -c "from inference.engine.prompt_builder import build_inference_prompt; print(build_inference_prompt('test'))"
-
-# Test fine-tuned model output
-python -m experiments.test_phi2
-
-# Boot the API (serves LoRA model)
-uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
-```
+- RAG-based codebase understanding
+- Multi-language support via LoRA adapters
+- AST-aware context tracking
+- Smarter controller routing
+- Persistent chat memory optimization
 
 ---
 
 ## ⚠️ Hardware Constraints
 
 - GPU: GTX 1650 (4GB VRAM)
-- 4-bit quantization required for both training and inference
-- batch_size=1 with gradient_accumulation=16
-- Expect ~190s/step during training
-
----
-
-## 🧭 Future Improvements
-
-- Additional training epochs (resume from checkpoint — loss still has room to drop)
-- Larger dataset (more repos, more SO tags)
-- RAG (Retrieval Augmented Generation) for codebase-aware suggestions
-- AST-aware context window
-- Multi-language support
+- Batch size: 1
+- Gradient accumulation: 16
+- 4-bit quantization required
+- Designed for low-resource inference
 
 ---
 
 ## 👨‍💻 Author
 
 **Alexie1171**
-Project: PY-V
-Purpose: Experimental Local AI Coding Assistant
+
+PY-V — Local AI Coding Assistant Project
