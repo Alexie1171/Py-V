@@ -1,37 +1,41 @@
 from model.training.config_loader import CFG
 from inference.engine.prompt_templates import TEMPLATES
 
-
 def build_prompt(mode: str, user_input: str, context: dict) -> str:
     template = TEMPLATES.get(mode, TEMPLATES["chat"])
-    formatted_context = format_context(context)
+    
+    # Don't inject history for explain/chat — it biases Phi-2 toward code
+    if mode in ["explain", "chat"]:
+        formatted_context = ""
+    else:
+        formatted_context = format_context(context)
 
     return template.format(
         user_input=user_input,
-        context=formatted_context
+        context=formatted_context,
     )
 
 
-def format_context(ctx: dict) -> str:
-    """
-    Clean context format that avoids pattern continuation bias.
-    """
+def build_training_prompt(instruction: str, output: str) -> str:
+    return f"### Instruction:\n{instruction}\n\n### Answer:\n{output}"
 
+def build_inference_prompt(instruction: str) -> str:
+    return f"### Instruction:\n{instruction}\n\n### Answer:\n"
+
+
+def format_context(ctx: dict) -> str:
     if not ctx or not ctx.get("history"):
         return ""
 
-    formatted = ["Previous context (DO NOT continue patterns from this. It is only for reference):"]
-
+    formatted = ["Recent context:"]
     for h in ctx.get("history", [])[-3:]:
         role = h.get("role")
         content = (h.get("content") or "").strip()[:120]
-
         if role == "user":
-            formatted.append(f"- User asked: {content}")
+            formatted.append(f"User previously asked: {content}")
         elif role == "assistant":
-            formatted.append(f"- Assistant responded: {content}")
+            formatted.append(f"Assistant responded: {content}")
 
-    formatted.append("DO NOT imitate formatting style from context.")
     return "\n".join(formatted)
 
 

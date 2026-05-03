@@ -7,7 +7,7 @@ def main():
 
     session_id = "test_session_1"
 
-    print("🔥 PY-V Phase 7 Test Started")
+    print("PY-V Phase 7 Test Started")
     print("Type 'exit' to stop\n")
 
     while True:
@@ -18,7 +18,7 @@ def main():
 
         result = chat.chat(session_id, user_input)
 
-        print("\n🤖 PY-V:")
+        print("\nPY-V:")
         print(result["response"])
         print(f"\n[mode={result['mode']} | confidence={result['confidence']}]\n")
 

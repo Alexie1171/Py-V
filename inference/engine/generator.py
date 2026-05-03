@@ -2,36 +2,62 @@ import torch
 from inference.engine.prompt_builder import max_new_tokens
 import re
 
+def remove_code_if_not_allowed(text: str, mode: str) -> str:
+    if mode not in ["chat", "explain"]:
+        return text.strip()
 
-def remove_code_if_not_allowed(text: str, mode: str):
+    # Remove fenced code blocks
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
 
-    if mode in ["chat", "explain"]:
+    # Remove triple-quoted blocks
+    text = re.sub(r'""".*?"""', "", text, flags=re.DOTALL)
+    text = re.sub(r"'''.*?'''", "", text, flags=re.DOTALL)
 
-        # remove full code blocks
-        text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
-
-        lines = text.split("\n")
-        cleaned = []
-
-        for line in lines:
-            stripped = line.strip()
-
-            # HARD BLOCK patterns
-            if any([
-                stripped.startswith("def "),
-                stripped.startswith("class "),
-                stripped.startswith("import "),
-                stripped.startswith("print("),
-                "=" in stripped and "(" in stripped,
-            ]):
-                continue
-
+    lines = text.split("\n")
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        
+        # Skip empty lines that follow code removal
+        if not stripped:
             cleaned.append(line)
+            continue
 
-        text = "\n".join(cleaned)
+        # Block unambiguous code lines
+        if any([
+            stripped.startswith("def "),
+            stripped.startswith("class "),
+            stripped.startswith("return "),
+            stripped.startswith("print("),
+            stripped.startswith("if __name__"),
+            stripped.startswith("else:"),
+            stripped.startswith("elif "),
+            stripped.startswith("for "),
+            stripped.startswith("while "),
+            re.match(r"^(import|from)\s+\w+", stripped),
+        ]):
+            continue
 
-    return text.strip()
+        # Block indented lines only if they look like code
+        if (line.startswith("    ") or line.startswith("\t")) and any([
+            stripped.startswith("return "),
+            stripped.startswith("if "),
+            stripped.startswith("else:"),
+            stripped.startswith("elif "),
+            stripped.startswith("for "),
+            stripped.startswith("while "),
+            "=" in stripped and not stripped.endswith("."),
+        ]):
+            continue
 
+        cleaned.append(line)
+
+    # If barely anything survived, the whole output was code — return empty
+    result = "\n".join(cleaned).strip()
+    if len(result) < 20:
+        return ""
+
+    return result
 
 def _run_generation(model, tokenizer, prompt, max_tokens, temperature):
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
@@ -42,8 +68,8 @@ def _run_generation(model, tokenizer, prompt, max_tokens, temperature):
             max_new_tokens=max_tokens or max_new_tokens(),
             do_sample=temperature > 0,
             temperature=temperature if temperature > 0 else 1.0,
-            repetition_penalty=1.2,
-            no_repeat_ngram_size=3,
+            repetition_penalty=1.1,        # reduced from 1.2
+            no_repeat_ngram_size=4,        # increased from 3 — less aggressive
             eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.eos_token_id,
         )
@@ -61,14 +87,8 @@ def generate_from_prompt(
     temperature: float = 0.2,
 ) -> str:
 
-    # 🔹 Mode-based steering
     if mode in ["explain", "chat"]:
         temperature = min(temperature, 0.3)
-
-        if mode == "explain":
-            prompt += "\nExplain only in plain English. No code examples."
-        elif mode == "chat":
-            prompt += "\nRespond in natural language only. No programming syntax."
 
     stop_words = [
         "User:",
@@ -82,32 +102,20 @@ def generate_from_prompt(
         "###"
     ]
 
-    # 🔹 First generation
+    def apply_stop_words(text: str) -> str:
+        cut = min(
+            (text.find(stop) for stop in stop_words if text.find(stop) != -1),
+            default=len(text)
+        )
+        return text[:cut]
+
     text = _run_generation(model, tokenizer, prompt, max_tokens, temperature)
-
-    # 🔹 Stop-word cleanup
-    for stop in stop_words:
-        idx = text.find(stop)
-        if idx != -1:
-            text = text[:idx]
-            break
-
-    # 🔹 Remove code if not allowed
+    text = apply_stop_words(text)
     text = remove_code_if_not_allowed(text, mode)
 
-    # 🔥 Retry if output is empty (NO HARDCODING)
     if not text.strip() and mode in ["chat", "explain"]:
-
-        retry_prompt = prompt + "\nIMPORTANT: Answer only in plain English text. Do not use code."
-
-        text = _run_generation(model, tokenizer, retry_prompt, max_tokens, 0.2)
-
-        for stop in stop_words:
-            idx = text.find(stop)
-            if idx != -1:
-                text = text[:idx]
-                break
-
+        text = _run_generation(model, tokenizer, prompt, max_tokens, 0.5)
+        text = apply_stop_words(text)
         text = remove_code_if_not_allowed(text, mode)
 
     return text.strip()

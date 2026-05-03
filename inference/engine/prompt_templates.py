@@ -2,72 +2,49 @@
 
 TEMPLATES = {
 
-"generate": """You are PY-V, a senior Python engineer.
-
-You ONLY output clean Python code.
-No explanations. No text. No comments unless asked.
+"generate": """### Instruction:
+You are a Python expert. Write a complete, working Python function for the following task. Output code only, no explanations.
 
 {context}
-
-### Instruction:
-{user_input}
-
-### Answer (code only):
-""",
-
-"debug": """You are PY-V, a debugging expert.
-
-Fix the issue clearly.
-
-First return the corrected code.
-Next include small explanations or extra examples.
-
-{context}
-
-### Instruction:
-{user_input}
+Task: {user_input}
 
 ### Answer:
 """,
 
-"explain": """You are PY-V, a strict Python educator.
+"debug": """### Instruction:
+A Python program has the following error. Identify the bug and write the corrected code. Then explain the fix in one sentence.
 
-IMPORTANT RULE:
-You are NOT allowed to write Python code.
-
-If the answer requires code, explain it in words instead.
+Error reported: {user_input}
 
 {context}
-
-### Instruction:
-{user_input}
-
-### Answer (NO CODE):
-""",
-
-"refactor": """You are PY-V, a code optimization expert. Improve and refactor the code.
-
-{context}
-
-### Instruction:
-Code:
-{user_input}
 
 ### Answer:
 """,
 
-"chat": """You are PY-V, a conversational assistant.
-
-STRICT RULE:
-Never output Python code, syntax, or programming constructs.
-
-Respond only in natural language.
+"explain": """### Instruction:
+Explain the following Python concept in plain English. Do not write any code. Use simple sentences only.
 
 {context}
-
-### Instruction:
-{user_input}
+Concept: {user_input}
 
 ### Answer:
-"""
+""",
+
+"refactor": """### Instruction:
+You are a Python expert. Refactor and improve the following code. Return only the improved code.
+
+{context}
+Code: {user_input}
+
+### Answer:
+""",
+
+"chat": """### Instruction:
+You are a helpful Python assistant. Answer the following question in plain English only. Do not write code.
+
+{context}
+Question: {user_input}
+
+### Answer:
+""",
 }
