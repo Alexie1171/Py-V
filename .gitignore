@@ -26,6 +26,7 @@ experiments/outputs/
 # Model weights
 model/base/
 model/lora/
+model/lora_epoch1_backup/
 
 # ── PY-V specific ──────────────────────
 

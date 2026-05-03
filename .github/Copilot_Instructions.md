@@ -23,8 +23,9 @@ It ensures:
 | Phase 5 | FastAPI inference server | Complete |
 | Phase 6 | VS Code extension | Complete |
 | Phase 7 | Chat system (context-aware assistant + controller) | Complete |
-| Phase 8 | RAG (Retrieval Augmented Generation) | Planned |
+| Phase 8 | RAG (Retrieval Augmented Generation) | Complete |
 | Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
+| Phase 10 | VS Code chat panel (full UI, no terminal) | Planned |
 
 ---
 
@@ -82,13 +83,13 @@ Rules:
 
 ### `configs/config.yaml`
 - Single source of truth for ALL configuration
-- Model name, paths, training hyperparameters all live here
+- Model name, paths, training hyperparameters, RAG settings all live here
 - Never duplicate values from here into code
 
 ---
 
 ### `model/training/config_loader.py`
-- Parses `config.yaml` into typed dataclasses (`ModelConfig`, `TrainingConfig`, `PathsConfig`)
+- Parses `config.yaml` into typed dataclasses (`ModelConfig`, `TrainingConfig`, `PathsConfig`, `RAGConfig`)
 - Exports a module-level `CFG` singleton
 - All other modules import `CFG` from here — never re-parse yaml elsewhere
 
@@ -113,8 +114,9 @@ Rules:
 - Used by BOTH training (`dataset_loader.py`) and inference (`generator.py`)
 - Prompt format: `### Instruction:\n{instruction}\n\n### Answer:\n{output}`
 - Never define prompt format in any other file
-- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `format_context()`
+- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `format_context()`, `format_retrieved_context()`
 - For `explain` and `chat` modes, context history is NOT injected to prevent code pattern bias
+- RAG context is only injected for `generate`, `debug`, `refactor` modes
 
 ---
 
@@ -122,6 +124,8 @@ Rules:
 - Stores all mode-specific prompt templates
 - Templates use `### Instruction:` / `### Answer:` format throughout
 - Modes: `generate`, `debug`, `explain`, `refactor`, `chat`
+- `generate`, `debug`, `refactor` templates have `{retrieved_context}` slot
+- `explain` and `chat` templates do NOT have `{retrieved_context}` slot
 - Never define templates outside this file
 
 ---
@@ -130,7 +134,8 @@ Rules:
 - Handles raw model generation via `_run_generation()`
 - `generate_from_prompt()` — main entry point used by `chat.py`
 - `remove_code_if_not_allowed()` — strips code from explain/chat outputs
-- Stop-word cleanup uses earliest-match strategy via `apply_stop_words()`
+- `_strip_artifacts()` — removes training data artifacts (Exercise:, Task:, [...])
+- Stop-word cleanup uses earliest-match strategy via `_apply_stop_words()`
 - Retry logic uses temperature 0.5 on second attempt for chat/explain modes
 - Generation settings: `repetition_penalty=1.1`, `no_repeat_ngram_size=4`
 
@@ -158,8 +163,50 @@ Rules:
 
 ### `inference/engine/chat.py`
 - Top-level chat orchestrator
-- Wires together: controller → prompt builder → generator → context manager
+- Wires together: controller → retriever → prompt builder → generator → context manager
 - Single public method: `chat(session_id, user_input)`
+- Instantiates `Retriever` at startup if RAG is enabled in config
+- Gracefully disables RAG if index is missing
+
+---
+
+### `retrieval/indexer.py`
+- Builds the FAISS index from dataset JSONL + codebase Python files
+- Uses `chunker.py` for AST function/class-level splitting of codebase files
+- Scans: `inference/`, `model/`, `data/scripts/`, `retrieval/`
+- Skips: `__pycache__`, `sessions`, `experiments`, `extension`, `.git`, `venv`
+- Stores `content` in both top-level and `metadata["content"]` for retriever compatibility
+- Must be re-run after any codebase changes or dataset updates
+
+---
+
+### `retrieval/chunker.py`
+- AST-based function and class extraction from Python source files
+- Returns list of dicts with `content` and `metadata` (file, name, type, lines)
+- Used exclusively by `indexer.py`
+
+---
+
+### `retrieval/embedder.py`
+- Sentence embedding wrapper around `BAAI/bge-small-en-v1.5`
+- Returns normalized numpy arrays for cosine similarity with FAISS IndexFlatIP
+
+---
+
+### `retrieval/vector_store.py`
+- FAISS IndexFlatIP wrapper
+- Handles add, search, save, load
+- Always normalizes embeddings before add for correct cosine similarity
+
+---
+
+### `retrieval/retriever.py`
+- Full retrieval pipeline: query expansion → embedding → FAISS search → intent filter → rerank
+- `_get_content()` — unified content extraction from both top-level and metadata fields
+- `detect_intent()` — routes query to sorting / searching / ml / web / general
+- `expand_query()` — adds algorithm-specific terms to improve recall
+- `_rerank()` — combines FAISS score + keyword overlap + intent boosts/penalties
+- Never import model or training code
 
 ---
 
@@ -168,19 +215,6 @@ Rules:
 - Data cleaning & preprocessing
 - Output must be structured JSON/JSONL
 - No model logic allowed
-
----
-
-### `data/processed/`
-- Cleaned datasets only
-- Deduplicated outputs only
-
----
-
-### `data/datasets/`
-- Final training-ready dataset only
-- Must be JSONL format
-- Keys: `instruction`, `output`, optional `metadata`
 
 ---
 
@@ -197,6 +231,7 @@ Rules:
 - No heavy logic inside endpoints
 - Must call inference engine only
 - Model loaded once at startup via lifespan, stored in app state
+- Endpoints: `GET /health`, `POST /generate`, `POST /chat`
 
 ---
 
@@ -206,8 +241,64 @@ Rules:
 - `src/extension.ts` — command registration, status bar
 - `src/api.ts` — HTTP client for the FastAPI server
 - `src/provider.ts` — editor insertion and instruction extraction
-- Communicates with backend via `POST /api/v1/generate`
-- Handles server-not-running gracefully with clear error messages
+- `src/panel.ts` — (Phase 10) WebviewPanel lifecycle and VS Code ↔ webview bridge
+- `src/chat_view.ts` — (Phase 10) chat UI logic inside the webview
+- `media/chat.css` — (Phase 10) panel styling
+- `media/chat.js` — (Phase 10) webview-side event handlers and VS Code API bridge
+- Communicates with backend via `POST /api/v1/generate` and `POST /api/v1/chat`
+- Handles ECONNREFUSED and timeout errors gracefully
+
+---
+
+## RAG Rules (Phase 8)
+
+- RAG only fires for `generate`, `debug`, `refactor` modes
+- RAG is never injected for `explain` or `chat` modes
+- `top_k` and `index_path` come from `CFG.rag.*` — never hardcoded
+- If the index does not exist, the chat engine starts without RAG — no crash
+- Index must be rebuilt after dataset updates: `python -m retrieval.indexer`
+- Content field must exist at both `chunk["content"]` and `chunk["metadata"]["content"]`
+- Reranker uses intent detection — sorting queries penalise ML/dataset chunks heavily
+
+---
+
+## Phase 9 Rules — Multi-LoRA Adapters (Planned)
+
+Phase 9 adds per-language LoRA adapters. All rules below apply when implementing Phase 9.
+
+- One LoRA adapter per language, saved at `model/lora/{language}/`
+- Base model (Phi-2, 4-bit) is shared — only adapter weights change between languages
+- `model/adapters/adapter_registry.py` maps language identifiers to adapter paths
+- `model/adapters/adapter_router.py` selects and loads the correct adapter at runtime
+- `inference/engine/language_detector.py` detects language from file extension or VS Code `languageId`
+- `configs/adapters.yaml` holds per-language adapter config — never hardcode adapter paths
+- Adapter switching must not reload the base model — only swap the PEFT adapter
+- Training data for non-Python languages lives in `data/datasets/{language}/`
+- JavaScript/TypeScript scraper lives at `data/scripts/js_scraper.py`
+- Python adapter remains the primary adapter — all existing behavior unchanged
+
+---
+
+## Phase 10 Rules — VS Code Chat Panel (Planned)
+
+Phase 10 replaces terminal interaction with a Copilot-style chat panel inside VS Code. All rules below apply when implementing Phase 10.
+
+- The chat panel is a VS Code `WebviewPanel` registered as a sidebar view
+- `extension/src/panel.ts` owns the WebviewPanel lifecycle — creation, disposal, message passing
+- `extension/src/chat_view.ts` owns the chat UI logic — rendering messages, handling input, scrolling
+- `extension/media/chat.css` owns all panel styling — no inline styles in TypeScript or HTML
+- `extension/media/chat.js` owns webview-side event handling and the VS Code API bridge
+- The panel communicates with the FastAPI server via `POST /api/v1/chat` — same endpoint as terminal chat
+- Session ID is generated once per panel instance and reused for the conversation lifetime
+- Mode badge and `rag_chunks` count must be displayed on each response
+- Active file context (language, file name, selected text) must be automatically injected into generate/debug prompts
+- A streaming endpoint `POST /api/v1/chat/stream` (SSE) is required for progressive token display
+- The streaming endpoint lives in `inference/api/routes.py` — no new files for routes
+- Copy-to-editor button must be present on all code responses
+- Clear session button must reset both the panel UI and the server-side session file
+- The existing `pyv.generate` and `pyv.generateFromInput` commands remain unchanged
+- The panel is activated by a new command: `pyv.openChat`
+- No Python logic in any extension file — all backend calls go through `api.ts`
 
 ---
 
@@ -216,7 +307,7 @@ Rules:
 Pipeline flow:
 
 ```
-Scraping → Cleaning → Deduplication → Formatting → Dataset
+Scraping → Cleaning → Deduplication → Formatting → Dataset → RAG Index
 ```
 
 - `github_scraper.py` — AST-based function extraction, quality scoring
@@ -225,12 +316,11 @@ Scraping → Cleaning → Deduplication → Formatting → Dataset
 - `dedupe.py` — exact hash dedup + Jaccard near-dedup (threshold 0.85)
 - `formatter.py` — instruction/output format, 90/10 train/val split
 - `pipeline.py` — orchestrates all stages with checkpoint support
+- After pipeline runs, always rebuild RAG index: `python -m retrieval.indexer`
 
 ---
 
 ## Dataset Format (STRICT)
-
-All training data must follow:
 
 ```json
 {
@@ -243,12 +333,6 @@ All training data must follow:
 }
 ```
 
-Rules:
-- No raw text datasets
-- No mixed formats
-- No unstructured dumps
-- Metadata is optional but recommended
-
 ---
 
 ## Training Rules
@@ -259,6 +343,8 @@ Rules:
 - Never attempt full fine-tuning
 - Always check for existing checkpoints before starting (`resolve_checkpoint()`)
 - Training hyperparameters come from `CFG.training.*`
+- Second epoch learning rate must be reduced (5e-5 or lower) — never reuse first epoch LR
+- Back up `model/lora/` before any training run
 
 ---
 
@@ -267,33 +353,9 @@ Rules:
 - FastAPI app entry point: `inference/api/main.py`
 - Run with: `uvicorn inference.api.main:app --host 0.0.0.0 --port 8000`
 - Routes: `GET /api/v1/health`, `POST /api/v1/generate`, `POST /api/v1/chat`
+- Phase 10 adds: `POST /api/v1/chat/stream` (SSE streaming)
 - Model loads once at startup via lifespan — never per request
 - LoRA adapter applied on top of base model via `load_lora_model()` before serving
-
----
-
-## VS Code Extension Rules
-
-- Lives entirely in `extension/`
-- Written in TypeScript
-- Three commands: `pyv.generate`, `pyv.generateFromInput`, `pyv.checkServer`
-- Keybindings: `Ctrl+Shift+G` (generate), `Ctrl+Shift+P` (prompt input)
-- Status bar item shows live server state: `PY-V`, `PY-V OK`, `PY-V ERR`
-- Instruction extraction priority: selected text → `#` comment on current line
-- Calls `POST http://localhost:8000/api/v1/generate`
-- Must handle ECONNREFUSED and timeout errors gracefully
-
----
-
-## Chat System Rules (Phase 7)
-
-- Entry point: `inference/engine/chat.py` — `ChatEngine.chat()`
-- Controller detects mode from user input keywords
-- Context history is stored per session in `sessions/`
-- History is injected into `generate`, `debug`, `refactor` prompts only
-- History is NOT injected into `explain` or `chat` prompts to prevent code bias
-- Retry on empty output uses temperature 0.5 (not 0.2) for chat/explain modes
-- Code removal filter applies only to `chat` and `explain` mode outputs
 
 ---
 
@@ -311,6 +373,9 @@ AI MUST NOT:
 - Add heavy logic inside FastAPI route handlers
 - Write extension logic in Python
 - Inject context history into explain or chat mode prompts
+- Inject RAG context into explain or chat mode prompts
+- Reload the base model when switching LoRA adapters (Phase 9)
+- Add Python logic to any extension TypeScript file (Phase 10)
 
 ---
 
@@ -323,6 +388,8 @@ AI SHOULD:
 - Optimize for memory usage on GTX 1650
 - Respect architecture boundaries strictly
 - Resume training from checkpoint when available
+- Rebuild RAG index after any dataset or codebase change
+- Store `content` at both top-level and `metadata["content"]` in all index chunks
 
 ---
 
@@ -335,18 +402,24 @@ python -c "from model.training.config_loader import CFG; print(CFG.model.name, C
 # Prompt builder
 python -c "from inference.engine.prompt_builder import build_inference_prompt; print(build_inference_prompt('test'))"
 
+# RAG index build
+python -m retrieval.indexer
+
+# RAG retrieval test
+python -m retrieval.test_rag
+
 # Fine-tuned model output
 python -m experiments.test_phi2
 
-# Chat system
+# Chat system (terminal — Phase 7/8)
 python test_chat.py
 
-# API boot (serves LoRA model)
+# API boot
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 
 # VS Code extension
 cd extension && npm install && npm run compile
-# Then press F5 in VS Code to launch dev instance
+# Press F5 in VS Code to launch dev instance
 ```
 
 ---
@@ -354,11 +427,15 @@ cd extension && npm install && npm run compile
 ## System Workflow
 
 ```
-Data → Processing → Dataset → Training → Inference API → VS Code Extension
-                                                      → Chat System
+Data → Processing → Dataset → RAG Index
+                            ↓
+                        Training → LoRA Adapter
+                                        ↓
+                                Inference API
+                                /           \
+                    VS Code Extension     Chat Panel (Phase 10)
+                    (generate commands)   (full chat UI)
 ```
-
-No step should be skipped or merged incorrectly.
 
 ---
 

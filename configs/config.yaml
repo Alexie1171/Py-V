@@ -5,8 +5,8 @@ model:
 training:
   batch_size: 1
   gradient_accumulation: 16
-  epochs: 3
-  learning_rate: 0.0002
+  epochs: 1
+  learning_rate: 0.00005
   warmup_steps: 10
   save_steps: 50
   eval_steps: 50

@@ -22,7 +22,7 @@ Error reported: {user_input}
 """,
 
 "explain": """### Instruction:
-Explain the following Python concept in plain English. Do not write any code. Use simple sentences only.
+Explain the following Python concept in plain English. Write only sentences and paragraphs. Do not write any code, functions, or code comments. If you want to give an example, describe it in words only — do not show code syntax.
 
 {context}
 Concept: {user_input}
@@ -40,7 +40,7 @@ Code: {user_input}
 """,
 
 "chat": """### Instruction:
-You are a helpful Python assistant. Answer the following question in plain English only. Do not write code.
+You are a helpful Python assistant. Answer the following question using only plain English sentences and paragraphs. Do not write code, functions, or code comments. Describe any examples in words only.
 
 {context}
 Question: {user_input}

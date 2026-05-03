@@ -4,7 +4,7 @@
 
 PY-V is a lightweight, locally running AI code assistant designed for Python development and expanding into multi-language support. It replicates core features of tools like GitHub Copilot — code completion, function generation, debugging, and chat-based assistance — while being fully optimized for low-resource environments (GTX 1650, 4GB VRAM).
 
-The system is built around a complete local ML pipeline: a custom dataset scraped from GitHub and StackOverflow, LoRA fine-tuning on Phi-2, a FastAPI inference server, a VS Code extension, and a context-aware chat system.
+The system is built around a complete local ML pipeline: a custom dataset scraped from GitHub and StackOverflow, LoRA fine-tuning on Phi-2, a FastAPI inference server, a VS Code extension, a context-aware chat system, and a RAG pipeline backed by a FAISS vector store.
 
 ---
 
@@ -19,8 +19,9 @@ The system is built around a complete local ML pipeline: a custom dataset scrape
 | 5 | FastAPI inference server | Complete |
 | 6 | VS Code extension | Complete |
 | 7 | Chat system (context-aware assistant + controller) | Complete |
-| 8 | RAG (Retrieval Augmented Generation) | Planned |
+| 8 | RAG (Retrieval Augmented Generation) | Complete |
 | 9 | Multi-LoRA adapters (multi-language support) | Planned |
+| 10 | VS Code chat panel (full UI, no terminal) | Planned |
 
 ---
 
@@ -28,7 +29,9 @@ The system is built around a complete local ML pipeline: a custom dataset scrape
 
 PY-V is evolving from:
 
-Code generator → Code assistant → Context-aware coding system → Chat-based coding agent
+```
+Code generator → Code assistant → Context-aware coding system → Chat-based coding agent → Full IDE integration
+```
 
 ---
 
@@ -73,7 +76,7 @@ PY-V/
 |       +-- routes.py
 |       +-- schemas.py
 |
-+-- retrieval/                  (Phase 8)
++-- retrieval/
 |   +-- indexer.py
 |   +-- retriever.py
 |   +-- chunker.py
@@ -81,6 +84,17 @@ PY-V/
 |   +-- vector_store.py
 |
 +-- extension/
+|   +-- src/
+|   |   +-- extension.ts
+|   |   +-- api.ts
+|   |   +-- provider.ts
+|   |   +-- panel.ts          (Phase 10)
+|   |   +-- chat_view.ts      (Phase 10)
+|   +-- media/
+|   |   +-- chat.css          (Phase 10)
+|   |   +-- chat.js           (Phase 10)
+|   +-- package.json
+|
 +-- experiments/
 +-- sessions/
 +-- README.md
@@ -144,8 +158,43 @@ uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 | Method | Route | Description |
 |--------|-------|-------------|
 | GET | `/api/v1/health` | Health check |
-| POST | `/api/v1/generate` | Code generation |
-| POST | `/api/v1/chat` | Context-aware chat (Phase 7) |
+| POST | `/api/v1/generate` | Stateless code generation |
+| POST | `/api/v1/chat` | Context-aware chat with RAG |
+
+---
+
+## RAG System (Phase 8)
+
+PY-V uses a hybrid retrieval system backed by FAISS to inject relevant context into generate, debug, and refactor prompts.
+
+### Components
+
+| File | Role |
+|------|------|
+| `retrieval/indexer.py` | Builds the FAISS index from dataset + codebase |
+| `retrieval/chunker.py` | AST-based function/class-level splitting |
+| `retrieval/embedder.py` | Sentence embedding via `BAAI/bge-small-en-v1.5` |
+| `retrieval/vector_store.py` | FAISS index wrapper with save/load |
+| `retrieval/retriever.py` | Query expansion, intent detection, reranking |
+
+### Build the index
+
+```bash
+python -m retrieval.indexer
+```
+
+### Index contents
+
+- 1838 dataset chunks (instruction/output pairs)
+- 146 codebase chunks (AST function/class level from inference/, model/, data/scripts/, retrieval/)
+- Total: 1984 chunks
+
+### RAG behavior
+
+- Fires only for `generate`, `debug`, `refactor` modes
+- Disabled for `explain` and `chat` to prevent code pattern bias
+- Top-k chunks injected into prompt (k=3, configurable in `config.yaml`)
+- Gracefully degrades if index is missing — chat engine starts without RAG
 
 ---
 
@@ -167,15 +216,13 @@ Key behaviors:
 - Code output is filtered out of explain and chat responses
 - Retry logic uses higher temperature on second attempt if output is empty
 
-Test the chat system:
-
 ```bash
 python test_chat.py
 ```
 
 ---
 
-## VS Code Extension
+## VS Code Extension (Phase 6)
 
 The extension communicates with the local inference server to provide code generation inside VS Code.
 
@@ -190,14 +237,11 @@ The extension communicates with the local inference server to provide code gener
 ### Setup
 
 ```bash
-# Start the inference server first
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 
-# Build the extension
 cd extension
 npm install
 npm run compile
-
 # Press F5 in VS Code to launch dev instance
 ```
 
@@ -208,6 +252,92 @@ npm run compile
 | `pyv.serverUrl` | `http://localhost:8000` | Inference server URL |
 | `pyv.maxTokens` | `256` | Max tokens to generate |
 | `pyv.temperature` | `0.2` | Sampling temperature |
+
+---
+
+## Phase 9 — Multi-LoRA Adapters (Planned)
+
+Phase 9 adds multi-language support by training separate LoRA adapters for additional languages and routing to the correct adapter at inference time based on the active file's language.
+
+### Architecture
+
+```
+User query
+    ↓
+Language detector (file extension / VS Code languageId)
+    ↓
+Adapter router
+    ↓
+Load correct LoRA adapter (python / javascript / typescript / ...)
+    ↓
+Generate with language-specific adapter
+```
+
+### Planned components
+
+| File | Role |
+|------|------|
+| `model/adapters/adapter_registry.py` | Maps language → LoRA adapter path |
+| `model/adapters/adapter_router.py` | Selects and loads the correct adapter at runtime |
+| `inference/engine/language_detector.py` | Detects language from context or file metadata |
+| `data/scripts/js_scraper.py` | JavaScript/TypeScript dataset scraper |
+| `configs/adapters.yaml` | Per-language adapter configuration |
+
+### Training plan
+
+- One LoRA adapter per language, each fine-tuned on a language-specific dataset
+- Base model (Phi-2, 4-bit) shared across all adapters — only the adapter weights swap
+- Adapter switching happens at inference time with no model reload
+- Python adapter continues to be the primary, highest-quality adapter
+
+---
+
+## Phase 10 — VS Code Chat Panel (Planned)
+
+Phase 10 replaces terminal-based interaction with a full Copilot-style chat panel inside VS Code. The user types in a sidebar panel, sees streamed responses, and can interact with the full chat system without leaving the editor.
+
+### Architecture
+
+```
+VS Code Sidebar Panel (WebviewPanel)
+    ↓
+chat_view.ts — renders message history, handles input
+    ↓
+panel.ts — manages WebviewPanel lifecycle, message passing
+    ↓
+api.ts — POST /api/v1/chat (existing endpoint, unchanged)
+    ↓
+FastAPI → ChatEngine → RAG → Phi-2 → response
+    ↓
+Streamed back to panel via VS Code message passing
+```
+
+### Planned components
+
+| File | Role |
+|------|------|
+| `extension/src/panel.ts` | WebviewPanel creation, lifecycle, VS Code ↔ webview bridge |
+| `extension/src/chat_view.ts` | Chat UI logic — message rendering, input handling, scroll |
+| `extension/media/chat.css` | Panel styling — message bubbles, mode badges, input bar |
+| `extension/media/chat.js` | Webview-side JS — VS Code API bridge, event handlers |
+
+### Planned features
+
+- Persistent chat history visible in the panel across turns
+- Mode badge on each response (generate / debug / explain / refactor / chat)
+- RAG chunk count displayed per response
+- Active file context automatically injected into generate/debug prompts
+- Streaming display as tokens arrive (requires streaming API endpoint)
+- Clear session button
+- Copy-to-editor button on code responses
+
+### New API endpoint needed
+
+```
+POST /api/v1/chat/stream
+```
+
+Streams tokens via Server-Sent Events (SSE) so the panel can display responses progressively rather than waiting for the full generation to complete.
 
 ---
 
@@ -250,25 +380,25 @@ python -c "from model.training.config_loader import CFG; print(CFG.model.name, C
 # Prompt builder
 python -c "from inference.engine.prompt_builder import build_inference_prompt; print(build_inference_prompt('test'))"
 
+# RAG index build
+python -m retrieval.indexer
+
+# RAG retrieval test
+python -m retrieval.test_rag
+
 # Fine-tuned model output
 python -m experiments.test_phi2
 
-# Chat system
+# Chat system (terminal)
 python test_chat.py
 
 # API server
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
+
+# VS Code extension
+cd extension && npm install && npm run compile
+# Press F5 in VS Code to launch dev instance
 ```
-
----
-
-## Future Improvements
-
-- RAG-based codebase understanding (Phase 8)
-- Multi-language support via LoRA adapters (Phase 9)
-- AST-aware context tracking
-- Smarter controller routing
-- Persistent chat memory optimization
 
 ---
 
