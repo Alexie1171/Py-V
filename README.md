@@ -17,7 +17,9 @@ The project is built around a complete local ML pipeline: a custom Python datase
 | 3 | Full data pipeline (scrape → clean → dedupe → format) | ✅ Complete |
 | 4 | LoRA fine-tuning on Python dataset | ✅ Complete |
 | 5 | FastAPI inference server | ✅ Complete |
-| 6 | VS Code extension | 🔄 In Progress |
+| 6 | VS Code extension | ✅ Complete |
+| 7 | Additional training epochs & dataset expansion | 🔜 Next |
+| 8 | RAG (Retrieval Augmented Generation) | 🔜 Planned |
 
 ---
 
@@ -59,7 +61,7 @@ PY-V/
 │
 ├── inference/
 │   ├── engine/
-│   │   ├── model_loader.py          # Thin wrapper → model/utils/model_loader
+│   │   ├── model_loader.py          # load_model + load_lora_model
 │   │   ├── prompt_builder.py        # Phi-2 prompt format (shared by train+infer)
 │   │   └── generator.py             # Generation logic
 │   └── api/
@@ -69,7 +71,11 @@ PY-V/
 │
 ├── extension/                       # VS Code extension (TypeScript)
 │   ├── src/
+│   │   ├── extension.ts             # Command registration, status bar
+│   │   ├── api.ts                   # HTTP client for the FastAPI server
+│   │   └── provider.ts              # Editor insertion & instruction extraction
 │   ├── package.json
+│   ├── tsconfig.json
 │   └── README.md
 │
 ├── experiments/
@@ -159,6 +165,8 @@ Start the server:
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 ```
 
+The server loads the base Phi-2 model and applies the LoRA adapter automatically at startup.
+
 Endpoints:
 
 | Method | Route | Description |
@@ -174,19 +182,51 @@ curl -X POST http://localhost:8000/api/v1/generate \
   -d '{"instruction": "Write a function to check if a string is a palindrome", "max_tokens": 256, "temperature": 0.2}'
 ```
 
+PowerShell:
+
+```powershell
+Invoke-WebRequest -Uri "http://localhost:8000/api/v1/generate" `
+  -Method POST `
+  -ContentType "application/json" `
+  -UseBasicParsing `
+  -Body '{"instruction": "Write a function to check if a string is a palindrome", "max_tokens": 256, "temperature": 0.2}'
+```
+
 ---
 
-## 🔌 VS Code Extension (Phase 6)
+## 🔌 VS Code Extension
 
-The extension lives in `extension/` and is written in TypeScript. It communicates with the local inference API to provide real-time code suggestions inside VS Code.
+The extension is fully working in Phase 6. It communicates with the local inference API to provide real-time code suggestions inside VS Code.
 
-To develop:
+### Setup
 
 ```bash
+# 1. Start the inference server first
+uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
+
+# 2. Build the extension
 cd extension
 npm install
 npm run compile
+
+# 3. Press F5 in VS Code to launch dev instance
 ```
+
+### Usage
+
+| Method | How |
+|--------|-----|
+| Generate from comment | Place cursor on a `# comment`, press `Ctrl+Shift+G` |
+| Generate from prompt | Press `Ctrl+Shift+P`, type instruction in input box |
+| Check server status | Click `⟡ PY-V` in the status bar |
+
+### Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `pyv.serverUrl` | `http://localhost:8000` | Inference server URL |
+| `pyv.maxTokens` | `256` | Max tokens to generate |
+| `pyv.temperature` | `0.2` | Sampling temperature |
 
 ---
 
@@ -214,10 +254,10 @@ python -c "from model.training.config_loader import CFG; print(CFG.model.name)"
 # Verify prompt builder
 python -c "from inference.engine.prompt_builder import build_inference_prompt; print(build_inference_prompt('test'))"
 
-# Test fine-tuned model
+# Test fine-tuned model output
 python -m experiments.test_phi2
 
-# Boot the API
+# Boot the API (serves LoRA model)
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 ```
 
@@ -234,7 +274,7 @@ uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 
 ## 🧭 Future Improvements
 
-- Additional training epochs for lower loss
+- Additional training epochs (resume from checkpoint — loss still has room to drop)
 - Larger dataset (more repos, more SO tags)
 - RAG (Retrieval Augmented Generation) for codebase-aware suggestions
 - AST-aware context window

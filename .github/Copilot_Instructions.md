@@ -21,7 +21,9 @@ It ensures:
 | Phase 3 | Full data pipeline (scrape → clean → dedupe → format) | ✅ Complete |
 | Phase 4 | LoRA fine-tuning on Python dataset | ✅ Complete |
 | Phase 5 | FastAPI inference server | ✅ Complete |
-| Phase 6 | VS Code extension | 🔄 In Progress |
+| Phase 6 | VS Code extension | ✅ Complete |
+| Phase 7 | Additional training epochs & dataset expansion | 🔜 Next |
+| Phase 8 | RAG (Retrieval Augmented Generation) | 🔜 Planned |
 
 ---
 
@@ -64,13 +66,14 @@ All generated code must be optimized for:
 All work is based on:
 - **Phi-2** (Microsoft, ~2.7B parameters)
 - Fine-tuned LoRA adapter saved at `model/lora/`
+- Training result: loss 1.087 → 0.872 over 115 steps (1 epoch, GTX 1650)
 
 Rules:
 - No training from scratch
 - No models >7B parameters
 - Always use PEFT / LoRA fine-tuning
 - Always load base model with 4-bit BitsAndBytes quantization
-- Always resume from checkpoint when one exists
+- Always resume from checkpoint when one exists (`resolve_checkpoint()`)
 
 ---
 
@@ -98,8 +101,9 @@ Rules:
 ---
 
 ### `inference/engine/model_loader.py`
-- Thin re-export wrapper: `from model.utils.model_loader import load_model`
-- Keeps inference layer decoupled without duplicating logic
+- Wraps `model/utils/model_loader.py`
+- Also exposes `load_lora_model()` — loads base model then applies LoRA adapter
+- This is what the API server calls at startup
 
 ---
 
@@ -158,9 +162,12 @@ Rules:
 
 ### `extension/`
 - VS Code extension only
-- JavaScript/TypeScript only
-- Communicates with backend via HTTP API (`/api/v1/generate`)
-- No Python logic
+- TypeScript only — no Python logic
+- `src/extension.ts` — command registration, status bar
+- `src/api.ts` — HTTP client for the FastAPI server
+- `src/provider.ts` — editor insertion and instruction extraction
+- Communicates with backend via `POST /api/v1/generate`
+- Handles server-not-running gracefully with clear error messages
 
 ---
 
@@ -175,8 +182,8 @@ Scraping → Cleaning → Deduplication → Formatting → Dataset
 - `github_scraper.py` → AST-based function extraction, quality scoring
 - `stackoverflow_scraper.py` → accepted answer extraction, Python filtering
 - `cleaner.py` → AST validation, length bounds, noise removal
-- `dedupe.py` → exact hash dedup + Jaccard near-dedup
-- `formatter.py` → instruction/output format, train/val split
+- `dedupe.py` → exact hash dedup + Jaccard near-dedup (threshold 0.85)
+- `formatter.py` → instruction/output format, 90/10 train/val split
 - `pipeline.py` → orchestrates all stages with checkpoint support
 
 ---
@@ -220,19 +227,21 @@ Rules:
 - FastAPI app entry point: `inference/api/main.py`
 - Run with: `uvicorn inference.api.main:app --host 0.0.0.0 --port 8000`
 - Routes: `GET /api/v1/health`, `POST /api/v1/generate`
-- Model loads once at startup, never per-request
-- The LoRA adapter must be applied on top of the base model before serving
+- Model loads once at startup via lifespan — never per request
+- LoRA adapter applied on top of base model via `load_lora_model()` before serving
 
 ---
 
-## 🔌 VS Code Extension Rules (Phase 6)
+## 🔌 VS Code Extension Rules
 
 - Lives entirely in `extension/`
 - Written in TypeScript
+- Three commands: `pyv.generate`, `pyv.generateFromInput`, `pyv.checkServer`
+- Keybindings: `Ctrl+Shift+G` (generate), `Ctrl+Shift+P` (prompt input)
+- Status bar item shows live server state: `⟡ PY-V`, `⟡ PY-V ✔`, `⟡ PY-V ✖`
+- Instruction extraction priority: selected text → `#` comment on current line
 - Calls `POST http://localhost:8000/api/v1/generate`
-- Request body: `{ "instruction": "...", "max_tokens": 512, "temperature": 0.2 }`
-- No bundled Python or ML logic
-- Must handle server-not-running gracefully
+- Must handle ECONNREFUSED and timeout errors gracefully
 
 ---
 
@@ -272,11 +281,15 @@ python -c "from model.training.config_loader import CFG; print(CFG.model.name, C
 # Prompt builder
 python -c "from inference.engine.prompt_builder import build_inference_prompt; print(build_inference_prompt('test'))"
 
-# API boot
-uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
-
 # Fine-tuned model output
 python -m experiments.test_phi2
+
+# API boot (serves LoRA model)
+uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
+
+# VS Code extension
+cd extension && npm install && npm run compile
+# Then press F5 in VS Code to launch dev instance
 ```
 
 ---
