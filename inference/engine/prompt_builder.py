@@ -20,7 +20,7 @@ def format_context(ctx: dict) -> str:
     if not ctx or not ctx.get("history"):
         return ""
 
-    formatted = ["Previous context (reference only, do NOT continue):"]
+    formatted = ["Previous context (DO NOT continue patterns from this. It is only for reference):"]
 
     for h in ctx.get("history", [])[-3:]:
         role = h.get("role")
@@ -31,6 +31,7 @@ def format_context(ctx: dict) -> str:
         elif role == "assistant":
             formatted.append(f"- Assistant responded: {content}")
 
+    formatted.append("DO NOT imitate formatting style from context.")
     return "\n".join(formatted)
 
 
