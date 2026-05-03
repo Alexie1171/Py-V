@@ -34,6 +34,29 @@ class GenerateResponse(BaseModel):
     tokens_used: int = Field(..., description="Approximate number of tokens in the output.")
 
 
+class ChatRequest(BaseModel):
+    session_id: str = Field(
+        ...,
+        min_length  = 1,
+        description = "Stable identifier for this conversation session.",
+        example     = "user-abc123",
+    )
+    message: str = Field(
+        ...,
+        min_length  = 1,
+        description = "The user's message or instruction.",
+        example     = "Write a quicksort implementation.",
+    )
+
+
+class ChatResponse(BaseModel):
+    session_id:  str   = Field(..., description="Echoed session ID.")
+    response:    str   = Field(..., description="Model response.")
+    mode:        str   = Field(..., description="Detected intent mode (generate/debug/explain/refactor/chat).")
+    confidence:  float = Field(..., description="Controller confidence score for the detected mode.")
+    rag_chunks:  int   = Field(..., description="Number of RAG chunks injected into the prompt.")
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     model:  str

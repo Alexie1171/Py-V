@@ -5,7 +5,7 @@ TEMPLATES = {
 "generate": """### Instruction:
 You are a Python expert. Write a complete, working Python function for the following task. Output code only, no explanations.
 
-{context}
+{retrieved_context}{context}
 Task: {user_input}
 
 ### Answer:
@@ -16,7 +16,7 @@ A Python program has the following error. Identify the bug and write the correct
 
 Error reported: {user_input}
 
-{context}
+{retrieved_context}{context}
 
 ### Answer:
 """,
@@ -33,7 +33,7 @@ Concept: {user_input}
 "refactor": """### Instruction:
 You are a Python expert. Refactor and improve the following code. Return only the improved code.
 
-{context}
+{retrieved_context}{context}
 Code: {user_input}
 
 ### Answer:

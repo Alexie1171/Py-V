@@ -1,13 +1,13 @@
 """
 config_loader.py — PY-V
 Loads configs/config.yaml and exposes typed dataclasses for
-model, training, and path config. All other modules import from here
+model, training, path, and RAG config. All other modules import from here
 instead of hardcoding values.
 """
 
 import os
 import yaml
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 # ─── Config Root ──────────────────────────────────────────────────────────────
@@ -55,10 +55,19 @@ class PathsConfig:
 
 
 @dataclass
+class RAGConfig:
+    enabled:      bool
+    index_path:   Path
+    top_k:        int
+    active_modes: list
+
+
+@dataclass
 class AppConfig:
     model:    ModelConfig
     training: TrainingConfig
     paths:    PathsConfig
+    rag:      RAGConfig
 
 
 # ─── Parser ───────────────────────────────────────────────────────────────────
@@ -99,7 +108,15 @@ def load_config() -> AppConfig:
         model_output   = Path(p.get("model_output",   "./model/lora")),
     )
 
-    return AppConfig(model=model_cfg, training=training_cfg, paths=paths_cfg)
+    r = raw.get("rag", {})
+    rag_cfg = RAGConfig(
+        enabled      = r.get("enabled",      False),
+        index_path   = Path(r.get("index_path", "./retrieval/index")),
+        top_k        = r.get("top_k",        3),
+        active_modes = r.get("active_modes", ["generate", "debug", "refactor"]),
+    )
+
+    return AppConfig(model=model_cfg, training=training_cfg, paths=paths_cfg, rag=rag_cfg)
 
 
 # ─── Module-level singleton ───────────────────────────────────────────────────

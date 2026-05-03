@@ -2,6 +2,7 @@ import torch
 from inference.engine.prompt_builder import max_new_tokens
 import re
 
+
 def remove_code_if_not_allowed(text: str, mode: str) -> str:
     if mode not in ["chat", "explain"]:
         return text.strip()
@@ -17,10 +18,14 @@ def remove_code_if_not_allowed(text: str, mode: str) -> str:
     cleaned = []
     for line in lines:
         stripped = line.strip()
-        
-        # Skip empty lines that follow code removal
+
         if not stripped:
             cleaned.append(line)
+            continue
+
+        # Block standalone comment lines (# ...) — these are code artifacts
+        # leaking into prose responses, not natural language punctuation.
+        if stripped.startswith("#"):
             continue
 
         # Block unambiguous code lines
@@ -59,6 +64,7 @@ def remove_code_if_not_allowed(text: str, mode: str) -> str:
 
     return result
 
+
 def _run_generation(model, tokenizer, prompt, max_tokens, temperature):
     inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
@@ -68,8 +74,8 @@ def _run_generation(model, tokenizer, prompt, max_tokens, temperature):
             max_new_tokens=max_tokens or max_new_tokens(),
             do_sample=temperature > 0,
             temperature=temperature if temperature > 0 else 1.0,
-            repetition_penalty=1.1,        # reduced from 1.2
-            no_repeat_ngram_size=4,        # increased from 3 — less aggressive
+            repetition_penalty=1.1,
+            no_repeat_ngram_size=4,
             eos_token_id=tokenizer.eos_token_id,
             pad_token_id=tokenizer.eos_token_id,
         )
@@ -119,3 +125,14 @@ def generate_from_prompt(
         text = remove_code_if_not_allowed(text, mode)
 
     return text.strip()
+
+
+def generate_code(model, tokenizer, instruction: str, max_tokens: int = None, temperature: float = 0.2) -> str:
+    """
+    Stateless code generation for the /generate API endpoint.
+    Does not use session context or RAG — just builds a bare inference prompt.
+    """
+    from inference.engine.prompt_builder import build_inference_prompt
+    prompt = build_inference_prompt(instruction)
+    return generate_from_prompt(model, tokenizer, prompt, mode="generate",
+                                max_tokens=max_tokens, temperature=temperature)

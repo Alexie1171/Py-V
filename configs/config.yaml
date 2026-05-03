@@ -21,3 +21,14 @@ paths:
   dataset: "./data/datasets/train.jsonl"
   val_dataset: "./data/datasets/val.jsonl"
   model_output: "./model/lora"
+
+rag:
+  enabled: true
+  index_path: "./retrieval/index"
+  top_k: 3
+  # Modes that will receive RAG context injection
+  # explain and chat are excluded to prevent code pattern bias
+  active_modes:
+    - generate
+    - debug
+    - refactor
