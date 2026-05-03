@@ -2,224 +2,248 @@
 
 ## 🧠 Overview
 
-**PY-V** is a lightweight, locally running AI code assistant designed specifically for Python development. It aims to replicate core features of tools like Copilot—such as code completion, snippet generation, and debugging assistance—while being optimized for low-resource environments (e.g., GTX 1650 4GB GPU).
+**PY-V** is a lightweight, locally running AI code assistant designed specifically for Python development. It replicates core features of tools like GitHub Copilot — code completion, function generation, and debugging assistance — while being fully optimized for low-resource environments (GTX 1650, 4GB VRAM).
 
-This project is built around a fully local machine learning pipeline using a small language model (Phi-2) and parameter-efficient fine-tuning (PEFT).
+The project is built around a complete local ML pipeline: a custom Python dataset scraped from GitHub and StackOverflow, LoRA fine-tuning on Phi-2, a FastAPI inference server, and a VS Code extension for real-time suggestions.
 
 ---
 
-## 🎯 Objectives
+## 🚀 Development Phases
 
-- Build a Python-focused AI assistant
-- Run inference locally with minimal hardware
-- Implement LoRA-based fine-tuning
-- Create a VS Code extension for real-time suggestions
-- Maintain clean, scalable ML architecture
-- Build full dataset pipeline from real-world sources
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Project structure & architecture | ✅ Complete |
+| 2 | Phi-2 model setup, 4-bit quantization, modular engine | ✅ Complete |
+| 3 | Full data pipeline (scrape → clean → dedupe → format) | ✅ Complete |
+| 4 | LoRA fine-tuning on Python dataset | ✅ Complete |
+| 5 | FastAPI inference server | ✅ Complete |
+| 6 | VS Code extension | 🔄 In Progress |
 
 ---
 
 ## 🏗️ Project Architecture
 
+```
 PY-V/
 │
+├── configs/
+│   └── config.yaml                  # Single source of truth for all config
+│
 ├── data/
-│ ├── raw/
-│ │ ├── github/
-│ │ └── stackoverflow/
-│ │
-│ ├── processed/
-│ │ ├── cleaned/
-│ │ └── deduped/
-│ │
-│ ├── datasets/
-│ │ ├── train.jsonl
-│ │ └── val.jsonl
-│ │
-│ └── scripts/
-│ ├── github_scraper.py
-│ ├── stackoverflow_scraper.py
-│ ├── cleaner.py
-│ ├── dedupe.py
-│ ├── formatter.py
-│ └── pipeline.py
+│   ├── raw/
+│   │   ├── github/
+│   │   └── stackoverflow/
+│   ├── processed/
+│   │   ├── cleaned/
+│   │   └── deduped/
+│   ├── datasets/
+│   │   ├── train.jsonl
+│   │   └── val.jsonl
+│   └── scripts/
+│       ├── github_scraper.py
+│       ├── stackoverflow_scraper.py
+│       ├── cleaner.py
+│       ├── dedupe.py
+│       ├── formatter.py
+│       └── pipeline.py
 │
 ├── model/
-│ ├── base/
-│ ├── lora/
-│ ├── configs/
-│ ├── training/
-│ │ ├── config_loader.py
-│ │ ├── dataset_loader.py
-│ │ └── train_lora.py
-│ │
-│ └── utils/
-│ └── model_loader.py
+│   ├── base/                        # Downloaded Phi-2 weights (gitignored)
+│   ├── lora/                        # Fine-tuned LoRA adapter (gitignored)
+│   ├── training/
+│   │   ├── config_loader.py         # Parses config.yaml → typed CFG singleton
+│   │   ├── dataset_loader.py        # Loads JSONL, applies prompt format
+│   │   └── train_lora.py            # LoRA fine-tuning script
+│   └── utils/
+│       └── model_loader.py          # Shared base model loader (4-bit quant)
 │
 ├── inference/
-│ ├── api/
-│ │ ├── main.py
-│ │ ├── routes.py
-│ │ └── schemas.py
-│ │
-│ ├── engine/
-│ │ ├── model_loader.py
-│ │ ├── generator.py
-│ │ └── prompt_builder.py
-│ │
-│ └── utils/
+│   ├── engine/
+│   │   ├── model_loader.py          # Thin wrapper → model/utils/model_loader
+│   │   ├── prompt_builder.py        # Phi-2 prompt format (shared by train+infer)
+│   │   └── generator.py             # Generation logic
+│   └── api/
+│       ├── main.py                  # FastAPI app, lifespan model loading
+│       ├── routes.py                # /health, /generate endpoints
+│       └── schemas.py               # Pydantic request/response types
 │
-├── extension/
-│ ├── src/
-│ ├── package.json
-│ └── README.md
+├── extension/                       # VS Code extension (TypeScript)
+│   ├── src/
+│   ├── package.json
+│   └── README.md
 │
 ├── experiments/
-│ ├── logs/
-│ ├── outputs/
-│ └── notebooks/
+│   └── test_phi2.py                 # Fine-tuned model output testing
 │
-├── configs/
-│ └── config.yaml
-│
-├── scripts/
 ├── requirements.txt
-├── README.md
-└── Copilot_Instructions.md
+└── README.md
+```
 
 ---
 
-## 🔄 Full Data Pipeline (PHASE 3 CORE)
+## 🔄 Data Pipeline
 
-1. Data Collection
-   - GitHub repository scraping
-   - StackOverflow Q/A extraction
-   - Stored in data/raw/
+The full pipeline runs via a single command:
 
-2. Data Processing
-   - Cleaning invalid/noisy code
-   - Normalizing formatting
-   - Output → data/processed/cleaned/
+```bash
+python -m data.scripts.pipeline
+```
 
-3. Deduplication
-   - Remove duplicate samples
-   - Output → data/processed/deduped/
+Stages:
 
-4. Dataset Formatting
-   - Convert to instruction format JSONL
-   - Output → data/datasets/train.jsonl
+1. **GitHub Scraping** — AST-based function extraction from high-star Python repos, quality scoring per function
+2. **StackOverflow Scraping** — accepted answer extraction, Python code filtering, multi-block support
+3. **Cleaning** — AST validation, length bounds, encoding fixes, noise pattern removal
+4. **Deduplication** — exact hash dedup + Jaccard shingling near-dedup (threshold: 0.85)
+5. **Formatting** — instruction/output JSONL, quality sort, 90/10 train/val split
 
-5. Pipeline Automation
-   - Single command execution via pipeline.py
+Output: `data/datasets/train.jsonl` + `data/datasets/val.jsonl`
 
 ---
 
 ## ⚙️ Configuration
 
-configs/config.yaml
+All settings live in `configs/config.yaml`:
 
-Example:
-
+```yaml
 model:
-  name: "phi-2"
+  name: "microsoft/phi-2"
   max_tokens: 512
 
 training:
   batch_size: 1
   gradient_accumulation: 16
   epochs: 3
+  learning_rate: 0.0002
+  lora_r: 8
+  lora_alpha: 32
+  lora_dropout: 0.05
+  max_seq_length: 384
 
 paths:
   dataset: "./data/datasets/train.jsonl"
+  val_dataset: "./data/datasets/val.jsonl"
   model_output: "./model/lora"
+```
+
+Import anywhere with:
+```python
+from model.training.config_loader import CFG
+print(CFG.model.name)      # microsoft/phi-2
+print(CFG.paths.dataset)   # ./data/datasets/train.jsonl
+```
 
 ---
 
-## 💻 Requirements
+## 🧠 Model
 
+- **Base model**: [microsoft/phi-2](https://huggingface.co/microsoft/phi-2) (~2.7B parameters)
+- **Quantization**: 4-bit NF4 via BitsAndBytes (fits in 4GB VRAM)
+- **Fine-tuning**: LoRA (r=8, alpha=32) via PEFT
+- **Training result**: Loss 1.087 → 0.872 over 115 steps (~6.7 hours on GTX 1650)
+- **Prompt format**:
+  ```
+  Instruct: Write a Python function to check if a number is prime.
+  Output:
+  def is_prime(n):
+      ...
+  ```
+
+---
+
+## 🌐 Inference API
+
+Start the server:
+
+```bash
+uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
+```
+
+Endpoints:
+
+| Method | Route | Description |
+|--------|-------|-------------|
+| GET | `/api/v1/health` | Liveness check |
+| POST | `/api/v1/generate` | Generate Python code |
+
+Example request:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{"instruction": "Write a function to check if a string is a palindrome", "max_tokens": 256, "temperature": 0.2}'
+```
+
+---
+
+## 🔌 VS Code Extension (Phase 6)
+
+The extension lives in `extension/` and is written in TypeScript. It communicates with the local inference API to provide real-time code suggestions inside VS Code.
+
+To develop:
+
+```bash
+cd extension
+npm install
+npm run compile
+```
+
+---
+
+## 💻 Installation
+
+```bash
 pip install -r requirements.txt
+```
+
+Set your API keys in `.env`:
+
+```env
+GITHUB_TOKEN=your_token_here
+HF_HOME=C:\Users\YourName\.cache\huggingface
+```
 
 ---
 
-## 🚀 Development Phases
+## 🧪 Smoke Tests
 
-Phase 1: Structure ✔
-- Project architecture
-- Config system
+```bash
+# Verify config loads
+python -c "from model.training.config_loader import CFG; print(CFG.model.name)"
 
-Phase 2: Model Setup ✔
-- Phi-2 inference working
-- 4-bit quantization
-- Modular engine
+# Verify prompt builder
+python -c "from inference.engine.prompt_builder import build_inference_prompt; print(build_inference_prompt('test'))"
 
-Phase 3: Data Pipeline 🔄 (CURRENT)
-- GitHub scraping
-- StackOverflow scraping
-- Cleaning + deduplication
-- JSONL dataset generation
+# Test fine-tuned model
+python -m experiments.test_phi2
 
-Phase 4: Fine-Tuning
-- LoRA training
-- PEFT optimization
-- Python specialization
-
-Phase 5: Backend
-- FastAPI inference server
-- Model serving layer
-
-Phase 6: VS Code Extension
-- Real-time code suggestions
-- Copilot-like experience
+# Boot the API
+uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
+```
 
 ---
 
-## ⚠️ Constraints
+## ⚠️ Hardware Constraints
 
 - GPU: GTX 1650 (4GB VRAM)
-- Requires 4-bit quantization
-- Small batch training only
-- Efficiency over scale
-
----
-
-## 🧪 Expected Capabilities
-
-- Python code completion
-- Function generation
-- Debugging suggestions
-- Offline AI assistant
-
----
-
-## 🚧 Limitations
-
-- No deep multi-file reasoning
-- Limited context window
-- Dependent on dataset quality
+- 4-bit quantization required for both training and inference
+- batch_size=1 with gradient_accumulation=16
+- Expect ~190s/step during training
 
 ---
 
 ## 🧭 Future Improvements
 
-- Retrieval Augmented Generation (RAG)
-- AST-aware training
-- Reinforcement learning
+- Additional training epochs for lower loss
+- Larger dataset (more repos, more SO tags)
+- RAG (Retrieval Augmented Generation) for codebase-aware suggestions
+- AST-aware context window
 - Multi-language support
-
----
-
-## 📌 Notes
-
-- Dataset quality > model size
-- Keep training and inference separated
-- Avoid hardcoded paths
-- Modular design is mandatory
-- Pipeline is the core intelligence layer
 
 ---
 
 ## 👨‍💻 Author
 
-Alexie1171  
-Project: PY-V  
-Purpose: Experimental Local AI Coding System
+**Alexie1171**
+Project: PY-V
+Purpose: Experimental Local AI Coding Assistant

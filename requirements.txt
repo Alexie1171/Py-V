@@ -13,6 +13,18 @@ bitsandbytes
 # =========================
 fastapi
 uvicorn
+pydantic
+
+# =========================
+# DATA PIPELINE
+# =========================
+requests
+python-dotenv
+
+# =========================
+# CONFIGURATION
+# =========================
+pyyaml
 
 # =========================
 # OPTIONAL (recommended for stability)

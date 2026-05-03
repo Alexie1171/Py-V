@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from inference.api.routes import router
-from inference.engine.model_loader import load_model
+from inference.engine.model_loader import load_lora_model
 from model.training.config_loader import CFG
 
 # ─── Model State ──────────────────────────────────────────────────────────────
@@ -36,9 +36,8 @@ async def lifespan(app: FastAPI):
     """Load model on startup, release on shutdown."""
     global _model, _tokenizer
 
-    print(f"Loading model: {CFG.model.name} ...")
-    _model, _tokenizer = load_model()
-    print("Model loaded. Server ready.")
+    _model, _tokenizer = load_lora_model()
+    print("Server ready.")
 
     yield  # app runs here
 
