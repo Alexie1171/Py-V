@@ -1,0 +1,94 @@
+{
+  "name": "py-v",
+  "displayName": "PY-V — Python AI Assistant",
+  "description": "Local AI-powered Python code generation using your fine-tuned Phi-2 model.",
+  "version": "0.1.0",
+  "publisher": "Alexie1171",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "python",
+    "ai",
+    "code generation",
+    "copilot",
+    "local"
+  ],
+  "activationEvents": [
+    "onLanguage:python"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pyv.generate",
+        "title": "PY-V: Generate Code from Selection"
+      },
+      {
+        "command": "pyv.generateFromInput",
+        "title": "PY-V: Generate Code from Prompt"
+      },
+      {
+        "command": "pyv.checkServer",
+        "title": "PY-V: Check Server Status"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "pyv.generate",
+        "key": "ctrl+shift+g",
+        "mac": "cmd+shift+g",
+        "when": "editorTextFocus && editorLangId == python"
+      },
+      {
+        "command": "pyv.generateFromInput",
+        "key": "ctrl+shift+p",
+        "mac": "cmd+shift+p",
+        "when": "editorTextFocus && editorLangId == python"
+      }
+    ],
+    "configuration": {
+      "title": "PY-V",
+      "properties": {
+        "pyv.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "URL of the PY-V inference server."
+        },
+        "pyv.maxTokens": {
+          "type": "number",
+          "default": 256,
+          "minimum": 16,
+          "maximum": 1024,
+          "description": "Maximum number of tokens to generate."
+        },
+        "pyv.temperature": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0.0,
+          "maximum": 1.0,
+          "description": "Sampling temperature. Lower = more deterministic."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2"
+  }
+}
