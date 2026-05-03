@@ -1,6 +1,6 @@
 # Copilot Instructions for PY-V
 
-## 🧠 Purpose
+## Purpose
 
 This document defines strict behavioral and architectural rules for AI assistants contributing to the PY-V codebase.
 
@@ -12,23 +12,23 @@ It ensures:
 
 ---
 
-## 📌 Current Project Status
+## Current Project Status
 
 | Phase | Description | Status |
 |-------|-------------|--------|
-| Phase 1 | Project structure & architecture | ✅ Complete |
-| Phase 2 | Phi-2 model setup & 4-bit inference | ✅ Complete |
-| Phase 3 | Full data pipeline (scrape → clean → dedupe → format) | ✅ Complete |
-| Phase 4 | LoRA fine-tuning on Python dataset | ✅ Complete |
-| Phase 5 | FastAPI inference server | ✅ Complete |
-| Phase 6 | VS Code extension | ✅ Complete |
-| Phase 7 | Chat system (context-aware assistant + controller) | 🔜 In Progress |
-| Phase 8 | RAG (Retrieval Augmented Generation) | 🔜 Planned |
-| Phase 9 | Multi-LoRA adapters (multi-language support) | 🔜 Planned |
+| Phase 1 | Project structure & architecture | Complete |
+| Phase 2 | Phi-2 model setup & 4-bit inference | Complete |
+| Phase 3 | Full data pipeline (scrape → clean → dedupe → format) | Complete |
+| Phase 4 | LoRA fine-tuning on Python dataset | Complete |
+| Phase 5 | FastAPI inference server | Complete |
+| Phase 6 | VS Code extension | Complete |
+| Phase 7 | Chat system (context-aware assistant + controller) | Complete |
+| Phase 8 | RAG (Retrieval Augmented Generation) | Planned |
+| Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
 
 ---
 
-## 📌 Core Principles
+## Core Principles
 
 ### 1. Modular First Design
 - Every file must have a single responsibility
@@ -62,10 +62,10 @@ All generated code must be optimized for:
 
 ---
 
-## 🧠 Model Constraints
+## Model Constraints
 
 All work is based on:
-- **Phi-2** (Microsoft, ~2.7B parameters)
+- Phi-2 (Microsoft, ~2.7B parameters)
 - Fine-tuned LoRA adapter saved at `model/lora/`
 - Training result: loss 1.087 → 0.872 over 115 steps (1 epoch, GTX 1650)
 
@@ -78,7 +78,7 @@ Rules:
 
 ---
 
-## 📁 File Responsibility Rules
+## File Responsibility Rules
 
 ### `configs/config.yaml`
 - Single source of truth for ALL configuration
@@ -111,8 +111,55 @@ Rules:
 ### `inference/engine/prompt_builder.py`
 - Central prompt formatting for Phi-2
 - Used by BOTH training (`dataset_loader.py`) and inference (`generator.py`)
-- Phi-2 format: `Instruct: {instruction}\nOutput:\n{code}`
+- Prompt format: `### Instruction:\n{instruction}\n\n### Answer:\n{output}`
 - Never define prompt format in any other file
+- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `format_context()`
+- For `explain` and `chat` modes, context history is NOT injected to prevent code pattern bias
+
+---
+
+### `inference/engine/prompt_templates.py`
+- Stores all mode-specific prompt templates
+- Templates use `### Instruction:` / `### Answer:` format throughout
+- Modes: `generate`, `debug`, `explain`, `refactor`, `chat`
+- Never define templates outside this file
+
+---
+
+### `inference/engine/generator.py`
+- Handles raw model generation via `_run_generation()`
+- `generate_from_prompt()` — main entry point used by `chat.py`
+- `remove_code_if_not_allowed()` — strips code from explain/chat outputs
+- Stop-word cleanup uses earliest-match strategy via `apply_stop_words()`
+- Retry logic uses temperature 0.5 on second attempt for chat/explain modes
+- Generation settings: `repetition_penalty=1.1`, `no_repeat_ngram_size=4`
+
+---
+
+### `inference/engine/controller.py`
+- Detects user intent and routes to correct mode
+- Modes: `generate`, `debug`, `explain`, `refactor`, `chat`
+- Keyword-weighted scoring with fallback to `chat` mode
+
+---
+
+### `inference/engine/context_manager.py`
+- Loads and saves session context to `sessions/{session_id}.json`
+- Appends conversation history per turn
+- Updates session state (mode, entities, etc.)
+
+---
+
+### `inference/engine/context_schema.py`
+- Defines `SessionContext` and `ChatTurn` dataclasses
+- No logic — types only
+
+---
+
+### `inference/engine/chat.py`
+- Top-level chat orchestrator
+- Wires together: controller → prompt builder → generator → context manager
+- Single public method: `chat(session_id, user_input)`
 
 ---
 
@@ -145,14 +192,6 @@ Rules:
 
 ---
 
-### `inference/engine/`
-- Model loading (via wrapper)
-- Prompt formatting
-- Generation logic
-- Must be lightweight and GPU efficient
-
----
-
 ### `inference/api/`
 - FastAPI routes only (`main.py`, `routes.py`, `schemas.py`)
 - No heavy logic inside endpoints
@@ -172,7 +211,7 @@ Rules:
 
 ---
 
-## 🔄 Data Pipeline Rules
+## Data Pipeline Rules
 
 Pipeline flow:
 
@@ -180,16 +219,16 @@ Pipeline flow:
 Scraping → Cleaning → Deduplication → Formatting → Dataset
 ```
 
-- `github_scraper.py` → AST-based function extraction, quality scoring
-- `stackoverflow_scraper.py` → accepted answer extraction, Python filtering
-- `cleaner.py` → AST validation, length bounds, noise removal
-- `dedupe.py` → exact hash dedup + Jaccard near-dedup (threshold 0.85)
-- `formatter.py` → instruction/output format, 90/10 train/val split
-- `pipeline.py` → orchestrates all stages with checkpoint support
+- `github_scraper.py` — AST-based function extraction, quality scoring
+- `stackoverflow_scraper.py` — accepted answer extraction, Python filtering
+- `cleaner.py` — AST validation, length bounds, noise removal
+- `dedupe.py` — exact hash dedup + Jaccard near-dedup (threshold 0.85)
+- `formatter.py` — instruction/output format, 90/10 train/val split
+- `pipeline.py` — orchestrates all stages with checkpoint support
 
 ---
 
-## 📊 Dataset Format (STRICT)
+## Dataset Format (STRICT)
 
 All training data must follow:
 
@@ -212,7 +251,7 @@ Rules:
 
 ---
 
-## ⚙️ Training Rules
+## Training Rules
 
 - Always use LoRA fine-tuning (`peft.LoraConfig`)
 - Always use 4-bit quantization (`BitsAndBytesConfig`)
@@ -223,30 +262,42 @@ Rules:
 
 ---
 
-## 🌐 API Rules
+## API Rules
 
 - FastAPI app entry point: `inference/api/main.py`
 - Run with: `uvicorn inference.api.main:app --host 0.0.0.0 --port 8000`
-- Routes: `GET /api/v1/health`, `POST /api/v1/generate`
+- Routes: `GET /api/v1/health`, `POST /api/v1/generate`, `POST /api/v1/chat`
 - Model loads once at startup via lifespan — never per request
 - LoRA adapter applied on top of base model via `load_lora_model()` before serving
 
 ---
 
-## 🔌 VS Code Extension Rules
+## VS Code Extension Rules
 
 - Lives entirely in `extension/`
 - Written in TypeScript
 - Three commands: `pyv.generate`, `pyv.generateFromInput`, `pyv.checkServer`
 - Keybindings: `Ctrl+Shift+G` (generate), `Ctrl+Shift+P` (prompt input)
-- Status bar item shows live server state: `⟡ PY-V`, `⟡ PY-V ✔`, `⟡ PY-V ✖`
+- Status bar item shows live server state: `PY-V`, `PY-V OK`, `PY-V ERR`
 - Instruction extraction priority: selected text → `#` comment on current line
 - Calls `POST http://localhost:8000/api/v1/generate`
 - Must handle ECONNREFUSED and timeout errors gracefully
 
 ---
 
-## 🚫 Forbidden Actions
+## Chat System Rules (Phase 7)
+
+- Entry point: `inference/engine/chat.py` — `ChatEngine.chat()`
+- Controller detects mode from user input keywords
+- Context history is stored per session in `sessions/`
+- History is injected into `generate`, `debug`, `refactor` prompts only
+- History is NOT injected into `explain` or `chat` prompts to prevent code bias
+- Retry on empty output uses temperature 0.5 (not 0.2) for chat/explain modes
+- Code removal filter applies only to `chat` and `explain` mode outputs
+
+---
+
+## Forbidden Actions
 
 AI MUST NOT:
 - Train models from scratch
@@ -256,12 +307,14 @@ AI MUST NOT:
 - Hardcode file paths
 - Duplicate model loading logic
 - Define prompt format outside `prompt_builder.py`
+- Define prompt templates outside `prompt_templates.py`
 - Add heavy logic inside FastAPI route handlers
 - Write extension logic in Python
+- Inject context history into explain or chat mode prompts
 
 ---
 
-## ✅ Expected Behaviors
+## Expected Behaviors
 
 AI SHOULD:
 - Always import `CFG` for any path or config value
@@ -273,7 +326,7 @@ AI SHOULD:
 
 ---
 
-## 🧪 Smoke Tests
+## Smoke Tests
 
 ```bash
 # Config wiring
@@ -285,6 +338,9 @@ python -c "from inference.engine.prompt_builder import build_inference_prompt; p
 # Fine-tuned model output
 python -m experiments.test_phi2
 
+# Chat system
+python test_chat.py
+
 # API boot (serves LoRA model)
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 
@@ -295,23 +351,23 @@ cd extension && npm install && npm run compile
 
 ---
 
-## 🧭 System Workflow
+## System Workflow
 
 ```
 Data → Processing → Dataset → Training → Inference API → VS Code Extension
+                                                      → Chat System
 ```
 
 No step should be skipped or merged incorrectly.
 
 ---
 
-## ⚠️ Final Rule
+## Final Rule
 
-If uncertain:
-Always choose modularity, simplicity, and low-resource efficiency.
+If uncertain: always choose modularity, simplicity, and low-resource efficiency.
 
 ---
 
-## 📌 Authority
+## Authority
 
 This document is mandatory. All AI-generated code must comply.
