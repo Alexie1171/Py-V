@@ -37,3 +37,9 @@ tqdm
 # DEV / DEBUGGING
 # =========================
 ipython
+
+# =========================
+# RAG
+# =========================
+faiss-cpu
+sentence-transformers
