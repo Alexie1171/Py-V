@@ -76,6 +76,9 @@ PY-V/
 +-- retrieval/                  (Phase 8)
 |   +-- indexer.py
 |   +-- retriever.py
+|   +-- chunker.py
+|   +-- embedder.py
+|   +-- vector_store.py
 |
 +-- extension/
 +-- experiments/
