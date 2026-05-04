@@ -1,7 +1,7 @@
 """
 github_scraper.py — PY-V Data Pipeline
-Upgraded v3: Auth support, branch fallback, AST-based function extraction,
-             repo discovery, metadata tagging, rate-limit awareness, blacklist.
+Upgraded v4: Raised min function length, increased max_functions_per_repo
+             for larger repos, tightened docstring quality check.
 """
 
 import os
@@ -16,35 +16,32 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# ─── Config ───────────────────────────────────────────────────────────────────
-
 RAW_URL  = "https://raw.githubusercontent.com"
 API_BASE = "https://api.github.com"
 BRANCHES = ["main", "master", "develop"]
 
-# Repos that are too large or irrelevant — skip these entirely
 REPO_BLACKLIST = {
-    "tensorflow/models",        # freezes — too many files
-    "keras-team/keras",         # same issue
-    "home-assistant/core",      # 16k+ Python files
-    "pytorch/pytorch",          # 4k+ files, very slow
-    "langchain-ai/langchain",   # 2.5k files, mostly not useful functions
-    "fighting41love/funNLP",    # 0 samples extracted
-    "EbookFoundation/free-programming-books",  # not code
-    "vinta/awesome-python",     # not code
-    "521xueweihan/HelloGitHub",  # not code
+    "tensorflow/models",
+    "keras-team/keras",
+    "home-assistant/core",
+    "pytorch/pytorch",
+    "langchain-ai/langchain",
+    "fighting41love/funNLP",
+    "EbookFoundation/free-programming-books",
+    "vinta/awesome-python",
+    "521xueweihan/HelloGitHub",
 }
+
+# Raised from 50 — pre-filters stubs before they reach the cleaner
+MIN_FUNCTION_LENGTH = 100
 
 
 def get_headers() -> dict:
-    """Always read token fresh from env so .env is respected at call time."""
     token = os.getenv("GITHUB_TOKEN", "")
     return {"Authorization": f"token {token}"} if token else {}
 
-# ─── Rate Limit Guard ─────────────────────────────────────────────────────────
 
 def check_rate_limit():
-    """Log remaining GitHub API quota. Sleep if critically low."""
     r = requests.get(f"{API_BASE}/rate_limit", headers=get_headers())
     if r.status_code != 200:
         return
@@ -56,10 +53,8 @@ def check_rate_limit():
         logger.warning(f"Rate limit low. Sleeping {int(wait)}s...")
         time.sleep(wait)
 
-# ─── Repo Tree ────────────────────────────────────────────────────────────────
 
 def get_repo_tree(owner: str, repo: str) -> tuple:
-    """Fetch recursive file tree, trying multiple branches."""
     for branch in BRANCHES:
         url = f"{API_BASE}/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
         r   = requests.get(url, headers=get_headers(), timeout=15)
@@ -72,17 +67,14 @@ def get_repo_tree(owner: str, repo: str) -> tuple:
 
 
 def extract_python_paths(tree: dict) -> list:
-    """Return all .py file paths from a repo tree."""
     return [
         item["path"]
         for item in tree.get("tree", [])
         if item["path"].endswith(".py") and item["type"] == "blob"
     ]
 
-# ─── File Fetching ────────────────────────────────────────────────────────────
 
 def get_file_content(owner: str, repo: str, branch: str, file_path: str) -> str | None:
-    """Fetch raw content of a single file."""
     url = f"{RAW_URL}/{owner}/{repo}/{branch}/{file_path}"
     r   = requests.get(url, headers=get_headers(), timeout=10)
     if r.status_code == 200:
@@ -90,13 +82,8 @@ def get_file_content(owner: str, repo: str, branch: str, file_path: str) -> str 
     logger.warning(f"Failed to fetch {file_path} ({r.status_code})")
     return None
 
-# ─── AST Extraction ───────────────────────────────────────────────────────────
 
 def extract_functions_from_source(source: str) -> list:
-    """
-    Parse Python source with AST and extract individual functions.
-    Returns list of dicts with name, docstring, args, and full source.
-    """
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -109,13 +96,18 @@ def extract_functions_from_source(source: str) -> list:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
 
-        if len(node.body) < 2 and not ast.get_docstring(node):
+        # Skip trivial bodies — must have at least 3 statements
+        if len(node.body) < 3 and not ast.get_docstring(node):
             continue
 
         start       = node.lineno - 1
         end         = node.end_lineno
         func_source = "\n".join(lines[start:end])
         args        = [arg.arg for arg in node.args.args]
+
+        # Pre-filter short functions before they reach the cleaner
+        if len(func_source.strip()) < MIN_FUNCTION_LENGTH:
+            continue
 
         functions.append({
             "name":      node.name,
@@ -128,13 +120,14 @@ def extract_functions_from_source(source: str) -> list:
 
 
 def is_good_docstring(text: str) -> bool:
-    """Return True only if a docstring line makes a useful instruction."""
     t = text.strip()
-    if len(t) < 15:
+    if len(t) < 20:          # raised from 15
         return False
-    if t.startswith(":"):   # :rtype:, :param:, etc.
+    if t.startswith(":"):
         return False
-    if t.startswith(".."):  # RST directives
+    if t.startswith(".."):
+        return False
+    if t.lower().startswith("todo"):
         return False
     return True
 
@@ -145,13 +138,9 @@ def build_samples_from_functions(
     owner:     str,
     repo:      str,
 ) -> list:
-    """Convert extracted functions into instruction-output training pairs."""
     samples = []
 
     for fn in functions:
-        if len(fn["source"].strip()) < 50:
-            continue
-
         if fn["docstring"]:
             first_line = fn["docstring"].strip().splitlines()[0].strip()
             if is_good_docstring(first_line):
@@ -182,14 +171,12 @@ def build_samples_from_functions(
 
     return samples
 
-# ─── Repo Discovery ───────────────────────────────────────────────────────────
 
 def search_python_repos(
-    min_stars: int = 500,
+    min_stars: int = 300,
     per_page:  int = 10,
     page:      int = 1,
 ) -> list:
-    """Discover high-quality Python repos via GitHub search API."""
     url    = f"{API_BASE}/search/repositories"
     params = {
         "q":        f"language:python stars:>{min_stars}",
@@ -206,15 +193,13 @@ def search_python_repos(
     items = r.json().get("items", [])
     return [(item["owner"]["login"], item["name"]) for item in items]
 
-# ─── Main Fetch ───────────────────────────────────────────────────────────────
 
 def fetch_repo_samples(
     owner:         str,
     repo:          str,
-    max_files:     int = 20,
-    max_functions: int = 50,
+    max_files:     int = 30,    # was 20
+    max_functions: int = 100,   # was 50 — gets more from large repos
 ) -> list:
-    """Full pipeline for one repo: tree → python files → AST → samples."""
     check_rate_limit()
 
     tree, branch = get_repo_tree(owner, repo)
@@ -252,12 +237,11 @@ def fetch_repo_samples(
 def fetch_multiple_repos(
     repos:                  list | None = None,
     use_discovery:          bool = True,
-    discovery_stars:        int  = 500,
-    discovery_pages:        int  = 2,
-    max_files_per_repo:     int  = 20,
-    max_functions_per_repo: int  = 50,
+    discovery_stars:        int  = 300,
+    discovery_pages:        int  = 10,
+    max_files_per_repo:     int  = 30,
+    max_functions_per_repo: int  = 100,
 ) -> list:
-    """Scrape multiple repos. Optionally auto-discover via search API."""
     if repos is None:
         repos = []
 
@@ -271,7 +255,6 @@ def fetch_multiple_repos(
             repos.extend(discovered)
             logger.info(f"Discovered {len(discovered)} repos on page {page}")
 
-    # Deduplicate and apply blacklist
     seen  = set()
     clean = []
     for owner, repo in repos:
@@ -302,27 +285,34 @@ def fetch_multiple_repos(
     logger.info(f"Total samples collected: {len(all_samples)}")
     return all_samples
 
-# ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     manual_repos = [
-        ("psf",        "requests"),
-        ("pallets",    "flask"),
-        ("tiangolo",   "fastapi"),
-        ("scrapy",     "scrapy"),
-        ("sqlalchemy", "sqlalchemy"),
-        ("encode",     "httpx"),
-        ("pytest-dev", "pytest"),
-        ("numpy",      "numpy"),
+        ("psf",          "requests"),
+        ("pallets",      "flask"),
+        ("tiangolo",     "fastapi"),
+        ("scrapy",       "scrapy"),
+        ("sqlalchemy",   "sqlalchemy"),
+        ("encode",       "httpx"),
+        ("pytest-dev",   "pytest"),
+        ("numpy",        "numpy"),
+        ("pandas-dev",   "pandas"),
+        ("scikit-learn", "scikit-learn"),
+        ("aio-libs",     "aiohttp"),
+        ("django",       "django"),
+        ("celery",       "celery"),
+        ("pydantic",     "pydantic"),
+        ("python-attrs", "attrs"),
+        ("paramiko",     "paramiko"),
     ]
 
     dataset = fetch_multiple_repos(
         repos=manual_repos,
         use_discovery=True,
-        discovery_stars=500,
-        discovery_pages=5,
-        max_files_per_repo=20,
-        max_functions_per_repo=50,
+        discovery_stars=300,
+        discovery_pages=10,
+        max_files_per_repo=30,
+        max_functions_per_repo=100,
     )
 
     print(f"\nTotal samples: {len(dataset)}")

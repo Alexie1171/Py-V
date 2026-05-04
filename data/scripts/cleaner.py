@@ -1,7 +1,7 @@
 """
 cleaner.py — PY-V Data Pipeline
-Upgraded v2: AST validation, encoding fixes, length bounds,
-             whitespace normalization, quality heuristics.
+Upgraded v3: Tighter quality gates — higher min length, stricter Python
+             signal requirements, docstring bonus, more noise patterns.
 """
 
 import re
@@ -14,21 +14,36 @@ logger = logging.getLogger(__name__)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-MIN_CODE_LENGTH  = 50       # chars — below this is almost certainly noise
-MAX_CODE_LENGTH  = 8000     # chars — above this is too large for training
-MIN_LINE_COUNT   = 3        # lines
+MIN_CODE_LENGTH  = 100      # was 50 — filters out trivial one-liners
+MAX_CODE_LENGTH  = 8000     # chars
+MIN_LINE_COUNT   = 5        # was 3 — requires at least a meaningful body
 MAX_LINE_COUNT   = 200      # lines
 
+# Require at least this many distinct Python signals to pass
+MIN_PYTHON_SIGNAL_COUNT = 2
+
 PYTHON_SIGNALS   = [
-    "def ", "class ", "import ", "return ",
-    "self.", "print(", "if __name__",
+    "def ",
+    "class ",
+    "import ",
+    "return ",
+    "self.",
+    "print(",
+    "if __name__",
+    "raise ",
+    "yield ",
+    "with ",
+    "assert ",
+    "lambda ",
 ]
 
+# Patterns that indicate low-quality or incomplete code
 NOISE_PATTERNS   = [
     r"^#+\s",                   # markdown headers
     r"^\s*```",                 # markdown fences
     r"^\s*\.\.\.",              # ellipsis-only lines
     r"^(TODO|FIXME|HACK|XXX)",  # unfinished stubs
+    r"^pass\s*$",               # bare pass with nothing else
 ]
 
 # ─── Text Cleaning ────────────────────────────────────────────────────────────
@@ -36,20 +51,20 @@ NOISE_PATTERNS   = [
 def strip_html(text: str) -> str:
     """Remove HTML tags and decode entities."""
     text = re.sub(r"<[^>]+>", "", text)
-    return unescape(text)
+    return unescape(text).strip()
 
 
 def fix_encoding(text: str) -> str:
     """Fix common encoding artifacts."""
     replacements = {
-        "\u2019": "'",   # right single quote
-        "\u2018": "'",   # left single quote
-        "\u201c": '"',   # left double quote
-        "\u201d": '"',   # right double quote
-        "\u2013": "-",   # en dash
-        "\u2014": "--",  # em dash
-        "\r\n":   "\n",  # Windows line endings
-        "\r":     "\n",  # old Mac line endings
+        "\u2019": "'",
+        "\u2018": "'",
+        "\u201c": '"',
+        "\u201d": '"',
+        "\u2013": "-",
+        "\u2014": "--",
+        "\r\n":   "\n",
+        "\r":     "\n",
     }
     for bad, good in replacements.items():
         text = text.replace(bad, good)
@@ -61,12 +76,11 @@ def normalize_whitespace(text: str) -> str:
     Normalize indentation to 4-space standard.
     Strips trailing whitespace per line, removes excessive blank lines.
     """
-    lines    = text.splitlines()
-    cleaned  = [line.rstrip() for line in lines]
+    lines   = text.splitlines()
+    cleaned = [line.rstrip() for line in lines]
 
-    # Collapse 3+ consecutive blank lines into 2
-    result   = []
-    blanks   = 0
+    result  = []
+    blanks  = 0
     for line in cleaned:
         if line == "":
             blanks += 1
@@ -91,14 +105,19 @@ def clean_instruction(text: str) -> str:
     """Clean a natural-language instruction string."""
     text = strip_html(text)
     text = fix_encoding(text)
-    text = re.sub(r"\s+", " ", text)   # collapse internal whitespace
+    text = re.sub(r"\s+", " ", text)
     return text.strip()
 
 # ─── Validation ───────────────────────────────────────────────────────────────
 
-def has_python_signals(code: str) -> bool:
-    """Check if code looks like Python (not SQL, JS, shell, etc.)."""
-    return any(signal in code for signal in PYTHON_SIGNALS)
+def count_python_signals(code: str) -> int:
+    """Count how many distinct Python signals appear in the code."""
+    return sum(1 for signal in PYTHON_SIGNALS if signal in code)
+
+
+def has_docstring(code: str) -> bool:
+    """Return True if the code contains a docstring."""
+    return '"""' in code or "'''" in code
 
 
 def is_parseable(code: str) -> bool:
@@ -117,6 +136,23 @@ def has_noise_lines(code: str) -> bool:
             if re.match(pattern, line):
                 return True
     return False
+
+
+def has_meaningful_body(code: str) -> bool:
+    """
+    Return True if the code has substance beyond just a signature.
+    Rejects functions that are only a signature + pass/return None.
+    """
+    lines = [l.strip() for l in code.splitlines() if l.strip()]
+    body_lines = [
+        l for l in lines
+        if not l.startswith("def ")
+        and not l.startswith("@")
+        and not l.startswith('"""')
+        and not l.startswith("'''")
+        and l not in ("pass", "...", "return", "return None")
+    ]
+    return len(body_lines) >= 3
 
 
 def is_valid_sample(sample: dict) -> tuple[bool, str]:
@@ -143,8 +179,9 @@ def is_valid_sample(sample: dict) -> tuple[bool, str]:
     if len(lines) > MAX_LINE_COUNT:
         return False, f"too many lines ({len(lines)})"
 
-    if not has_python_signals(code):
-        return False, "no Python signals detected"
+    signal_count = count_python_signals(code)
+    if signal_count < MIN_PYTHON_SIGNAL_COUNT:
+        return False, f"too few Python signals ({signal_count})"
 
     if not is_parseable(code):
         return False, "AST parse failed (syntax error)"
@@ -152,29 +189,57 @@ def is_valid_sample(sample: dict) -> tuple[bool, str]:
     if has_noise_lines(code):
         return False, "contains markdown or stub noise"
 
-    if len(instruction.strip()) < 10:
+    if not has_meaningful_body(code):
+        return False, "body too trivial (stub or pass-only)"
+
+    if len(instruction.strip()) < 15:
         return False, "instruction too short"
 
     return True, ""
+
+# ─── Quality Scoring ─────────────────────────────────────────────────────────
+
+def compute_quality_score(sample: dict) -> float:
+    """
+    Compute a quality score for a sample.
+    Higher is better. Used by formatter to sort and prioritise.
+    """
+    code  = sample.get("output", "")
+    lines = code.splitlines()
+
+    score = 0.0
+    score += min(len(lines) / 15, 3.0)          # length reward (capped)
+    score += code.count("def ") * 0.5            # function definitions
+    score += code.count("#") * 0.15              # inline comments
+    score += 0.5 if has_docstring(code) else 0   # docstring bonus
+    score += count_python_signals(code) * 0.1    # Python signal density
+    score -= code.count("...") * 0.5             # ellipsis = incomplete
+    score -= code.count("TODO") * 0.4
+    score -= code.count("pass") * 0.3            # bare pass = stub
+
+    return round(score, 2)
 
 # ─── Batch Cleaning ───────────────────────────────────────────────────────────
 
 def clean_dataset(samples: list[dict]) -> list[dict]:
     """
     Run the full clean + validate pipeline over a list of samples.
+    Attaches a quality score to each sample's metadata.
     Returns only valid, cleaned samples.
     """
     cleaned  = []
     rejected = 0
 
     for sample in samples:
-        # Clean fields in place
         sample["output"]      = clean_code(sample.get("output", ""))
         sample["instruction"] = clean_instruction(sample.get("instruction", ""))
 
         valid, reason = is_valid_sample(sample)
 
         if valid:
+            if "metadata" not in sample:
+                sample["metadata"] = {}
+            sample["metadata"]["code_score"] = compute_quality_score(sample)
             cleaned.append(sample)
         else:
             rejected += 1

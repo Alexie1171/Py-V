@@ -1,7 +1,7 @@
 """
 formatter.py — PY-V Data Pipeline
-Upgraded v2: Validation before formatting, train/val split,
-             shuffling, JSONL output, quality score sorting.
+Upgraded v3: Minimum quality score filter added on top of v2.
+             Drops samples below MIN_CODE_SCORE after cleaning.
 """
 
 import json
@@ -14,8 +14,13 @@ logger = logging.getLogger(__name__)
 
 # ─── Config ───────────────────────────────────────────────────────────────────
 
-DEFAULT_VAL_SPLIT  = 0.1     # 10% for validation
-DEFAULT_SEED       = 42      # reproducibility
+DEFAULT_VAL_SPLIT  = 0.1
+DEFAULT_SEED       = 42
+
+# Minimum quality score to include a sample in the final dataset.
+# Samples below this are too short, lack comments, or are stub-like.
+# Raise this to get a smaller but higher-quality dataset.
+MIN_CODE_SCORE     = 1.0
 
 # ─── Formatting ───────────────────────────────────────────────────────────────
 
@@ -29,7 +34,6 @@ def format_sample(sample: dict) -> dict | None:
     if not output:
         return None
 
-    # Support both field name conventions
     instruction = (
         sample.get("instruction")
         or sample.get("input")
@@ -44,7 +48,6 @@ def format_sample(sample: dict) -> dict | None:
         "output":      output,
     }
 
-    # Carry metadata through if present
     if "metadata" in sample:
         formatted["metadata"] = sample["metadata"]
 
@@ -52,31 +55,43 @@ def format_sample(sample: dict) -> dict | None:
 
 
 def format_dataset(samples: list[dict]) -> list[dict]:
-    """Format and validate all samples. Drops malformed ones."""
-    formatted = []
-    dropped   = 0
+    """
+    Format, validate, and apply minimum quality score filter.
+    Drops samples with no metadata score or score below MIN_CODE_SCORE.
+    """
+    formatted  = []
+    dropped    = 0
+    low_quality = 0
 
     for sample in samples:
         result = format_sample(sample)
-        if result:
-            formatted.append(result)
-        else:
+        if not result:
             dropped += 1
+            continue
 
-    logger.info(f"Formatted: {len(formatted)} valid, {dropped} dropped")
+        # Apply quality score gate
+        score = result.get("metadata", {}).get("code_score", 0.0)
+        if score < MIN_CODE_SCORE:
+            low_quality += 1
+            continue
+
+        formatted.append(result)
+
+    logger.info(
+        f"Formatted: {len(formatted)} valid, "
+        f"{dropped} malformed dropped, "
+        f"{low_quality} below quality threshold (score < {MIN_CODE_SCORE})"
+    )
     return formatted
 
 # ─── Splitting ────────────────────────────────────────────────────────────────
 
 def shuffle_and_split(
-    samples:    list[dict],
-    val_split:  float = DEFAULT_VAL_SPLIT,
-    seed:       int   = DEFAULT_SEED,
+    samples:   list[dict],
+    val_split: float = DEFAULT_VAL_SPLIT,
+    seed:      int   = DEFAULT_SEED,
 ) -> tuple[list[dict], list[dict]]:
-    """
-    Shuffle samples (with fixed seed for reproducibility),
-    then split into train / val sets.
-    """
+    """Shuffle with fixed seed and split into train/val."""
     random.seed(seed)
     shuffled = samples.copy()
     random.shuffle(shuffled)
@@ -91,10 +106,7 @@ def shuffle_and_split(
 # ─── Quality Sorting ─────────────────────────────────────────────────────────
 
 def sort_by_quality(samples: list[dict]) -> list[dict]:
-    """
-    Sort samples by code_score in metadata (descending).
-    Falls back to code length if no score present.
-    """
+    """Sort samples by code_score descending. Falls back to code length."""
     def quality_key(s: dict) -> float:
         meta = s.get("metadata", {})
         if "code_score" in meta:
@@ -121,17 +133,15 @@ def save_jsonl(samples: list[dict], path: str) -> None:
 # ─── Main Pipeline ────────────────────────────────────────────────────────────
 
 def run_formatter(
-    input_path:  str   = "data/processed/deduped/deduped.json",
-    train_path:  str   = "data/datasets/train.jsonl",
-    val_path:    str   = "data/datasets/val.jsonl",
-    val_split:   float = DEFAULT_VAL_SPLIT,
-    seed:        int   = DEFAULT_SEED,
-    sort_quality: bool = True,
+    input_path:   str   = "data/processed/deduped/deduped.json",
+    train_path:   str   = "data/datasets/train.jsonl",
+    val_path:     str   = "data/datasets/val.jsonl",
+    val_split:    float = DEFAULT_VAL_SPLIT,
+    seed:         int   = DEFAULT_SEED,
+    sort_quality: bool  = True,
 ) -> None:
-    """Full formatting pipeline: load → format → sort → split → save."""
-
-    raw      = load_json(input_path)
-    samples  = format_dataset(raw)
+    raw     = load_json(input_path)
+    samples = format_dataset(raw)
 
     if sort_quality:
         samples = sort_by_quality(samples)

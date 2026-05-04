@@ -1,7 +1,7 @@
 """
 stackoverflow_scraper.py — PY-V Data Pipeline
-Upgraded v3: Accepted answer fetching, HTML cleaning, Python code filtering,
-             multi-block extraction, quality scoring, dedup guard.
+Upgraded v4: Raised minimum code score to match formatter threshold,
+             added minimum line count gate, tightened Python signal check.
 """
 
 import re
@@ -15,70 +15,60 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-# ─── Config ───────────────────────────────────────────────────────────────────
-
 API_BASE = "https://api.stackexchange.com/2.3"
-SO_KEY   = ""   # Optional: set your StackExchange API key for higher quota
+SO_KEY   = ""
 
-# Python keywords used to filter genuine Python code blocks
 PYTHON_SIGNALS = [
     "def ", "import ", "class ", "print(", "self.",
     "return ", "if __name__", "lambda ", "range(",
     "len(", "isinstance(", "dict(", "list(", "tuple(",
+    "raise ", "yield ", "with ", "assert ",
 ]
 
-# ─── HTML & Code Cleaning ─────────────────────────────────────────────────────
+# Match the formatter's MIN_CODE_SCORE so SO samples face the same bar
+MIN_CODE_SCORE   = 1.0
+MIN_CODE_LINES   = 5      # mirror cleaner's MIN_LINE_COUNT
+MIN_CODE_LENGTH  = 100    # mirror cleaner's MIN_CODE_LENGTH
+
 
 def clean_html(text: str) -> str:
-    """Strip all HTML tags and decode entities."""
     text = re.sub(r"<[^>]+>", "", text)
     return unescape(text).strip()
 
 
 def extract_code_blocks(html: str) -> list[str]:
-    """
-    Extract all <code> blocks. Prefer <pre><code> (multi-line) over
-    inline <code> (usually single tokens).
-    """
-    # Multi-line blocks inside <pre> — highest priority
-    pre_blocks = re.findall(r"<pre[^>]*><code[^>]*>(.*?)</code></pre>", html, re.DOTALL)
-
-    # Fallback: bare <code> tags
+    pre_blocks    = re.findall(r"<pre[^>]*><code[^>]*>(.*?)</code></pre>", html, re.DOTALL)
     inline_blocks = re.findall(r"<code>(.*?)</code>", html, re.DOTALL)
-
     blocks = pre_blocks if pre_blocks else inline_blocks
     return [unescape(b).strip() for b in blocks]
 
 
 def is_python_code(code: str) -> bool:
-    """Heuristic check: does this code block look like Python?"""
-    return any(signal in code for signal in PYTHON_SIGNALS)
+    """Require at least 2 Python signals — stricter than before."""
+    hits = sum(1 for signal in PYTHON_SIGNALS if signal in code)
+    return hits >= 2
 
 
 def score_code_block(code: str) -> float:
     """
-    Simple quality score for a code block.
+    Quality score aligned with cleaner.compute_quality_score().
     Higher = better training sample.
     """
     score = 0.0
     lines = code.strip().splitlines()
 
-    score += min(len(lines) / 10, 3.0)          # length reward (up to 3 pts)
-    score += code.count("def ") * 0.5            # function definitions
-    score += code.count("#") * 0.2               # comments
-    score += code.count('"""') * 0.3             # docstrings
-    score -= code.count("...") * 0.5             # ellipsis = incomplete code
-    score -= code.count("TODO") * 0.3
+    score += min(len(lines) / 15, 3.0)
+    score += code.count("def ") * 0.5
+    score += code.count("#") * 0.15
+    score += 0.5 if ('"""' in code or "'''" in code) else 0
+    score -= code.count("...") * 0.5
+    score -= code.count("TODO") * 0.4
+    score -= code.count("pass") * 0.3
 
     return round(score, 2)
 
-# ─── Accepted Answer Fetching ─────────────────────────────────────────────────
 
 def fetch_accepted_answers(answer_ids: list[int]) -> dict[int, str]:
-    """
-    Batch-fetch answer bodies for a list of answer IDs.
-    Returns {answer_id: body_html}.
-    """
     if not answer_ids:
         return {}
 
@@ -100,16 +90,14 @@ def fetch_accepted_answers(answer_ids: list[int]) -> dict[int, str]:
         for item in r.json().get("items", [])
     }
 
-# ─── Question Fetching ────────────────────────────────────────────────────────
 
 def fetch_questions(
-    tag:      str = "python",
-    pagesize: int = 20,
-    page:     int = 1,
-    sort:     str = "votes",
-    min_score: int = 5,
+    tag:       str = "python",
+    pagesize:  int = 20,
+    page:      int = 1,
+    sort:      str = "votes",
+    min_score: int = 3,
 ) -> list[dict]:
-    """Fetch high-voted Python questions with bodies."""
     url    = f"{API_BASE}/questions"
     params = {
         "order":    "desc",
@@ -130,17 +118,12 @@ def fetch_questions(
     items = r.json().get("items", [])
     return [q for q in items if q.get("score", 0) >= min_score]
 
-# ─── Sample Building ──────────────────────────────────────────────────────────
 
 def build_samples_from_question(
-    question:       dict,
-    answer_bodies:  dict[int, str],
-    seen_codes:     set,
+    question:      dict,
+    answer_bodies: dict[int, str],
+    seen_codes:    set,
 ) -> list[dict]:
-    """
-    Build training samples from a question + its accepted answer.
-    Returns multiple samples if answer has multiple good code blocks.
-    """
     title       = clean_html(question.get("title", ""))
     q_body      = question.get("body", "")
     answer_id   = question.get("accepted_answer_id")
@@ -149,15 +132,16 @@ def build_samples_from_question(
     if not answer_body:
         return []
 
-    # Extract and score all code blocks from the answer
-    raw_blocks = extract_code_blocks(answer_body)
-    answer_text = clean_html(answer_body)   # clean prose explanation
-
-    samples = []
+    raw_blocks  = extract_code_blocks(answer_body)
+    answer_text = clean_html(answer_body)
+    samples     = []
 
     for code in raw_blocks:
-        # Quality gates
-        if len(code) < 40:
+        # Length and line count gates — mirrors cleaner thresholds
+        if len(code) < MIN_CODE_LENGTH:
+            continue
+        lines = code.strip().splitlines()
+        if len(lines) < MIN_CODE_LINES:
             continue
         if not is_python_code(code):
             continue
@@ -165,12 +149,11 @@ def build_samples_from_question(
             continue
 
         score = score_code_block(code)
-        if score < 0.5:
+        if score < MIN_CODE_SCORE:
             continue
 
         seen_codes.add(code)
 
-        # Build the instruction from title + question context codes
         q_codes = extract_code_blocks(q_body)
         context = ""
         if q_codes:
@@ -179,8 +162,6 @@ def build_samples_from_question(
                 context = f"\n\nContext from question:\n```python\n{best_q_code}\n```"
 
         instruction = f"{title}{context}"
-
-        # Include prose explanation if available
         explanation = answer_text[:500].strip() if answer_text else ""
 
         samples.append({
@@ -199,19 +180,13 @@ def build_samples_from_question(
 
     return samples
 
-# ─── Main Fetch ───────────────────────────────────────────────────────────────
 
 def fetch_stackoverflow_samples(
     tags:        list[str] = None,
-    pages:       int = 3,
+    pages:       int = 20,
     pagesize:    int = 20,
-    min_q_score: int = 5,
+    min_q_score: int = 3,
 ) -> list[dict]:
-    """
-    Full pipeline:
-    questions → accepted answer IDs → batch fetch answers
-    → extract + filter code → build training samples
-    """
     if tags is None:
         tags = ["python", "python-3.x"]
 
@@ -233,8 +208,7 @@ def fetch_stackoverflow_samples(
             if not questions:
                 break
 
-            # Collect only questions with an accepted answer
-            answered = [q for q in questions if q.get("accepted_answer_id")]
+            answered   = [q for q in questions if q.get("accepted_answer_id")]
             answer_ids = [q["accepted_answer_id"] for q in answered]
 
             answer_bodies = fetch_accepted_answers(answer_ids)
@@ -243,22 +217,19 @@ def fetch_stackoverflow_samples(
                 samples = build_samples_from_question(question, answer_bodies, seen_codes)
                 all_samples.extend(samples)
 
-            time.sleep(1.0)   # respect API rate limits
+            time.sleep(1.0)
 
-    # Sort by code quality score descending
     all_samples.sort(key=lambda s: s["metadata"]["code_score"], reverse=True)
-
     logger.info(f"Total SO samples collected: {len(all_samples)}")
     return all_samples
 
-# ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     dataset = fetch_stackoverflow_samples(
         tags=["python", "python-3.x"],
-        pages=3,
+        pages=20,
         pagesize=20,
-        min_q_score=10,
+        min_q_score=3,
     )
 
     print(f"\nTotal samples: {len(dataset)}")

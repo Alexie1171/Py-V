@@ -27,6 +27,7 @@ experiments/outputs/
 model/base/
 model/lora/
 model/lora_epoch1_backup/
+model/lora_epoch1_backup_v2/
 
 # ── PY-V specific ──────────────────────
 

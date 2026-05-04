@@ -1,8 +1,6 @@
 """
 pipeline.py — PY-V Data Pipeline
 Orchestrates all stages: scrape → clean → dedupe → format
-Calls each module directly (no subprocess), passes data in memory,
-handles errors per stage, saves checkpoints, logs stats throughout.
 """
 
 import json
@@ -10,8 +8,8 @@ import logging
 import sys
 import time
 from pathlib import Path
-
-# ─── Logging Setup ────────────────────────────────────────────────────────────
+import warnings
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,8 +21,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ─── Paths ────────────────────────────────────────────────────────────────────
-
 PATHS = {
     "raw_github":        Path("data/raw/github/github_raw.json"),
     "raw_stackoverflow": Path("data/raw/stackoverflow/so_raw.json"),
@@ -35,10 +31,8 @@ PATHS = {
     "val":               Path("data/datasets/val.jsonl"),
 }
 
-# ─── Helpers ──────────────────────────────────────────────────────────────────
 
 def ensure_dirs():
-    """Create all required directories if they don't exist."""
     for path in PATHS.values():
         path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -59,25 +53,21 @@ def log_stage(name: str, before: int, after: int) -> None:
     pct     = (dropped / before * 100) if before > 0 else 0
     logger.info(f"[{name}] {before} → {after} samples ({dropped} dropped, {pct:.1f}%)")
 
-# ─── Stage Runners ────────────────────────────────────────────────────────────
 
 def run_scraping(
     manual_repos:         list  = None,
     use_github_discovery: bool  = True,
-    github_stars:         int   = 1000,
-    github_pages:         int   = 2,
+    github_stars:         int   = 300,
+    github_pages:         int   = 10,
     so_tags:              list  = None,
-    so_pages:             int   = 3,
-    so_min_score:         int   = 10,
+    so_pages:             int   = 20,
+    so_min_score:         int   = 3,
 ) -> list[dict]:
-    """Run both scrapers, save raw checkpoints, return combined samples."""
-
     from data.scripts.github_scraper        import fetch_multiple_repos
     from data.scripts.stackoverflow_scraper import fetch_stackoverflow_samples
 
     all_samples = []
 
-    # — GitHub —
     logger.info("=" * 50)
     logger.info("STAGE 1a: GitHub Scraper")
     logger.info("=" * 50)
@@ -96,7 +86,6 @@ def run_scraping(
         logger.error(f"GitHub scraper failed: {e}")
         logger.warning("Continuing without GitHub data...")
 
-    # — StackOverflow —
     logger.info("=" * 50)
     logger.info("STAGE 1b: StackOverflow Scraper")
     logger.info("=" * 50)
@@ -123,7 +112,6 @@ def run_scraping(
 
 
 def run_cleaning(samples: list[dict]) -> list[dict]:
-    """Clean and validate all samples."""
     from data.scripts.cleaner import clean_dataset
 
     logger.info("=" * 50)
@@ -139,7 +127,6 @@ def run_cleaning(samples: list[dict]) -> list[dict]:
 
 
 def run_deduplication(samples: list[dict]) -> list[dict]:
-    """Remove exact and near-duplicate samples."""
     from data.scripts.dedupe import dedupe
 
     logger.info("=" * 50)
@@ -155,7 +142,6 @@ def run_deduplication(samples: list[dict]) -> list[dict]:
 
 
 def run_formatting(samples: list[dict]) -> None:
-    """Format, sort, split, and save final train/val datasets."""
     from data.scripts.formatter import format_dataset, sort_by_quality, shuffle_and_split, save_jsonl
 
     logger.info("=" * 50)
@@ -174,26 +160,17 @@ def run_formatting(samples: list[dict]) -> None:
 
     logger.info(f"Final → train: {len(train_data)}, val: {len(val_data)}")
 
-# ─── Main Pipeline ────────────────────────────────────────────────────────────
 
 def run_pipeline(
     skip_scraping: bool = False,
     skip_cleaning: bool = False,
     skip_dedup:    bool = False,
     manual_repos:  list = None,
-    github_stars:  int  = 1000,
-    github_pages:  int  = 2,
-    so_pages:      int  = 3,
-    so_min_score:  int  = 10,
+    github_stars:  int  = 300,
+    github_pages:  int  = 10,
+    so_pages:      int  = 20,
+    so_min_score:  int  = 3,
 ) -> None:
-    """
-    Run the full PY-V data pipeline.
-
-    Skip flags let you resume from a checkpoint:
-      skip_scraping=True  → load from data/raw/combined_raw.json
-      skip_cleaning=True  → load from data/processed/cleaned/cleaned.json
-      skip_dedup=True     → load from data/processed/deduped/deduped.json
-    """
     start = time.time()
     logger.info("=" * 50)
     logger.info("PY-V DATA PIPELINE STARTING")
@@ -201,7 +178,6 @@ def run_pipeline(
 
     ensure_dirs()
 
-    # Stage 1: Scraping
     if skip_scraping:
         logger.info("Skipping scraping — loading from checkpoint")
         samples = load_json(PATHS["raw_combined"])
@@ -215,7 +191,6 @@ def run_pipeline(
             so_min_score=so_min_score,
         )
 
-    # Stage 2: Cleaning
     if skip_cleaning:
         logger.info("Skipping cleaning — loading from checkpoint")
         samples = load_json(PATHS["cleaned"])
@@ -223,7 +198,6 @@ def run_pipeline(
     else:
         samples = run_cleaning(samples)
 
-    # Stage 3: Deduplication
     if skip_dedup:
         logger.info("Skipping dedup — loading from checkpoint")
         samples = load_json(PATHS["deduped"])
@@ -231,18 +205,15 @@ def run_pipeline(
     else:
         samples = run_deduplication(samples)
 
-    # Stage 4: Formatting (always runs)
     run_formatting(samples)
 
     elapsed = time.time() - start
     logger.info("=" * 50)
-    logger.info(f"PIPELINE COMPLETE ✔ ({elapsed:.1f}s)")
+    logger.info(f"PIPELINE COMPLETE ({elapsed:.1f}s)")
     logger.info(f"  train.jsonl → {PATHS['train']}")
     logger.info(f"  val.jsonl   → {PATHS['val']}")
     logger.info("=" * 50)
 
-
-# ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     run_pipeline(
@@ -251,19 +222,27 @@ if __name__ == "__main__":
         skip_dedup=False,
 
         manual_repos=[
-            ("psf",        "requests"),
-            ("pallets",    "flask"),
-            ("tiangolo",   "fastapi"),
-            ("scrapy",     "scrapy"),
-            ("sqlalchemy", "sqlalchemy"),
-            ("encode",     "httpx"),
-            ("pytest-dev", "pytest"),
-            ("numpy",      "numpy"),
+            ("psf",          "requests"),
+            ("pallets",      "flask"),
+            ("tiangolo",     "fastapi"),
+            ("scrapy",       "scrapy"),
+            ("sqlalchemy",   "sqlalchemy"),
+            ("encode",       "httpx"),
+            ("pytest-dev",   "pytest"),
+            ("numpy",        "numpy"),
+            ("pandas-dev",   "pandas"),
+            ("scikit-learn", "scikit-learn"),
+            ("aio-libs",     "aiohttp"),
+            ("django",       "django"),
+            ("celery",       "celery"),
+            ("pydantic",     "pydantic"),
+            ("python-attrs", "attrs"),
+            ("paramiko",     "paramiko"),
         ],
 
-        github_stars=500,
-        github_pages=5,
+        github_stars=300,
+        github_pages=10,
 
-        so_pages=10,
-        so_min_score=5,
+        so_pages=20,
+        so_min_score=3,
     )
