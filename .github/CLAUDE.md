@@ -259,6 +259,7 @@ Rules:
 
 ### `data/scripts/fetch_sources.py` + `data/scripts/sources/` (dataset v2)
 - `fetch_sources.py` — streams each v2 source, converts rows, writes `{CFG.dataset_v2.output_dir}/{source}.jsonl`, reports kept / scanned / rejection reasons (never silent caps)
+- `fetch_sources.py` closes each stream and ends with `os._exit(0)` — a half-read Hugging Face stream otherwise keeps a download thread retrying and the process never exits (hung on Colab)
 - `sources/{name}.py` — one module per source, each `iter_records(cfg, stats)` → PY-V records with `metadata.task` (`generate` / `debug` / `refactor` / `explain`) and `metadata.license`
 - `sources/common.py` — shared helpers only (record builder, fenced-code extraction, demo-code trimming, docstring removal)
 - Source settings (HF id, config, split, fetch count, filters) live in `CFG.dataset_v2.sources` — never in code

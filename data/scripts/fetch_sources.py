@@ -12,11 +12,24 @@ Usage (from repo root):
 
 import argparse
 import json
+import logging
+import os
+import sys
+import warnings
 from collections import Counter
 from itertools import islice
 
 from model.training.config_loader import CFG
 from data.scripts.sources import SOURCES
+
+# cleaner.py switches on INFO logging at import, which floods the output with
+# every HTTP request; keep the download libraries quiet.
+for _noisy in ("httpx", "httpcore", "urllib3", "fsspec"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+# "Bad file descriptor ... Retrying" is logged when a finished stream closes.
+logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+# ast.parse on scraped code warns about bad escape sequences — harmless.
+warnings.filterwarnings("ignore", category=SyntaxWarning)
 
 PREVIEW_RECORDS = 2
 PREVIEW_CHARS   = 300
@@ -30,8 +43,10 @@ def fetch_source(name: str, sample: bool) -> Counter:
 
     CFG.dataset_v2.output_dir.mkdir(parents=True, exist_ok=True)
 
+    records = SOURCES[name](cfg, stats)
+
     with open(path, "w", encoding="utf-8") as f:
-        for record in islice(SOURCES[name](cfg, stats), limit):
+        for record in islice(records, limit):
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             stats["kept"] += 1
 
@@ -39,6 +54,8 @@ def fetch_source(name: str, sample: bool) -> Counter:
                 print(f"  --- example {stats['kept']} ---")
                 print(f"  INSTRUCTION: {record['instruction'][:PREVIEW_CHARS]!r}")
                 print(f"  OUTPUT:      {record['output'][:PREVIEW_CHARS]!r}")
+
+    records.close()   # stop the stream now instead of leaving it half-read
 
     print(f"  kept {stats['kept']}/{limit} after scanning {stats['scanned']} rows -> {path}")
     for reason, count in sorted(stats.items()):
@@ -67,6 +84,13 @@ def main():
     print("\n=== summary ===")
     for name, kept in totals.items():
         print(f"  {name:<18} {kept}")
+
+    # A half-read Hugging Face stream can leave a background download thread
+    # retrying forever, so the process never exits (seen on Colab). All files
+    # are written and closed by now — exit hard.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__":
