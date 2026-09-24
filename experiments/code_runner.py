@@ -48,6 +48,12 @@ def run_python(program: str, timeout: int) -> tuple:
         (passed, error) — passed is True when the process exits with code 0
         within `timeout` seconds; error is the last stderr line otherwise.
     """
+    passed, _, error = run_python_capture(program, timeout)
+    return passed, error
+
+
+def run_python_capture(program: str, timeout: int) -> tuple:
+    """Like run_python, but also returns what the program printed: (passed, stdout, error)."""
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "program.py"
         path.write_text(_GUARD + "\n" + program, encoding="utf-8")
@@ -61,10 +67,10 @@ def run_python(program: str, timeout: int) -> tuple:
                 timeout        = timeout,
             )
         except subprocess.TimeoutExpired:
-            return False, f"timeout after {timeout}s"
+            return False, "", f"timeout after {timeout}s"
 
     if result.returncode == 0:
-        return True, ""
+        return True, result.stdout, ""
 
     lines = [line for line in result.stderr.strip().split("\n") if line.strip()]
-    return False, lines[-1] if lines else f"exit code {result.returncode}"
+    return False, result.stdout, lines[-1] if lines else f"exit code {result.returncode}"

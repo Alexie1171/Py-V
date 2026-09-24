@@ -70,6 +70,19 @@ dataset_v2:
       code_lines: [4, 40]
       max_comment_share: 0.2  # skip functions full of commented-out code
       max_per_repo: 2         # dataset is ordered by repo — force variety
+    bug_fix:
+      # "Fix the error" examples: breaks working OpenCodeInstruct functions on
+      # purpose and records the real error. Runs code — Colab only.
+      hf_id: "nvidia/OpenCodeInstruct"
+      config: "train"
+      split: "train"
+      fetch: 3000
+      min_test_score: 1.0
+      max_code_lines: 25       # buggy + fixed code both go into one example
+      max_tests: 5
+      max_tries: 6             # bugs tried per function before giving up
+      timeout_seconds: 5
+      exclude_ids_from: "./data/raw/v2/opencodeinstruct.jsonl"   # already used for write-code
     old_github:
       # The v1 dataset. Kept at this path; v2 will be written elsewhere.
       path: "./data/datasets/train.jsonl"

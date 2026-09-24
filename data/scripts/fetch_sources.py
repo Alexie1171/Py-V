@@ -59,7 +59,7 @@ def fetch_source(name: str, sample: bool) -> Counter:
 
     print(f"  kept {stats['kept']}/{limit} after scanning {stats['scanned']} rows -> {path}")
     for reason, count in sorted(stats.items()):
-        if reason.startswith("rejected"):
+        if reason not in ("scanned", "kept"):
             print(f"    {reason}: {count}")
     if stats["kept"] < limit:
         print(f"  WARNING: source ran out — only {stats['kept']} of {limit} records")

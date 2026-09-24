@@ -7,6 +7,7 @@ yielding PY-V records (instruction / output / metadata incl. task label).
 """
 
 from data.scripts.sources import (
+    bug_fix,
     code_search_net,
     glaive,
     old_github,
@@ -20,4 +21,5 @@ SOURCES = {
     "old_github":        old_github.iter_records,
     "glaive":            glaive.iter_records,
     "code_search_net":   code_search_net.iter_records,
+    "bug_fix":           bug_fix.iter_records,      # runs code — Colab only
 }

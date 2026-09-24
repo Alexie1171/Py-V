@@ -259,9 +259,12 @@ Rules:
 
 ### `data/scripts/fetch_sources.py` + `data/scripts/sources/` (dataset v2)
 - `fetch_sources.py` — streams each v2 source, converts rows, writes `{CFG.dataset_v2.output_dir}/{source}.jsonl`, reports kept / scanned / rejection reasons (never silent caps)
-- `fetch_sources.py` closes each stream and ends with `os._exit(0)` — a half-read Hugging Face stream otherwise keeps a download thread retrying and the process never exits (hung on Colab)
+- `fetch_sources.py` closes each stream and ends with `os._exit(0)` — safeguard so a half-read Hugging Face stream can't keep a download thread alive after the files are written
 - `sources/{name}.py` — one module per source, each `iter_records(cfg, stats)` → PY-V records with `metadata.task` (`generate` / `debug` / `refactor` / `explain`) and `metadata.license`
 - `sources/common.py` — shared helpers only (record builder, fenced-code extraction, demo-code trimming, docstring removal)
+- `sources/mutations.py` — realistic single bugs (wrong comparison/operator, off-by-one range, name typo, missing cast, missing return, flipped bool, and/or swap, `None` init), spliced into the original text so the fixed code is the untouched original; pure AST work, runs nothing
+- `sources/bug_fix.py` — "fix the error" (`debug`) records: OpenCodeInstruct functions that pass their unit tests → one bug → tests re-run to capture the real error or failing check → instruction = what the user saw + broken code, output = original code + one-sentence fix. Skips rows already used for write-code. **Runs internet code: refuses to run outside Colab** unless `PYV_ALLOW_LOCAL_EXEC=1`
+- `experiments/code_runner.py` is shared with `bug_fix.py` (`run_python_capture()` also returns stdout)
 - Source settings (HF id, config, split, fetch count, filters) live in `CFG.dataset_v2.sources` — never in code
 - `explain` records are text only (code blocks removed) — explain mode answers in words
 - `generate` records are code only — no fences, no example-usage / test tail
