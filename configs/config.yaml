@@ -41,6 +41,21 @@ dataset_v2:
   # needs, so later cleaning losses don't leave gaps.
   output_dir: "./data/raw/v2"
   sample_size: 20          # --sample mode: small batch per source to check quality
+  build:
+    # Step 5: mix the source files into one training set (build_dataset_v2.py)
+    output_dir: "./data/datasets/v2"
+    seed: 42
+    val_share: 0.05
+    max_tokens: 700        # instruction + output; room left for the prompt template within 768
+    take:                  # records per source — ~12k ≈ 40% write / 25% debug / 20% improve / 15% explain
+      opencodeinstruct: 2300      # generate
+      self_oss_instruct: 1700     # generate
+      old_github: 800             # generate
+      bug_fix: 3000               # debug
+      improve_synthetic: 2000     # refactor
+      commitpack_refactor: 400    # refactor — fewer exist, takes what there is
+      glaive: 1100                # explain
+      code_search_net: 700        # explain
   sources:
     opencodeinstruct:
       hf_id: "nvidia/OpenCodeInstruct"

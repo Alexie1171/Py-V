@@ -67,6 +67,7 @@ class DatasetV2Config:
     output_dir:  Path
     sample_size: int
     sources:     dict   # source name → its settings (hf_id, config, split, fetch, ...)
+    build:       dict   # step 5 mix settings; build["output_dir"] is a Path
 
 
 @dataclass
@@ -136,10 +137,13 @@ def load_config() -> AppConfig:
     )
 
     d = raw.get("dataset_v2", {})
+    build = dict(d.get("build", {}))
+    build["output_dir"] = Path(build.get("output_dir", "./data/datasets/v2"))
     dataset_v2_cfg = DatasetV2Config(
         output_dir  = Path(d.get("output_dir", "./data/raw/v2")),
         sample_size = d.get("sample_size", 20),
         sources     = d.get("sources", {}),
+        build       = build,
     )
 
     e = raw.get("evaluation", {})

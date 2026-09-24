@@ -275,6 +275,12 @@ Rules:
 - `generate` records are code only — no fences, no example-usage / test tail
 - v1 dataset stays at `data/datasets/train.jsonl`; v2 must be written to a different path
 
+### `data/scripts/build_dataset_v2.py` + `data/scripts/decontaminate.py` (dataset v2, step 5)
+- `build_dataset_v2.py` — mixes the per-source files into `CFG.dataset_v2.build["output_dir"]` (`train.jsonl`, `val.jsonl`, `build_report.json`): drops exact duplicates (output or instruction, via `dedupe.hash_code`), benchmark overlap, and records over `max_tokens` (never truncates — a cut answer loses its ending); then a seeded sample of `take[source]` per source; val split per task
+- `decontaminate.py` — `BenchmarkIndex`: any 10-word run shared with an MBPP (all configs/splits) or HumanEval problem statement, or identical normalised code to a benchmark solution → record dropped. Keeps the MBPP scoring test honest
+- Mix settings (`take`, `max_tokens`, `seed`, `val_share`) live in `CFG.dataset_v2.build`
+- Runs on Colab (the source files are on Drive); needs no GPU and runs no code
+
 ---
 
 ### `data/scripts/`
