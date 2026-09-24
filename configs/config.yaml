@@ -23,7 +23,9 @@ paths:
   model_output: "./model/lora"
 
 rag:
-  enabled: true
+  # Off since 2026-09-25: weak matches were copied into answers instead of
+  # helping. Turn back on after the dataset is improved — see PROJECT_STATUS.md.
+  enabled: false
   index_path: "./retrieval/index"
   top_k: 3
   # Modes that will receive RAG context injection
@@ -32,3 +34,55 @@ rag:
     - generate
     - debug
     - refactor
+
+dataset_v2:
+  # New training set (plan: PROJECT_STATUS.md, "Next — better training data").
+  # `fetch` = how many records to keep per source — more than the final mix
+  # needs, so later cleaning losses don't leave gaps.
+  output_dir: "./data/raw/v2"
+  sample_size: 20          # --sample mode: small batch per source to check quality
+  sources:
+    opencodeinstruct:
+      hf_id: "nvidia/OpenCodeInstruct"
+      config: "train"
+      split: "train"
+      fetch: 3000
+      min_test_score: 1.0  # keep only rows whose unit tests all passed
+    self_oss_instruct:
+      hf_id: "bigcode/self-oss-instruct-sc2-exec-filter-50k"
+      config: "default"
+      split: "train"
+      fetch: 2000
+    glaive:
+      hf_id: "glaiveai/glaive-code-assistant"
+      config: "default"
+      split: "train"
+      fetch: 1500
+      min_answer_chars: 200
+      min_text_share: 0.6     # answer must be at least 60% text, not code
+    code_search_net:
+      hf_id: "code-search-net/code_search_net"
+      config: "python"
+      split: "train"
+      fetch: 1200
+      summary_chars: [40, 400]
+      min_summary_words: 6
+      code_lines: [4, 40]
+      max_comment_share: 0.2  # skip functions full of commented-out code
+      max_per_repo: 2         # dataset is ordered by repo — force variety
+    old_github:
+      # The v1 dataset. Kept at this path; v2 will be written elsewhere.
+      path: "./data/datasets/train.jsonl"
+      fetch: 1100
+      min_code_score: 2.5
+      max_code_lines: 40      # top scores are long, project-bound functions
+
+evaluation:
+  # Scoring test: MBPP problems, each checked by running its asserts.
+  # Never train on this dataset.
+  dataset: "google-research-datasets/mbpp"
+  config: "sanitized"
+  split: "test"
+  num_problems: 100
+  timeout_seconds: 10
+  output_dir: "./experiments/outputs"

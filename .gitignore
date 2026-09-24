@@ -30,6 +30,7 @@ model/lora_epoch1_backup/
 model/lora_epoch1_backup_v2/
 model/lora_new_dataset_checkpoint50/
 model_t4/
+Google Colab/
 
 # ── PY-V specific ──────────────────────
 
@@ -44,6 +45,9 @@ data/datasets/
 
 # Pipeline log
 data/pipeline.log
+
+# RAG index (rebuild with: python -m retrieval.indexer)
+retrieval/index/
 
 # API keys / secrets (never commit these)
 .env

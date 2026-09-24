@@ -63,11 +63,30 @@ class RAGConfig:
 
 
 @dataclass
+class DatasetV2Config:
+    output_dir:  Path
+    sample_size: int
+    sources:     dict   # source name → its settings (hf_id, config, split, fetch, ...)
+
+
+@dataclass
+class EvaluationConfig:
+    dataset:         str
+    config:          str
+    split:           str
+    num_problems:    int
+    timeout_seconds: int
+    output_dir:      Path
+
+
+@dataclass
 class AppConfig:
-    model:    ModelConfig
-    training: TrainingConfig
-    paths:    PathsConfig
-    rag:      RAGConfig
+    model:      ModelConfig
+    training:   TrainingConfig
+    paths:      PathsConfig
+    rag:        RAGConfig
+    dataset_v2: DatasetV2Config
+    evaluation: EvaluationConfig
 
 
 # ─── Parser ───────────────────────────────────────────────────────────────────
@@ -116,7 +135,31 @@ def load_config() -> AppConfig:
         active_modes = r.get("active_modes", ["generate", "debug", "refactor"]),
     )
 
-    return AppConfig(model=model_cfg, training=training_cfg, paths=paths_cfg, rag=rag_cfg)
+    d = raw.get("dataset_v2", {})
+    dataset_v2_cfg = DatasetV2Config(
+        output_dir  = Path(d.get("output_dir", "./data/raw/v2")),
+        sample_size = d.get("sample_size", 20),
+        sources     = d.get("sources", {}),
+    )
+
+    e = raw.get("evaluation", {})
+    evaluation_cfg = EvaluationConfig(
+        dataset         = e.get("dataset",         "google-research-datasets/mbpp"),
+        config          = e.get("config",          "sanitized"),
+        split           = e.get("split",           "test"),
+        num_problems    = e.get("num_problems",    100),
+        timeout_seconds = e.get("timeout_seconds", 10),
+        output_dir      = Path(e.get("output_dir", "./experiments/outputs")),
+    )
+
+    return AppConfig(
+        model      = model_cfg,
+        training   = training_cfg,
+        paths      = paths_cfg,
+        rag        = rag_cfg,
+        dataset_v2 = dataset_v2_cfg,
+        evaluation = evaluation_cfg,
+    )
 
 
 # ─── Module-level singleton ───────────────────────────────────────────────────

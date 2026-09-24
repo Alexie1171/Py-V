@@ -1,7 +1,7 @@
 """
 cleaner.py — PY-V Data Pipeline
-Upgraded v3: Tighter quality gates — higher min length, stricter Python
-             signal requirements, docstring bonus, more noise patterns.
+Upgraded v4: Added non-ASCII rejection to filter foreign-language code,
+             added markdown heading noise pattern (## Exercise, ## Task etc).
 """
 
 import re
@@ -22,6 +22,11 @@ MAX_LINE_COUNT   = 200      # lines
 # Require at least this many distinct Python signals to pass
 MIN_PYTHON_SIGNAL_COUNT = 2
 
+# Maximum ratio of non-ASCII characters allowed in a code sample.
+# 0.02 = 2% — allows occasional unicode string literals but rejects
+# samples dominated by Chinese, Japanese, Arabic, etc. comments.
+MAX_NON_ASCII_RATIO = 0.02
+
 PYTHON_SIGNALS   = [
     "def ",
     "class ",
@@ -39,7 +44,7 @@ PYTHON_SIGNALS   = [
 
 # Patterns that indicate low-quality or incomplete code
 NOISE_PATTERNS   = [
-    r"^#+\s",                   # markdown headers
+    r"^#+\s",                   # markdown headers (# Heading, ## Exercise, etc.)
     r"^\s*```",                 # markdown fences
     r"^\s*\.\.\.",              # ellipsis-only lines
     r"^(TODO|FIXME|HACK|XXX)",  # unfinished stubs
@@ -155,6 +160,19 @@ def has_meaningful_body(code: str) -> bool:
     return len(body_lines) >= 3
 
 
+def is_mostly_ascii(code: str) -> bool:
+    """
+    Return True if the code is predominantly ASCII.
+    Rejects samples with foreign-language comments (Chinese, Arabic, etc.)
+    that would pollute training data with non-English content.
+    Uses MAX_NON_ASCII_RATIO as the threshold.
+    """
+    if not code:
+        return True
+    non_ascii = sum(1 for ch in code if ord(ch) > 127)
+    return (non_ascii / len(code)) <= MAX_NON_ASCII_RATIO
+
+
 def is_valid_sample(sample: dict) -> tuple[bool, str]:
     """
     Validate a training sample dict with keys 'instruction' and 'output'.
@@ -182,6 +200,9 @@ def is_valid_sample(sample: dict) -> tuple[bool, str]:
     signal_count = count_python_signals(code)
     if signal_count < MIN_PYTHON_SIGNAL_COUNT:
         return False, f"too few Python signals ({signal_count})"
+
+    if not is_mostly_ascii(code):
+        return False, "too many non-ASCII characters (foreign language content)"
 
     if not is_parseable(code):
         return False, "AST parse failed (syntax error)"

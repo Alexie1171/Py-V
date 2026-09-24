@@ -21,11 +21,10 @@ def build_prompt(
     """
     template = TEMPLATES.get(mode, TEMPLATES["chat"])
 
-    # History context — not injected for explain/chat to prevent code bias
-    if mode in ["explain", "chat"]:
-        formatted_context = ""
-    else:
-        formatted_context = format_context(context)
+    # History context — off for all modes until Phase 11 (long-term memory).
+    # explain/chat never got it (code bias); code modes answered the previous
+    # question instead of the new one. format_context() is kept for Phase 11.
+    formatted_context = ""
 
     # RAG context — only injected for relevant modes
     if mode in _RAG_MODES and retrieved_chunks:
@@ -100,17 +99,25 @@ def format_retrieved_context(chunks: list) -> str:
 
 
 def format_context(ctx: dict) -> str:
+    """
+    Last two user questions only. Previous assistant answers are left out:
+    the model copied them instead of answering the new question.
+    """
     if not ctx or not ctx.get("history"):
         return ""
 
+    questions = [
+        (h.get("content") or "").strip()[:120]
+        for h in ctx["history"]
+        if h.get("role") == "user"
+    ][-2:]
+
+    if not questions:
+        return ""
+
     formatted = ["Recent context:"]
-    for h in ctx.get("history", [])[-3:]:
-        role    = h.get("role")
-        content = (h.get("content") or "").strip()[:120]
-        if role == "user":
-            formatted.append(f"User previously asked: {content}")
-        elif role == "assistant":
-            formatted.append(f"Assistant responded: {content}")
+    for q in questions:
+        formatted.append(f"User previously asked: {q}")
 
     return "\n".join(formatted)
 

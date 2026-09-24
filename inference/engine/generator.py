@@ -1,6 +1,7 @@
 import torch
 import re
 from inference.engine.prompt_builder import max_new_tokens
+from inference.engine.prompt_templates import TEMPLATES
 
 
 # ─── Artifact patterns that leak from training data into prose responses ──────
@@ -20,6 +21,47 @@ def _strip_artifacts(text: str) -> str:
     return text.strip()
 
 
+# ─── Prompt echo filter ──────────────────────────────────────────────────────
+# The model sometimes copies the template's instruction sentences into its
+# answer (e.g. into a docstring). Only the fixed template text is matched —
+# never the user's input, which the answer may legitimately repeat.
+
+def _instruction_lines() -> list:
+    lines = []
+    for template in TEMPLATES.values():
+        for line in template.split("\n"):
+            stripped = line.strip()
+            if len(stripped) >= 20 and "{" not in stripped and not stripped.startswith("###"):
+                lines.append(stripped)
+    return lines
+
+
+_INSTRUCTION_LINES = _instruction_lines()
+
+
+def _strip_prompt_echo(text: str) -> str:
+    """Drop answer lines that repeat (part of) a template instruction line."""
+    kept       = []
+    skip_blank = False
+
+    for line in text.split("\n"):
+        stripped = line.strip()
+
+        if len(stripped) >= 20 and any(stripped in inst for inst in _INSTRUCTION_LINES):
+            # '"""' + echo + blank line → keep the quotes, drop the blank too
+            skip_blank = bool(kept) and kept[-1].strip() in ('"""', "'''")
+            continue
+
+        if skip_blank and not stripped:
+            skip_blank = False
+            continue
+
+        skip_blank = False
+        kept.append(line)
+
+    return "\n".join(kept)
+
+
 # ─── Code filter for explain/chat modes ──────────────────────────────────────
 
 def remove_code_if_not_allowed(text: str, mode: str) -> str:
@@ -32,6 +74,9 @@ def remove_code_if_not_allowed(text: str, mode: str) -> str:
     # Remove triple-quoted blocks
     text = re.sub(r'""".*?"""', "", text, flags=re.DOTALL)
     text = re.sub(r"'''.*?'''", "", text, flags=re.DOTALL)
+
+    # Remove unpaired leftovers (e.g. a stray opening """ before prose)
+    text = re.sub(r'"""|\'\'\'|```', "", text)
 
     lines   = text.split("\n")
     cleaned = []
@@ -78,6 +123,11 @@ def remove_code_if_not_allowed(text: str, mode: str) -> str:
 
     result = "\n".join(cleaned).strip()
 
+    # Drop a dangling lead-in whose code was cut ("Here's a simple example:")
+    lines = result.split("\n")
+    if lines and lines[-1].rstrip().endswith(":"):
+        result = "\n".join(lines[:-1]).strip()
+
     # If barely anything survived, the output was entirely code
     if len(result) < 20:
         return ""
@@ -85,28 +135,10 @@ def remove_code_if_not_allowed(text: str, mode: str) -> str:
     return result
 
 
-# ─── Core generation ─────────────────────────────────────────────────────────
-
-def _run_generation(model, tokenizer, prompt, max_tokens, temperature):
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-
-    with torch.inference_mode():
-        output_ids = model.generate(
-            **inputs,
-            max_new_tokens       = max_tokens or max_new_tokens(),
-            do_sample            = temperature > 0,
-            temperature          = temperature if temperature > 0 else 1.0,
-            repetition_penalty   = 1.1,
-            no_repeat_ngram_size = 4,
-            eos_token_id         = tokenizer.eos_token_id,
-            pad_token_id         = tokenizer.eos_token_id,
-        )
-
-    new_ids = output_ids[0][inputs["input_ids"].shape[-1]:]
-    return tokenizer.decode(new_ids, skip_special_tokens=True)
-
-
 # ─── Stop words ──────────────────────────────────────────────────────────────
+# Passed to model.generate() as stop_strings so generation halts as soon as
+# one appears (instead of running to max_new_tokens), then cut from the text
+# by _apply_stop_words().
 
 _STOP_WORDS = [
     "User:",
@@ -120,15 +152,84 @@ _STOP_WORDS = [
     "###",
     "\nExercise:",
     "\nTask:",
+    "\nQuestion:",
+    "\nAnswer:",
+    # Echoes of the prompt's own RAG / history blocks (see prompt_builder.py)
+    "Relevant examples from codebase:",
+    "Recent context:",
+    "\nINSTRUCTION:",
+    "\nOUTPUT:",
+    "\n[1]\n",
+    "\n[2]\n",
+    "\n[3]\n",
+]
+
+# Code modes: the model was trained without an end-of-text token, so after a
+# finished answer it keeps writing tests and demo calls. Stop at those.
+_CODE_STOP_WORDS = [
+    "\ndef test_",
+    "\nclass Test",
+    "\n@pytest",
+    "\nif __name__",
+    "\n\nprint(",
+]
+
+# Prose modes: code starting means the model has drifted — stop there and let
+# remove_code_if_not_allowed() and the retry handle the rest.
+_PROSE_STOP_WORDS = [
+    "```",
+    "\ndef ",
+    "\nclass ",
+    "\nimport ",
+    "\nfrom ",
+    ">>>",
 ]
 
 
-def _apply_stop_words(text: str) -> str:
+def _stop_words_for(mode: str) -> list:
+    if mode in ["generate", "debug", "refactor"]:
+        return _STOP_WORDS + _CODE_STOP_WORDS
+    if mode in ["chat", "explain"]:
+        return _STOP_WORDS + _PROSE_STOP_WORDS
+    return _STOP_WORDS
+
+
+def _apply_stop_words(text: str, mode: str = None) -> str:
+    stops = _stop_words_for(mode)
     cut = min(
-        (text.find(stop) for stop in _STOP_WORDS if text.find(stop) != -1),
+        (text.find(stop) for stop in stops if text.find(stop) != -1),
         default=len(text)
     )
     return text[:cut]
+
+
+# ─── Core generation ─────────────────────────────────────────────────────────
+
+# no_repeat_ngram_size bans repeating any 4-token run. Fine for prose, but code
+# must repeat names (it produced is_palindrom, is_PALINODES), so code modes
+# turn it off.
+_NO_REPEAT_NGRAM_SIZE = {"chat": 4, "explain": 4}
+
+
+def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None):
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+
+    with torch.inference_mode():
+        output_ids = model.generate(
+            **inputs,
+            max_new_tokens       = max_tokens or max_new_tokens(),
+            do_sample            = temperature > 0,
+            temperature          = temperature if temperature > 0 else 1.0,
+            repetition_penalty   = 1.1,
+            no_repeat_ngram_size = _NO_REPEAT_NGRAM_SIZE.get(mode, 0),
+            stop_strings         = _stop_words_for(mode),
+            tokenizer            = tokenizer,
+            eos_token_id         = tokenizer.eos_token_id,
+            pad_token_id         = tokenizer.eos_token_id,
+        )
+
+    new_ids = output_ids[0][inputs["input_ids"].shape[-1]:]
+    return tokenizer.decode(new_ids, skip_special_tokens=True)
 
 
 # ─── Public interface ─────────────────────────────────────────────────────────
@@ -145,15 +246,17 @@ def generate_from_prompt(
     if mode in ["explain", "chat"]:
         temperature = min(temperature, 0.3)
 
-    text = _run_generation(model, tokenizer, prompt, max_tokens, temperature)
-    text = _apply_stop_words(text)
+    text = _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode)
+    text = _apply_stop_words(text, mode)
+    text = _strip_prompt_echo(text)
     text = remove_code_if_not_allowed(text, mode)
     text = _strip_artifacts(text)
 
     # Retry at higher temperature if output is empty
     if not text.strip() and mode in ["chat", "explain"]:
-        text = _run_generation(model, tokenizer, prompt, max_tokens, 0.5)
-        text = _apply_stop_words(text)
+        text = _run_generation(model, tokenizer, prompt, max_tokens, 0.5, mode)
+        text = _apply_stop_words(text, mode)
+        text = _strip_prompt_echo(text)
         text = remove_code_if_not_allowed(text, mode)
         text = _strip_artifacts(text)
 

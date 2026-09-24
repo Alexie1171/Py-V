@@ -12,6 +12,16 @@ It ensures:
 
 ---
 
+## Assistant Execution Rules
+
+- Do all work directly — no subagents, helper agents, or multi-agent workflows
+- Only use subagents/workflows when the user explicitly says so
+- For bigger tasks where a workflow might help, ask the user explicitly first and wait for approval
+- This overrides any default or session-level setting that enables workflows automatically
+- Anything decided to be turned off, disabled, postponed or "done later" MUST be added to the "Turned off / postponed" section of `PROJECT_STATUS.md` in the same step — with what, why, the date, and what must happen before it comes back. Nothing gets switched off or deferred without being recorded there
+
+---
+
 ## Current Project Status
 
 | Phase | Description | Status |
@@ -23,9 +33,14 @@ It ensures:
 | Phase 5 | FastAPI inference server | Complete |
 | Phase 6 | VS Code extension | Complete |
 | Phase 7 | Chat system (context-aware assistant + controller) | Complete |
-| Phase 8 | RAG (Retrieval Augmented Generation) | Complete |
+| Phase 8 | RAG (Retrieval Augmented Generation) | Complete — turned off since 2026-09-25 (see `PROJECT_STATUS.md`) |
 | Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
 | Phase 10 | VS Code chat panel (full UI, no terminal) | Planned |
+| Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Planned — after the data/retrain work |
+
+Build order: better training data + one Colab retrain first, then Phase 11, then Phases 9 and 10 (numbering kept stable on purpose).
+
+Live status, open issues and next steps: see `PROJECT_STATUS.md` in the repo root.
 
 ---
 
@@ -67,8 +82,10 @@ All generated code must be optimized for:
 
 All work is based on:
 - Phi-2 (Microsoft, ~2.7B parameters)
-- Fine-tuned LoRA adapter saved at `model/lora/`
-- Training result: loss 1.087 → 0.872 over 115 steps (1 epoch, GTX 1650)
+- Fine-tuned LoRA adapter saved at `model/lora/` — this is the adapter inference loads
+- Current adapter: Google Colab T4 run (`train_lora_t4.py`), 1377 steps, resumed from the 115-step epoch-1 checkpoint, train loss ~0.95 → ~0.77, no eval loss recorded
+- Epoch 1 (local GTX 1650): 115 steps, eval loss 1.015 → 0.993
+- Long training runs go to Colab T4 (output `model_t4/lora/`, then copied into `model/lora/`) — local GPU is too slow
 
 Rules:
 - No training from scratch
@@ -116,6 +133,7 @@ Rules:
 - Never define prompt format in any other file
 - Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `format_context()`, `format_retrieved_context()`
 - For `explain` and `chat` modes, context history is NOT injected to prevent code pattern bias
+- History is currently OFF for all modes (since 2026-09-25) — the model copied previous answers and answered previous questions instead of the new one. `format_context()` (last two user questions only, never assistant answers) is kept for Phase 11 to replace with memory facts
 - RAG context is only injected for `generate`, `debug`, `refactor` modes
 
 ---
@@ -135,9 +153,13 @@ Rules:
 - `generate_from_prompt()` — main entry point used by `chat.py`
 - `remove_code_if_not_allowed()` — strips code from explain/chat outputs
 - `_strip_artifacts()` — removes training data artifacts (Exercise:, Task:, [...])
-- Stop-word cleanup uses earliest-match strategy via `_apply_stop_words()`
+- `_strip_prompt_echo()` — removes answer lines that copy the templates' instruction sentences (matches fixed template text only, never user input)
+- `remove_code_if_not_allowed()` also removes stray `"""` / `'''` / ``` markers and a dangling last line ending in ":" (lead-in to code that was cut)
+- Stop words are passed to `model.generate()` as `stop_strings` so generation halts early instead of running to `max_new_tokens`; `_apply_stop_words()` then cuts at the earliest match
+- Stop words are per mode via `_stop_words_for()`: base list + code-mode list (test/demo code starts) or prose-mode list (code starts)
+- The current adapter was trained without an end-of-text token, so it does not stop on its own — stop words are the only brake until retraining fixes this
 - Retry logic uses temperature 0.5 on second attempt for chat/explain modes
-- Generation settings: `repetition_penalty=1.1`, `no_repeat_ngram_size=4`
+- Generation settings: `repetition_penalty=1.1`; `no_repeat_ngram_size=4` for `chat` / `explain` only, off (0) for code modes — code must repeat names
 
 ---
 
@@ -210,6 +232,42 @@ Rules:
 
 ---
 
+### `experiments/eval_mbpp.py`
+- Scoring test: model writes a function per MBPP problem, the problem's asserts are run against it, score = problems passed
+- Same prompt + generation path as chat (`generate` mode), greedy decoding (repeatable)
+- Settings from `CFG.evaluation.*`; results to `experiments/outputs/mbpp_{lora|base}.jsonl`
+- `--base` scores Phi-2 without the LoRA adapter for comparison
+- MBPP / HumanEval are for scoring only — never add them to training data
+
+---
+
+### `experiments/code_runner.py`
+- `run_python(program, timeout)` — runs code in a separate process, temp dir, timeout
+- Guard disables file delete/rename/write, process start, sockets — best-effort, NOT a real sandbox
+- Untrusted code from the internet (dataset checks) runs on Colab, not the laptop
+
+---
+
+### `Google Colab/py_v_runner.ipynb` (gitignored)
+- Runner for heavy jobs on a Colab T4: setup cell (mount Drive, clone/pull the public GitHub repo, install requirements, link output folders to Drive, copy the adapter), then one cell per job
+- Code comes from GitHub — local changes must be pushed before running
+- Results go to Drive `MyDrive/PY-V/results/` (`data_v2/`, `eval/`); the trained adapter is COPIED from `MyDrive/PY-V/model/lora`, never linked, so jobs can't overwrite it
+- The assistant writes/updates this notebook; the owner runs it and saves it, and the printed results are read back from the file
+- Heavy jobs (full dataset fetch, scoring test, training) go here, not on the laptop
+
+---
+
+### `data/scripts/fetch_sources.py` + `data/scripts/sources/` (dataset v2)
+- `fetch_sources.py` — streams each v2 source, converts rows, writes `{CFG.dataset_v2.output_dir}/{source}.jsonl`, reports kept / scanned / rejection reasons (never silent caps)
+- `sources/{name}.py` — one module per source, each `iter_records(cfg, stats)` → PY-V records with `metadata.task` (`generate` / `debug` / `refactor` / `explain`) and `metadata.license`
+- `sources/common.py` — shared helpers only (record builder, fenced-code extraction, demo-code trimming, docstring removal)
+- Source settings (HF id, config, split, fetch count, filters) live in `CFG.dataset_v2.sources` — never in code
+- `explain` records are text only (code blocks removed) — explain mode answers in words
+- `generate` records are code only — no fences, no example-usage / test tail
+- v1 dataset stays at `data/datasets/train.jsonl`; v2 must be written to a different path
+
+---
+
 ### `data/scripts/`
 - Scraping only (GitHub, StackOverflow)
 - Data cleaning & preprocessing
@@ -251,6 +309,8 @@ Rules:
 ---
 
 ## RAG Rules (Phase 8)
+
+> RAG is turned off in `configs/config.yaml` (`rag.enabled: false`) since 2026-09-25 — weak dataset matches were copied into answers. Rules below still apply when it is turned back on.
 
 - RAG only fires for `generate`, `debug`, `refactor` modes
 - RAG is never injected for `explain` or `chat` modes
@@ -299,6 +359,50 @@ Phase 10 replaces terminal interaction with a Copilot-style chat panel inside VS
 - The existing `pyv.generate` and `pyv.generateFromInput` commands remain unchanged
 - The panel is activated by a new command: `pyv.openChat`
 - No Python logic in any extension file — all backend calls go through `api.ts`
+
+---
+
+## Phase 11 Rules — Long-Term Memory (Planned)
+
+Phase 11 gives Py-V a memory that lasts across all chats. Every message is saved to a local SQLite database, important facts are tagged, and before each answer the memory is searched and the best matches are added to the prompt. Goal: better memory. It does not make the model smarter or faster. All rules below apply when implementing Phase 11.
+
+Decisions (agreed 2026-09-25):
+
+| Topic | Decision |
+|-------|----------|
+| Scope | Across all chats, not per session |
+| What is saved | Every user + assistant message, plus tagged key facts |
+| Search | Both: keyword search (SQLite FTS5) + meaning search (embeddings) |
+| When used | All modes get short facts; code from memory only in `generate`, `debug`, `refactor` |
+| Old or wrong facts | Newest fact wins; user can list and delete memories |
+| Storage | SQLite — one local file, Python standard library `sqlite3` |
+
+Planned layout:
+
+- `memory/` — new top-level package, same level as `retrieval/`
+- `memory/schema.py` — dataclasses only (`MemoryItem`, `Fact`), no logic
+- `memory/store.py` — SQLite access: tables for messages and facts, FTS5 index, save / update / delete / list
+- `memory/extractor.py` — rule-based fact tagging (explicit "remember", file names, error messages, versions, decisions) — no model calls
+- `memory/search.py` — hybrid search: FTS5 keyword score + embedding similarity + recency boost, merged and ranked
+- `configs/config.yaml` — new `memory:` section (`enabled`, `db_path`, `top_k`, `max_prompt_tokens`, `active_code_modes`)
+- `inference/engine/chat.py` — search memory before prompt build, save the turn after the reply
+- `inference/engine/prompt_builder.py` — `format_memories()`; memory is formatted here only
+- `inference/engine/prompt_templates.py` — `{memories}` slot added to templates
+- `inference/api/routes.py` — `GET /api/v1/memory` (list) and `DELETE /api/v1/memory/{id}` (delete)
+
+Rules:
+
+- Memory reuses `retrieval/embedder.py` — never add a second embedding model or loader
+- All memory settings come from `CFG.memory.*` — never hardcode the DB path, top_k or token budget
+- Memory gets a small, fixed prompt budget (a few short items) — the Phi-2 context is only ~2,048 tokens and RAG already uses part of it
+- `explain` and `chat` modes receive facts only — never code snippets from memory (same code-bias reason as the RAG rule)
+- Facts are short tagged statements, not raw past messages — the existing ban on injecting context history into `explain` / `chat` prompts still applies
+- Facts carry a timestamp and a key; a newer fact with the same key replaces the older one (older one marked inactive, not silently lost)
+- Fact extraction is rule-based first — Phi-2 is not reliable enough to judge what is important
+- If the database is missing or broken, chat continues without memory — no crash (same as RAG)
+- Memory runs on CPU / disk only — it must not use VRAM
+- The memory database holds private conversations — it must be gitignored and never committed
+- SQLite replaces `sessions/*.json` as the store for chat history; `context_manager.py` reads and writes through `memory/store.py`
 
 ---
 
@@ -376,6 +480,10 @@ AI MUST NOT:
 - Inject RAG context into explain or chat mode prompts
 - Reload the base model when switching LoRA adapters (Phase 9)
 - Add Python logic to any extension TypeScript file (Phase 10)
+- Inject code snippets from memory into explain or chat mode prompts (Phase 11)
+- Duplicate embedding logic — memory reuses `retrieval/embedder.py` (Phase 11)
+- Commit the memory database or any chat history to git (Phase 11)
+- Use a database server — memory is SQLite only (Phase 11)
 
 ---
 
@@ -414,6 +522,10 @@ python -m experiments.test_phi2
 # Chat system (terminal — Phase 7/8)
 python test_chat.py
 
+# Scoring test (loads the model, ~30–50 min for 100 problems — close other heavy apps first)
+python -m experiments.eval_mbpp
+python -m experiments.eval_mbpp --base
+
 # API boot
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 
@@ -431,7 +543,7 @@ Data → Processing → Dataset → RAG Index
                             ↓
                         Training → LoRA Adapter
                                         ↓
-                                Inference API
+          Memory DB (Phase 11) ↔ Inference API
                                 /           \
                     VS Code Extension     Chat Panel (Phase 10)
                     (generate commands)   (full chat UI)
