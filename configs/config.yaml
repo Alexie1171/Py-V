@@ -82,7 +82,33 @@ dataset_v2:
       max_tests: 5
       max_tries: 6             # bugs tried per function before giving up
       timeout_seconds: 5
-      exclude_ids_from: "./data/raw/v2/opencodeinstruct.jsonl"   # already used for write-code
+      exclude_ids_from:        # rows already used by other sources
+        - "./data/raw/v2/opencodeinstruct.jsonl"
+    improve_synthetic:
+      # "Improve this code" examples: clean OpenCodeInstruct functions rewritten
+      # into clumsy-but-equivalent code (tests must still pass). Runs code —
+      # Colab only.
+      hf_id: "nvidia/OpenCodeInstruct"
+      config: "train"
+      split: "train"
+      fetch: 2000
+      min_test_score: 1.0
+      max_code_lines: 25
+      max_tests: 5
+      max_rewrites: 3          # clumsy rewrites per function, each a different kind
+      min_rewrites: 2          # fewer than this = too small an improvement
+      max_tries: 6             # rewrites tried per function
+      timeout_seconds: 5
+      exclude_ids_from:
+        - "./data/raw/v2/opencodeinstruct.jsonl"
+        - "./data/raw/v2/bug_fix.jsonl"
+    commitpack_refactor:
+      # "Improve this code" examples from real refactor commits. Nothing runs.
+      data_files: "hf://datasets/bigcode/commitpackft/data/python/data.jsonl"
+      fetch: 800               # expected to run short (~2% of commits are refactors)
+      code_lines: [3, 30]
+      similarity: [0.3, 0.95]  # skip near-identical and complete rewrites
+      max_per_repo: 2
     old_github:
       # The v1 dataset. Kept at this path; v2 will be written elsewhere.
       path: "./data/datasets/train.jsonl"

@@ -178,7 +178,7 @@ Order: better training data + retrain first, then Phase 11, then 9, 10 and speed
 
 **Where jobs run:** heavy jobs (full fetch, scoring test, training) run on Colab through `Google Colab/py_v_runner.ipynb` (gitignored). The notebook downloads the code from GitHub — **push changes first** — and saves results to Drive `MyDrive/PY-V/results/`. Claude writes the notebook; the owner runs it (VS Code Colab kernel or browser) and saves it, so the printed results can be read back.
 3. Break-and-fix script for fix-error examples — **built** (`data/scripts/sources/bug_fix.py` + `mutations.py`, run as source `bug_fix`), tested locally on a hand-written function only (9 bug kinds; bugs the tests don't catch are skipped). Target 3,000 records. **Not run yet** — runs internet code, so Colab only (notebook Job C, to be added after Job B finishes)
-4. Improve-code examples from filtered CommitPackFT
+4. Improve-code examples — **built**, two sources because real refactor commits are rare (~0.3% of CommitPackFT): `commitpack_refactor` (real commits, ~150–200 expected; sample of 20 reviewed, filters tightened after review; runs nothing) + `improve_synthetic` (clean tested functions rewritten into clumsy-but-equivalent code, tests must still pass; target 2,000; Colab only). Checked locally on hand-written functions. **Not run yet** (notebook Job D, to be added after Job C)
 5. Mix, clean, dedupe, split to ~12k
 6. Training fixes: end-of-text token, pad ≠ end token, max_seq_length 384 → 768
 7. Retrain on Colab, re-score against step 1

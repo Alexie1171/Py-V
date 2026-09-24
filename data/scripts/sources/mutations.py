@@ -21,7 +21,7 @@ class Mutation:
     explanation: str
 
 
-class _Source:
+class SourceText:
     """Original code + mapping from AST positions to text offsets."""
 
     def __init__(self, code: str):
@@ -228,7 +228,7 @@ def all_mutations(code: str) -> list:
     except SyntaxError:
         return []
 
-    src, out = _Source(code), []
+    src, out = SourceText(code), []
     for operator in _OPERATORS:
         for mutation in operator(src, tree):
             if mutation.buggy == code:

@@ -9,7 +9,9 @@ yielding PY-V records (instruction / output / metadata incl. task label).
 from data.scripts.sources import (
     bug_fix,
     code_search_net,
+    commitpack_refactor,
     glaive,
+    improve_synthetic,
     old_github,
     opencodeinstruct,
     self_oss_instruct,
@@ -21,5 +23,7 @@ SOURCES = {
     "old_github":        old_github.iter_records,
     "glaive":            glaive.iter_records,
     "code_search_net":   code_search_net.iter_records,
-    "bug_fix":           bug_fix.iter_records,      # runs code — Colab only
+    "bug_fix":             bug_fix.iter_records,            # runs code — Colab only
+    "improve_synthetic":   improve_synthetic.iter_records,  # runs code — Colab only
+    "commitpack_refactor": commitpack_refactor.iter_records,
 }

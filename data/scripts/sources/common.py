@@ -6,6 +6,7 @@ removal. No source-specific logic here.
 """
 
 import ast
+import hashlib
 import re
 
 # ```lang\n ... ```
@@ -21,6 +22,20 @@ _DEMO_STARTS = (
     "# Example", "# example", "# Test", "# test", "# Sample", "# sample",
     "# Usage", "# usage", "if __name__", "print(", "assert ",
 )
+
+
+# Ways a user asks for "improve this code" (refactor records)
+IMPROVE_TEMPLATES = [
+    "Improve this code:\n\n{code}",
+    "Can you clean up this function and make it more Pythonic?\n\n{code}",
+    "Refactor this to be simpler and easier to read:\n\n{code}",
+    "This works but looks clumsy. Please improve it:\n\n{code}",
+]
+
+
+def pick(options: list, key: str):
+    """Stable choice from `options` based on `key` (same key → same choice)."""
+    return options[int(hashlib.md5(key.encode()).hexdigest(), 16) % len(options)]
 
 
 def make_record(instruction: str, output: str, source: str, task: str,
