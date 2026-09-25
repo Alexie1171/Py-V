@@ -18,7 +18,7 @@ from collections import Counter
 
 from data.scripts.sources.common import make_record, pick
 from data.scripts.sources.mutations import all_mutations
-from data.scripts.sources.unit_tests import require_colab, run_tests, tested_functions
+from data.scripts.sources.unit_tests import require_cloud, run_tests, tested_functions
 
 SOURCE  = "bug_fix"
 LICENSE = "cc-by-4.0"
@@ -46,7 +46,7 @@ def _instruction(result: dict, buggy: str, source_id: str) -> str:
 
 
 def iter_records(cfg: dict, stats):
-    require_colab(SOURCE)
+    require_cloud(SOURCE)
     kind_count = Counter()
     kept       = 0
 

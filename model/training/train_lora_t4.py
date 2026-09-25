@@ -1,6 +1,6 @@
 """
 train_lora_t4.py — PY-V (model/training/)
-LoRA training on a Google Colab T4, run from the Colab runner notebook.
+LoRA training on one T4 (Kaggle or Colab), started by scripts/gpu_pipeline.py.
 Starts fresh from the plain base model in config (4-bit). Data, prompt format, end-of-text
 token and answer-only loss come from dataset_loader.py; hyperparameters
 from the `training` section of configs/config.yaml. Batch size and gradient
@@ -8,7 +8,9 @@ checkpointing are measured on the GPU at start (pick_batch_setup): the
 fastest setup whose worst-case batch fits, effective batch always 16.
 
 Checkpoints go to --output-dir every save_steps; a rerun resumes from the
-newest one there (point it at Drive so a Colab disconnect loses little).
+newest one there (point it at saved storage so a stopped run loses little).
+Uses one GPU only: on a 2-GPU machine it takes GPU 0 unless CUDA_VISIBLE_DEVICES
+says otherwise (the pipeline gives each training its own GPU).
 At the end the adapter folder also gets v_adapter.json (brain, prompt format,
 dataset, GPU setup, final losses — the inference loader reads the prompt
 format from it) and training_log.json (every logged loss / eval loss).
@@ -25,6 +27,10 @@ import datetime
 import json
 import os
 import time
+
+# One GPU per training: with two visible GPUs (Kaggle T4 x2) the Trainer would
+# wrap the 4-bit model in DataParallel. Set before torch first touches CUDA.
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")
 
 import torch
 

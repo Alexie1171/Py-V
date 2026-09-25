@@ -1,6 +1,6 @@
 # Py-V — Project Status
 
-_Last updated: 2026-09-25_
+_Last updated: 2026-09-26_
 
 The rulebook for how code must be written is `.github/CLAUDE.md`. This file is the plain-language picture: where the project is, what is broken or unfinished, where it is going, and the limits we work within.
 
@@ -39,7 +39,9 @@ Work paused on **2026-05-04** and resumed on **2026-09-25**.
 | 10 | VS Code chat panel | Planned — nothing started |
 | 11 | Long-term memory | **Built 2026-09-26** (`memory/`, on by default; smoke test passes) — not yet tried with a trained Granite |
 
-**Build order:** better training data + Colab retrain (8.1.x commits — the Granite retrain now runs in the one-button Colab pipeline) and **Phase 11 memory (built 2026-09-26) — current phase, commits numbered 11.x** → then Phases 9, 10 and speed work (order of those three not decided yet).
+**Build order:** better training data + GPU retrain (8.1.x commits — the Granite retrain now runs in the one-button GPU pipeline) and **Phase 11 memory (built 2026-09-26) — current phase, commits numbered 11.x** → then Phases 9, 10 and speed work (order of those three not decided yet).
+
+**Now (2026-09-26):** the Granite retrain moves to **Kaggle** — Colab's GPU time is used up until about noon 2026-09-27. The owner uploads the training source files as a private Kaggle dataset and starts `Kaggle/py_v_kaggle.ipynb` as a background run (2× T4, ~5 h: both Granite versions tested, trained, tested). The assistant then reads the results with the Kaggle CLI.
 
 **Things switched off or put off for later** are listed in section 5 — check it before starting new work.
 
@@ -59,7 +61,7 @@ Work paused on **2026-05-04** and resumed on **2026-09-25**.
 | Part | Works | Problems / unknowns |
 |------|-------|---------------------|
 | **Data** | Pipeline runs; 5,508 / 612 examples | 99% GitHub functions, ~50% "Write a Python function…"; only 0.5% debug, 0.5% refactor, 0.2% explain examples; some Chinese instructions. Cleaner v4 not applied — it would drop 266 of 5,508 training rows (~5%) |
-| **Model** | **Brain: IBM Granite 3B** (since 2026-09-26) — plain, untested in the app so far; 69/100 MBPP, 7/10 long questions on the laptop | No LoRA adapter for Granite yet (retrain on Colab, Job F); plain vs chat version decided by Job H. The Phi-2 rows below are history |
+| **Model** | **Brain: IBM Granite 3B** (since 2026-09-26) — plain, untested in the app so far; 69/100 MBPP, 7/10 long questions on the laptop | No LoRA adapter for Granite yet — retrain and plain-vs-chat comparison run in the one-button GPU pipeline (Kaggle). The Phi-2 rows below are history |
 | **Chat engine** | Intent routing, 5 modes; answers in 10–30 s; explain mode works; clean simple code answers | Debug and refactor don't really do the task (training data gap); history turned off (see section 5); model can't stop on its own (trained without an end marker); no memory |
 | **RAG** | Index built 2026-09-25: 5,508 dataset + 160 codebase chunks | **Turned off** (see section 5). Weak matches — "quicksort" returns merge sort and unrelated code; many dataset instructions are auto-generated ("Write a function named `setup` that takes self") |
 | **Server** | FastAPI with `/health`, `/generate`, `/chat` | — |
@@ -157,17 +159,20 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 |------|-------|-----|-----------------------|
 | **RAG (code search)** | 2026-09-25 | Weak dataset matches were pasted into answers instead of helping (2 of 3 code answers broken in test 2) | After the dataset is improved (cleaner v4 + better instructions). Maybe add a "strong matches only" cut-off. Switch: `rag.enabled: true` in `configs/config.yaml`. The index must be rebuilt first — it now reads dataset v2 (`paths.dataset`) |
 | **Raw chat history in prompts** (all modes) | 2026-09-25 | Model answered the previous question / copied the previous answer instead of the new one | Replaced by Phase 11 memory (built 2026-09-26): short facts in every mode, earlier code only in code modes. Raw history stays out of prompts; `format_context()` is unused |
-| **Fine-tuned adapter — V runs the plain brain** | 2026-09-26 | Brain upgraded Phi-2 → Granite; Phi-2 adapters don't fit Granite and were deleted. The end-token / answer-only training fixes are built and worked on Phi-2 v2 (it learned to stop) | Granite retrain on Colab (Job F; ideally after the long-file examples below are added), then download the adapter into `model/lora/` |
+| **Fine-tuned adapter — V runs the plain brain** | 2026-09-26 | Brain upgraded Phi-2 → Granite; Phi-2 adapters don't fit Granite and were deleted. The end-token / answer-only training fixes are built and worked on Phi-2 v2 (it learned to stop) | Granite retrain in the one-button GPU pipeline on Kaggle (with the long-file examples below), then download the better version's adapter into `model/lora/` |
 | **Debug / refactor / explain training examples** | 2026-09-25 | Dataset is 99% "write a function"; model can't debug or refactor (test 3) | In dataset v2 now (2,945 fix / 2,062 improve / 1,800 explain). Comes back with the v2 adapter above |
 | **Cleaner v4 dataset rebuild** | 2026-05-04 | Not applied yet; drops 266 of 5,508 rows (~5%) | Probably never needed: dataset v2 takes only the best 800 old examples, through the same English filter. Drop this row once the v2 adapter is in use |
-| **Qwen3.5 in the brain check** (newest small Qwen, Feb 2026, Apache 2.0) | 2026-09-25 | Needs transformers 5; the laptop has 4.57 (the app runs on it) | Test on Colab (has transformers 5) once its GPU time resets, or when the laptop moves to transformers 5 |
-| **"Long file → return only the fixed part" training examples** | 2026-09-26 | Long-question test: Phi-2 copied the whole file instead of writing the fixed function; every v2 fix example was one short function | **Built** (`data/scripts/sources/long_file_fix.py`, 1,200 in dataset v3); generated + trained in the one-button Colab run. Remove this row once the trained Granite is scored |
-| **Qwen3-4B's two ~5,000-token long questions** | 2026-09-26 | Stopped to protect the laptop (RAM at 15.1 of 15.4 GB, free RAM ~1 GB) | Only if the laptop gets more RAM/GPU memory, or on Colab |
-| **Scoring test for fixing / improving code** | 2026-09-25 | MBPP only measures writing functions | **Built** (`experiments/eval_fix.py`, 40 fix + 40 improve held-out MBPP questions); runs for every brain in the one-button Colab run. Remove this row once it has run |
+| **Qwen3.5 in the brain check** (newest small Qwen, Feb 2026, Apache 2.0) | 2026-09-25 | Needs transformers 5; the laptop has 4.57 (the app runs on it) | Test on Kaggle or Colab (Colab has transformers 5; check Kaggle's version) as a pipeline stage, or when the laptop moves to transformers 5 |
+| **"Long file → return only the fixed part" training examples** | 2026-09-26 | Long-question test: Phi-2 copied the whole file instead of writing the fixed function; every v2 fix example was one short function | **Built** (`data/scripts/sources/long_file_fix.py`, 1,200 in dataset v3); generated + trained in the one-button GPU run (Kaggle). Remove this row once the trained Granite is scored |
+| **Qwen3-4B's two ~5,000-token long questions** | 2026-09-26 | Stopped to protect the laptop (RAM at 15.1 of 15.4 GB, free RAM ~1 GB) | Only if the laptop gets more RAM/GPU memory, or on the cloud T4 (Kaggle / Colab) |
+| **Scoring test for fixing / improving code** | 2026-09-25 | MBPP only measures writing functions | **Built** (`experiments/eval_fix.py`, 40 fix + 40 improve held-out MBPP questions); runs for every brain in the one-button GPU run (Kaggle). Remove this row once it has run |
 | **Speed work** (llama.cpp / GGUF, streaming) | 2026-09-25 | Memory chosen first | After Phase 11 |
 | **Phases 9 and 10** | 2026-09-25 | Phase 11 goes first | After Phase 11 |
 | **Colibri** | 2026-09-25 | Built for huge mixture-of-experts models; our dense 3–4B brains gain nothing from SSD streaming | Only if hardware grows (≥32 GB RAM, bigger GPU) |
 | **Removing `TRANSFORMERS_CACHE`** | 2026-09-25 | Needs admin rights | Owner removes it (steps in section 4, item 8) |
+| **Colab as the main GPU runner** | 2026-09-26 | Colab's free GPU time ran out (back ~noon 2026-09-27); Kaggle gives 30 GPU h/week, 12 h background runs and 2× T4 | Colab notebook still works (same pipeline, one T4) — use it when Kaggle's weekly hours are used up. Results stay where a job started (Drive vs Kaggle output) |
+| **Kaggle's VS Code connection** (Run ▸ Kaggle Jupyter Server) | 2026-09-26 | Big runs go as background runs instead: the VS Code session needs the laptop connected for hours and loses `/kaggle/working` when it ends | For short interactive checks on Kaggle's GPUs, if wanted |
+| **Kaggle P100 GPU** | 2026-09-26 | Kaggle's PyTorch dropped it (since 2026-04: "no kernel image is available") | Only if Kaggle's PyTorch supports it again — use GPU T4 x2 |
 
 ---
 
@@ -225,7 +230,7 @@ Order: better training data + retrain first, then Phase 11, then 9, 10 and speed
    - 10 questions is a small sample (one question = 10 points) — read it together with MBPP, not alone
 
 10. **Granite chat version test — ready, not run (Colab notebook Job H, 2026-09-26).** New short chat test (`experiments/eval_chat.py`, 8 questions: explain, answer from memory notes / search results, admit what it doesn't know, follow up, ask for a search, follow a format, keep it simple) plus a `--native-chat` option (the model's own chat format, thinking off) for all three tests. Job H runs MBPP + long-file + chat on the T4 for: Granite chat version in its own format → plain Granite → our Phi-2 v2 (reference) → Granite chat version with V's template. ~2 h of T4 time; skips what's already on Drive. Needs Phase 8.1.15 pushed + 1a–1c. Decides: plain or chat version as V's starting point
-11. **One-button Colab run — ready, not run (2026-09-26, owner's request).** `scripts/colab_pipeline.py`, started by the notebook's top cell **▶ RUN EVERYTHING** (setup + everything). The notebook was restructured to just that cell + **👀 CHECK PROGRESS** (read-only, no GPU); old setup/job cells removed — missing training-data files are re-made by the pipeline itself. Stages: test untrained Granite chat (own chat format) and plain → make 1,500 long-file fix examples → build dataset v3 → train Granite chat (own chat format) → test → train Granite plain (V's template) → test → extra: chat with V's template. Every test = MBPP + long-file + chat + fix/improve (one model load per brain, `experiments/eval_all.py`). ~8–9 h of T4 → 2–3 days of free GPU time; re-run the cell each day, finished stages are skipped and training resumes. Report after every stage: Drive `results/PIPELINE_REPORT.md` (+ `.json`, `pipeline_log.txt`). Training uses the whole T4 (measured at start), writes `v_adapter.json` + `training_log.json`. Dry run on transformers 5.17 + peft 0.21 with a tiny model passed (train, adapter note, reload with its format, all four tests, skip logic). Job H (step 10) is part of it
+11. **One-button GPU run — ready, not run (2026-09-26, owner's request). Moved to Kaggle the same day:** renamed `scripts/gpu_pipeline.py` (same code on Kaggle and Colab), started by `Kaggle/py_v_kaggle.ipynb` as a background run on 2× T4 — chat and plain versions run side by side on their own GPU while the data is made on the CPU (~5 h, fits one 12 h Kaggle run; stops itself at 11 h). Training data comes from a private Kaggle dataset uploaded from Drive; an earlier run's output attached as input is copied back to continue. Dry run with fake jobs passed (lanes, one GPU per job, time-limit stop, earlier-run copy, source import, folder links). Original Colab description: `scripts/colab_pipeline.py`, started by the notebook's top cell **▶ RUN EVERYTHING** (setup + everything). The notebook was restructured to just that cell + **👀 CHECK PROGRESS** (read-only, no GPU); old setup/job cells removed — missing training-data files are re-made by the pipeline itself. Stages: test untrained Granite chat (own chat format) and plain → make 1,500 long-file fix examples → build dataset v3 → train Granite chat (own chat format) → test → train Granite plain (V's template) → test → extra: chat with V's template. Every test = MBPP + long-file + chat + fix/improve (one model load per brain, `experiments/eval_all.py`). ~8–9 h of T4 → 2–3 days of free GPU time; re-run the cell each day, finished stages are skipped and training resumes. Report after every stage: Drive `results/PIPELINE_REPORT.md` (+ `.json`, `pipeline_log.txt`). Training uses the whole T4 (measured at start), writes `v_adapter.json` + `training_log.json`. Dry run on transformers 5.17 + peft 0.21 with a tiny model passed (train, adapter note, reload with its format, all four tests, skip logic). Job H (step 10) is part of it
 
    All three newer brains beat our trained Phi-2 **without any training**. Trained on dataset v2 they would likely gain more (Phi-2 gained +4–5). Open decision: switch the brain (section 9). Qwen3.5 still untested (section 5)
 
@@ -313,10 +318,17 @@ Options, all need measuring on this laptop first:
 | 2026-09-26 | **Phase 11 memory built** (`memory/`): SQLite store + FTS5 keyword search + meaning search (bge-small on the CPU) + recency; rule-based facts from the user's messages only, newest per key wins; list/forget via `GET`/`DELETE /api/v1/memory`; sessions move from `sessions/*.json` into SQLite | Owner chose it for this round. Memory goes into the templates' existing `{context}` slot, so the adapters being trained now stay valid |
 | 2026-09-26 | API server loads the brain once (shared with the chat engine) | It loaded it twice — two copies alone fill the 4 GB laptop GPU |
 | 2026-09-26 | **Train both Granite versions** (chat in its own chat format, plain with V's template), one after the other, and score both | Owner: "we want as much data output as possible to work with later when colab is down" — T4 time and laptop GPU memory are the throttle |
-| 2026-09-26 | **One-button Colab run** (`scripts/colab_pipeline.py`): everything in order, skip-if-done, resumable, report after every stage | Owner: "one button run starts in colab and we get all the outputs we need to progress further" |
+| 2026-09-26 | **One-button Colab run** (`scripts/colab_pipeline.py`, renamed `scripts/gpu_pipeline.py` the same day — runs on Kaggle and Colab): everything in order, skip-if-done, resumable, report after every stage | Owner: "one button run starts in colab and we get all the outputs we need to progress further" |
 | 2026-09-26 | Prompt format travels with the model (`model.v_prompt_format`; an adapter's `v_adapter.json` wins over config) and the generator applies it; training wraps prompts the same way | App, tests and training can never disagree on the format — needed to use the chat version |
 | 2026-09-26 | Dataset v3 = v2 + 1,200 long-file fix examples; `max_seq_length` 768 → 1024 | Fixes the "copy the whole file" habit; long files need room |
 | 2026-09-26 | Colab training measures the T4 at start and uses as much of it as fits (checkpointing off if possible, biggest batch; effective batch stays 16) | Owner: "utilize the entire t4 gpu while training so its faster". 4-bit kept (matches the laptop) |
+| 2026-09-26 | **Kaggle is the main GPU runner, Colab the backup** (`Kaggle/py_v_kaggle.ipynb`, same pipeline) | Colab quota out until ~noon 2026-09-27. Kaggle: 30 GPU h/week, 12 h per run, background runs (laptop can be off), GPU T4 x2 for the quota of one |
+| 2026-09-26 | **Both Kaggle GPUs at once**: chat version on GPU 0, plain on GPU 1, training data on the CPU at the same time (`gpu_pipeline.py` lanes) | Owner's choice — ~5 h instead of ~9; the whole Granite job fits one Kaggle run |
+| 2026-09-26 | **Training data uploaded from Drive** to a private Kaggle dataset (+ laptop `old_github.jsonl`); the pipeline copies it in | Same data as before and no run time spent re-making it |
+| 2026-09-26 | **Background run** (Save & Run All), not Kaggle's VS Code connection | Laptop can be off or busy; output saved automatically. VS Code session would need the laptop connected ~5 h |
+| 2026-09-26 | **Kaggle key on the laptop** (`~/.kaggle/kaggle.json`, never in the repo): the assistant checks runs and downloads results with the Kaggle CLI into `Kaggle downloads/` (gitignored) | Kaggle results are not in a local notebook file like Colab's |
+| 2026-09-26 | One GPU per job: `load_model()` uses `device_map={"": 0}`, `train_lora_t4.py` defaults `CUDA_VISIBLE_DEVICES=0` | On 2× T4, `"auto"` split the model across both GPUs (slower, batch probe measured only GPU 0) and the Trainer would wrap the 4-bit model in DataParallel |
+| 2026-09-26 | Code-running data sources allowed on Kaggle too (`require_cloud()`, was Colab only) | Kaggle is a throwaway cloud machine like Colab; without it the long-file examples would be refused there |
 | 2026-09-26 | SSD as extra GPU memory (colibri-style streaming) not used | Colibri streams only the small active part of huge mixture-of-experts models; our dense 3–4B brains read all their weights for every word, so SSD speed (~1.8 GB/s vs 128 GB/s GPU) would make answers take minutes. Windows already spills GPU → RAM → SSD, which is what made long questions take 13 min. Better: send V only the relevant parts (search), a leaner engine (llama.cpp), more RAM |
 
 ---
@@ -331,7 +343,7 @@ Options, all need measuring on this laptop first:
 | CPU | AMD Ryzen 7 3750H, 4 cores / 8 threads |
 | RAM | 16 GB |
 | Storage | Intel 660p 512 GB NVMe (QLC — slow for heavy disk streaming) + SanDisk 240 GB SATA SSD; ~72 GB free on D: |
-| Big training | Google Colab T4 (local GPU too slow) |
+| Big training | Kaggle GPU T4 x2 (main, 30 GPU h/week) / Google Colab T4 (backup) — local GPU too slow |
 
 **RAM is tight.** Loading Phi-2 needs several GB of RAM for a short time. With two VS Code windows (~4.4 GB), the PHP language server of the other project (~1.5 GB) and Claude Code (~1.1 GB) open, Windows pushed ~5 GB to the page file on 2026-09-25 and the laptop lagged afterwards. Close the other VS Code window before running Py-V.
 
@@ -386,4 +398,9 @@ uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 
 # Extension
 cd extension && npm install && npm run compile   # then F5 in VS Code
+
+# Kaggle run status / results (Kaggle CLI + key in ~/.kaggle/)
+kaggle kernels list --mine
+kaggle kernels status <user>/<notebook>
+kaggle kernels output <user>/<notebook> -p "Kaggle downloads"
 ```

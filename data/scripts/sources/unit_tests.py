@@ -4,7 +4,7 @@ Shared by the sources that run code (bug_fix, improve_synthetic):
   - tested_functions(): streams OpenCodeInstruct rows whose unit tests all
     passed upstream and still pass here, skipping rows already used elsewhere
   - run_tests(): runs a function against its tests, reports the first failure
-  - require_colab(): refuses to run internet code outside Colab
+  - require_cloud(): refuses to run internet code outside Kaggle / Colab
 """
 
 import json
@@ -45,9 +45,12 @@ print("{marker}" + __json.dumps({{"kind": "pass"}}))
 '''
 
 
-def require_colab(source: str):
-    if not (os.environ.get("COLAB_RELEASE_TAG") or os.environ.get("PYV_ALLOW_LOCAL_EXEC") == "1"):
-        raise RuntimeError(f"{source} runs code from the internet - run it on Colab (runner notebook)")
+def require_cloud(source: str):
+    """Code from the internet runs only on a throwaway cloud machine: Kaggle
+    (KAGGLE_KERNEL_RUN_TYPE) or Colab (COLAB_RELEASE_TAG)."""
+    if not (os.environ.get("KAGGLE_KERNEL_RUN_TYPE") or os.environ.get("COLAB_RELEASE_TAG")
+            or os.environ.get("PYV_ALLOW_LOCAL_EXEC") == "1"):
+        raise RuntimeError(f"{source} runs code from the internet - run it on Kaggle or Colab (runner notebooks)")
 
 
 def run_tests(code: str, tests: list, timeout: int):

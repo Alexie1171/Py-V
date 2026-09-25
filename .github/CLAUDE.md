@@ -38,7 +38,7 @@ It ensures:
 | Phase 10 | VS Code chat panel (full UI, no terminal) | Planned |
 | Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Built 2026-09-26 (`memory/`, on by default) — smoke test passes; not yet tried with a trained Granite |
 
-Build order: better training data + Colab retrain (the 8.1.x commits; Granite retrain runs in the one-button Colab pipeline) and Phase 11 (built 2026-09-26) → then Phases 9 and 10 and speed work (numbering kept stable on purpose). Current phase: **Phase 11** — commits are numbered 11.x from here ("Phase 11: …", then 11.1, 11.1.1, …)
+Build order: better training data + GPU retrain (the 8.1.x commits; Granite retrain runs in the one-button GPU pipeline — Kaggle first, Colab as backup) and Phase 11 (built 2026-09-26) → then Phases 9 and 10 and speed work (numbering kept stable on purpose). Current phase: **Phase 11** — commits are numbered 11.x from here ("Phase 11: …", then 11.1, 11.1.1, …)
 
 Live status, open issues and next steps: see `PROJECT_STATUS.md` in the repo root.
 
@@ -81,12 +81,12 @@ All generated code must be optimized for:
 ## Model Constraints
 
 All work is based on:
-- **Brain: IBM Granite 3B** — `ibm-granite/granite-4.1-3b-base` (config `model.name`), Apache 2.0, 128K context. First brain upgrade on 2026-09-26, replacing Phi-2 (2.7B, 2,048-token limit) — see `PROJECT_STATUS.md`. The chat version `ibm-granite/granite-4.2-3b` (same layers, own chat format, optional thinking mode) is under test (Colab Job H) and may become the starting point
+- **Brain: IBM Granite 3B** — `ibm-granite/granite-4.1-3b-base` (config `model.name`), Apache 2.0, 128K context. First brain upgrade on 2026-09-26, replacing Phi-2 (2.7B, 2,048-token limit) — see `PROJECT_STATUS.md`. The chat version `ibm-granite/granite-4.2-3b` (same layers, own chat format, optional thinking mode) is under test (GPU pipeline: both versions tested untrained, trained and tested) and may become the starting point
 - Brains live only in the Hugging Face cache (`HF_HOME`, `E:\huggingface Assets`), never in the repo
-- Fine-tuned LoRA adapter at `model/lora/` — the adapter inference loads. **None exists for Granite yet**: until Job F trains one, the app runs the plain brain (`load_lora_model()` falls back and says so)
+- Fine-tuned LoRA adapter at `model/lora/` — the adapter inference loads. **None exists for Granite yet**: until the GPU pipeline trains one, the app runs the plain brain (`load_lora_model()` falls back and says so)
 - An adapter only fits the brain it was trained on — `load_lora_model()` refuses an adapter whose `base_model_name_or_path` differs from `model.name`
 - LoRA layer names depend on the brain: config `training.lora_target_modules` (Granite: q/k/v/o_proj, gate/up/down_proj) — change it together with `model.name`
-- Training runs on Colab T4 (Job F) into a Drive folder named after the brain (`MyDrive/PY-V/model_<brain>/lora`); download the finished adapter into `model/lora/`
+- Training runs in the GPU pipeline (Kaggle T4, Colab T4 as backup) into a folder named after the brain, `{root}/model_<brain>/lora` (Kaggle: the run's output `PY-V/model_<brain>/lora`; Colab: Drive `MyDrive/PY-V/model_<brain>/lora`); download the finished adapter into `model/lora/`
 - Phi-2 history (retired 2026-09-26, all local files deleted): v2 adapter scored 66/100 MBPP on the laptop (plain Phi-2 62), 1/10 long questions; adapters remain on Drive (`MyDrive/PY-V/model_v2/lora`, `MyDrive/Py-V/Py-V/model_t4/lora`)
 
 Rules:
@@ -94,7 +94,8 @@ Rules:
 - No models >7B parameters
 - Always use PEFT / LoRA fine-tuning
 - Always load base model with 4-bit BitsAndBytes quantization
-- Always resume from checkpoint when one exists (`resolve_checkpoint()` on the laptop, `get_last_checkpoint(output_dir)` on Colab)
+- Always resume from checkpoint when one exists (`resolve_checkpoint()` on the laptop, `get_last_checkpoint(output_dir)` on Kaggle/Colab)
+- One GPU per job: `load_model()` puts the whole model on the first visible GPU (`device_map={"": 0}`, never `"auto"` — on a 2-GPU machine that splits the model across both, and the batch-size probe only measures GPU 0); `train_lora_t4.py` defaults `CUDA_VISIBLE_DEVICES=0` (else the Trainer wraps the 4-bit model in DataParallel). Use a second GPU by running a second job on it, never by splitting one job
 - Every training example = the inference prompt for its mode (`build_training_prompt()`) + answer + end-of-text token; loss on the answer only (prompt labels -100)
 - Examples longer than `max_seq_length` are dropped, never truncated — a cut answer has no end token and teaches the model not to stop
 - Labels are built in `dataset_loader.py` and padded with -100 (`DataCollatorForSeq2Seq`). Never use `DataCollatorForLanguageModeling`: pad == eos (Phi-2, Granite), so it masks the end token (the Phi-2 v1 adapters never learned to stop because of this)
@@ -253,15 +254,15 @@ Rules:
 - Result names always include the brain: `base_<brain>` or `<brain>_<adapter folder>` (files from before 2026-09-26 named `base` / `lora` / `lora_v2` are Phi-2)
 - `--base` scores the brain without the LoRA adapter for comparison; `--adapter DIR` scores another adapter (default `CFG.paths.model_output`); `--base --model NAME` scores another base model (tag `base_<name>`)
 - Every run also writes `mbpp_{tag}_summary.json`: score + every setting that can change it (base model, adapter md5, decoding settings, benchmark, GPU, library versions). Only compare runs whose settings match
-- **Big training and tests run on the Colab T4** (owner rule, 2026-09-26) — the laptop took hours per test. Scores compare only within one machine (the summary records the GPU): the 2026-09-25 laptop scores are a laptop-only baseline, so any model compared on Colab gets its own Colab run with the same settings
-- The laptop is only for short checks (e.g. "does this fit in 4 GB / how much RAM"), and only after telling the owner. If Colab's GPU quota is used up: wait for the reset, or ask the owner before using the laptop
+- **Big training and tests run on a cloud T4** (owner rule, 2026-09-26) — the laptop took hours per test. Kaggle is the main place (2026-09-26: 30 GPU h/week, 12 h per background run, 2× T4); Colab is the backup (~4 h/day). Scores compare only within one machine type (the summary records the GPU and library versions): the 2026-09-25 laptop scores are a laptop-only baseline, so any model compared on the T4 gets its own T4 run with the same settings
+- The laptop is only for short checks (e.g. "does this fit in 4 GB / how much RAM"), and only after telling the owner. If the cloud GPU quota is used up: wait for the reset, or ask the owner before using the laptop
 
 ---
 
 ### `experiments/eval_long_context.py`
 - Long-question test: "find the bug in this long file" at ~500 / 1,000 / 1,500 / 3,000 / 6,000 tokens (counted with Phi-2's tokenizer when the kept set was built; 2 questions each), debug mode, same generation path as the app, 320-token answer budget
 - Modules built from MBPP **full** train/validation/prompt solutions (never the test split `eval_mbpp.py` scores on); one bug planted with `data/scripts/sources/mutations.py`; graded by running the target function's tests with the answer loaded on top of the buggy module
-- Questions built once and kept in git as `experiments/longctx_tasks.json` — every model, on the laptop and on Colab, gets the same ones; delete the file only to deliberately make a new question set
+- Questions built once and kept in git as `experiments/longctx_tasks.json` — every model, on the laptop and on the cloud T4, gets the same ones; delete the file only to deliberately make a new question set
 - Records prompt tokens, pass/fail and peak GPU memory per question; skips questions longer than the model's context window; catches out-of-memory and skips bigger sizes
 - Same flags as `eval_mbpp.py` (`--adapter`, `--base`, `--model`, `--native-chat`); results `longctx_{tag}.jsonl` + `_summary.json`
 
@@ -285,14 +286,14 @@ Rules:
 
 ### `experiments/eval_all.py`
 - All four tests (MBPP, long-file, chat, fix/improve) with ONE model load — each script exposes `run(model, tokenizer, tag, args)`; `--skip-done` skips tests whose summary exists; a crashing test doesn't stop the others (non-zero exit)
-- Used by the one-button Colab pipeline
+- Used by the one-button GPU pipeline (`scripts/gpu_pipeline.py`)
 
 ---
 
 ### `experiments/eval_common.py`
 - Shared by the scoring scripts: `add_model_args()` (`--base`, `--adapter`, `--model`, `--native-chat`), `result_tag()`, `load_for_eval()` → (model, tokenizer, tag)
 - The prompt format travels with the loaded model (`model.v_prompt_format`) and the generator applies it — scripts pass plain template prompts. `--native-chat` forces the brain's own chat format (thinking off) for an untrained chat brain; tag gets `_native`. A trained adapter uses the format from its `v_adapter.json`
-- Runs on Colab like every big test. On the T4 (15 GB) it measures ability; how much fits on the laptop (4 GB) is a separate short laptop check
+- Runs on the cloud T4 (Kaggle / Colab) like every big test. On the T4 (15 GB) it measures ability; how much fits on the laptop (4 GB) is a separate short laptop check
 - On Windows the GPU driver spills into system RAM instead of failing when GPU memory is full ("shared GPU memory") — watch system RAM during long questions on the laptop; Qwen3-4B took it to 15.1 of 15.4 GB
 - MBPP / HumanEval are for scoring only — never add them to training data
 
@@ -301,28 +302,42 @@ Rules:
 ### `experiments/code_runner.py`
 - `run_python(program, timeout)` — runs code in a separate process, temp dir, timeout
 - Guard disables file delete/rename/write, process start, sockets — best-effort, NOT a real sandbox
-- Untrusted code from the internet (dataset checks) runs on Colab, not the laptop
+- Untrusted code from the internet (dataset checks) runs on Kaggle / Colab, not the laptop
 
 ---
 
-### `scripts/colab_pipeline.py`
-- The one-button Colab run (owner rule, 2026-09-26: "one button run starts in colab and we get all the outputs we need"). Stages in order: test untrained Granite chat (own chat format) → test untrained Granite plain → training data (every source the mix needs must be on Drive — missing ones are re-made, `old_github` from the v1 dataset found on Drive by fingerprint — then the long-file fix examples) → build dataset v3 → train chat (native_chat) → test it → train plain (template) → test it → extra: chat with V's template
-- Every stage checks its results on Drive first and is skipped when done; training resumes from its checkpoint — re-running the cell continues after a disconnect or when the day's GPU time ran out. Stages whose inputs are missing are "blocked", not crashed
-- After every stage: `MyDrive/PY-V/results/PIPELINE_REPORT.md` + `.json` (stage status, all scores, training notes); the whole console output is appended to `results/pipeline_log.txt`
-- Adapters: `MyDrive/PY-V/model_<brain>/lora` (one folder per brain); sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for its jobs
+### `scripts/gpu_pipeline.py`
+- The one-button GPU run (owner rule, 2026-09-26: "one button run … we get all the outputs we need to progress further") — same code on Kaggle and Colab; replaced `scripts/colab_pipeline.py` on 2026-09-26. Stages: 1 test untrained Granite chat (own chat format), 2 test untrained Granite plain, 3 training data (sources copied from `--inputs` or an earlier run, missing ones re-made — `old_github` from the v1 dataset found by fingerprint — then the long-file fix examples), 4 build dataset v3, 5 train chat (native_chat), 6 test it, 7 train plain (template), 8 test it, 9 extra: chat with V's template
+- Lanes run at the same time, every job seeing only its own GPU (`CUDA_VISIBLE_DEVICES`): data lane on the CPU (3 → 4; trainings wait for it). Two GPUs (Kaggle T4 x2): chat lane on GPU 0 (1 → 5 → 6), plain lane on GPU 1 (2 → 7 → 8), ~5 h instead of ~9. One GPU (Colab): 1 → 2 → 5 → 6 → 7 → 8. Stage 9 goes to whichever GPU lane is free first, also while one waits for the data. Lines are prefixed with the lane name; progress bars are thinned to one a minute per lane
+- Everything is saved under `--root` (Kaggle `/kaggle/working/PY-V` = the run's output; Colab `/content/drive/MyDrive/PY-V`): the pipeline links `data/raw/v2` → `results/data_v2`, `data/datasets/v3` → `results/dataset_v3`, `experiments/outputs` → `results/eval` itself (refuses if one is a real non-empty folder); adapters in `model_<brain>/lora`
+- `--inputs` (Kaggle: `/kaggle/input`): an earlier run's saved folder (found by its `results/PIPELINE_REPORT.json`) is copied into root first, keeping files already there — that is how a Kaggle run continues; uploaded `<source>.jsonl` files are copied in for missing sources (`.part` + rename)
+- Every stage checks its results first and is skipped when done; training resumes from its checkpoint. Stages whose inputs are missing are "blocked", not crashed; a Python error in a stage is caught and marked FAILED, the other lanes go on
+- `--stop-after H` (Kaggle: 11 — the limit is 12 h a run): jobs still running then are killed, later stages marked "not started (run time limit)", and the run ends normally so its output is saved. Per-job timeouts: tests 4 h, training 8 h, fetch 3 h, build 1 h (timer-based, fires even when a job prints nothing)
+- After every stage change: `{root}/results/PIPELINE_REPORT.md` + `.json` (stage status + where it ran, all scores, training notes); the whole console output is appended to `results/pipeline_log.txt`. Sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for its jobs
 - New big jobs go into this pipeline as stages, not only into single notebook cells
 
 ---
 
+### `Kaggle/py_v_kaggle.ipynb` (git-tracked)
+- Main runner for heavy jobs since 2026-09-26 (Colab quota ran out): one code cell **▶ RUN EVERYTHING** — refuses outside Kaggle, clones/pulls the public GitHub repo to `/tmp/Py-V` (code is not part of the output), `pip install -U peft bitsandbytes`, lists `/kaggle/input`, then `gpu_pipeline.py --root /kaggle/working/PY-V --inputs /kaggle/input --stop-after 11`
+- Runs as a **background run** (Save Version → Save & Run All): no idle timeout, the laptop can be off; the owner starts it in the browser. Settings: Accelerator GPU T4 x2 (the P100 no longer works with Kaggle's PyTorch since 2026-04), Internet on, input = the private dataset with the training source files (from Drive `results/data_v2` + laptop `data/raw/v2/old_github.jsonl`)
+- Kaggle has no Drive: each run starts empty. To continue a stopped run, add this notebook's latest output as an input — the pipeline copies it back
+- Results: the version's output folder `PY-V/` (same layout as on Drive). The assistant reads them on the laptop with the Kaggle CLI (`kaggle kernels status / output`, key in `~/.kaggle/kaggle.json` — never in the repo) into `Kaggle downloads/` (gitignored)
+- Kaggle also offers a VS Code connection (Run ▸ Kaggle Jupyter Server → VS Code URL); not used for the big run — that session needs the laptop connected and loses `/kaggle/working` when it ends
+- Kaggle quota (2026-09-26): 30 GPU h per week, 12 h per run, 2× T4 counts as one GPU hour
+
+---
+
 ### `Google Colab/py_v_runner.ipynb` (gitignored)
-- Runner for heavy jobs on a Colab T4 — restructured 2026-09-26 to two code cells only:
-  - **▶ RUN EVERYTHING**: its own setup (mount Drive, clone/pull the public GitHub repo, install peft + bitsandbytes, link `data/raw/v2` → `results/data_v2`, `data/datasets/v3` → `results/dataset_v3`, `experiments/outputs` → `results/eval`), then `scripts/colab_pipeline.py`. No separate setup cells
+- Backup runner (one T4, results on Drive) — two code cells only:
+  - **▶ RUN EVERYTHING**: its own setup (mount Drive, clone/pull the public GitHub repo, install peft + bitsandbytes), then `scripts/gpu_pipeline.py --root /content/drive/MyDrive/PY-V` (the pipeline links the output folders to Drive itself)
   - **👀 CHECK PROGRESS**: read-only, no GPU (CPU runtime fine) — prints the pipeline report, the end of the log, and each Granite training's saved steps
 - The old setup cells 1a–1d and single-job cells (A–H) were removed — every job is a pipeline stage now; their results are recorded in `PROJECT_STATUS.md`
-- Code comes from GitHub — local changes must be pushed before running
+- Code comes from GitHub — local changes must be pushed before running (both runners)
 - Results go to Drive `MyDrive/PY-V/results/`; adapters to `MyDrive/PY-V/model_<brain>/lora` — never to an existing adapter folder of another brain
-- The assistant writes/updates this notebook; the owner runs it and saves it, and the printed results are read back from the file
-- Heavy jobs (full dataset fetch, training, MBPP scoring, long-question test, brain checks) go here, not on the laptop (owner rule, 2026-09-26)
+- The assistant writes/updates the runners; the owner runs them. Colab results are read back from the saved notebook file, Kaggle results with the Kaggle CLI
+- Heavy jobs (full dataset fetch, training, MBPP scoring, long-question test, brain checks) go to Kaggle or Colab, not the laptop (owner rule, 2026-09-26)
+- Kaggle and Colab keep separate results (Kaggle output vs Drive) — finish a job where it started
 - Colab's free GPU time runs out after roughly 4 hours of T4 use in a day and resets within ~12–24 h — plan jobs to fit, and put the most important job first
 
 ---
@@ -334,11 +349,11 @@ Rules:
 - `sources/{name}.py` — one module per source, each `iter_records(cfg, stats)` → PY-V records with `metadata.task` (`generate` / `debug` / `refactor` / `explain`) and `metadata.license`
 - `sources/common.py` — shared helpers only (record builder, fenced-code extraction, demo-code trimming, docstring removal)
 - `sources/mutations.py` — realistic single bugs (wrong comparison/operator, off-by-one range, name typo, missing cast, missing return, flipped bool, and/or swap, `None` init), spliced into the original text so the fixed code is the untouched original; pure AST work, runs nothing
-- `sources/bug_fix.py` — "fix the error" (`debug`) records: OpenCodeInstruct functions that pass their unit tests → one bug → tests re-run to capture the real error or failing check → instruction = what the user saw + broken code, output = original code + one-sentence fix. Skips rows already used for write-code. **Runs internet code: refuses to run outside Colab** unless `PYV_ALLOW_LOCAL_EXEC=1`
-- `sources/unit_tests.py` — shared by the code-running sources: `tested_functions()` (OpenCodeInstruct functions that pass their tests upstream AND here, skipping ids used by other record files), `run_tests()` (first failure as JSON, incl. the wrong value for failing `==` asserts), `require_colab()`
+- `sources/bug_fix.py` — "fix the error" (`debug`) records: OpenCodeInstruct functions that pass their unit tests → one bug → tests re-run to capture the real error or failing check → instruction = what the user saw + broken code, output = original code + one-sentence fix. Skips rows already used for write-code. **Runs internet code: refuses to run outside Kaggle / Colab** unless `PYV_ALLOW_LOCAL_EXEC=1`
+- `sources/unit_tests.py` — shared by the code-running sources: `tested_functions()` (OpenCodeInstruct functions that pass their tests upstream AND here, skipping ids used by other record files), `run_tests()` (first failure as JSON, incl. the wrong value for failing `==` asserts), `require_cloud()` (Kaggle via `KAGGLE_KERNEL_RUN_TYPE`, Colab via `COLAB_RELEASE_TAG`)
 - `sources/unrefactor.py` — the reverse of refactoring: clean code → clumsy code that should behave the same (comprehension → loop, `sum()` → loop, `return a == b` → if/else, enumerate → `range(len())`, truthiness → `len()`, max/min → if/else, ternary → if/else, `+=` → `x = x + ...`); pure AST work, runs nothing
-- `sources/improve_synthetic.py` — "improve this code" (`refactor`) records: clumsy rewrites applied one at a time, tests re-run after each, behaviour-changing rewrites dropped; instruction = request + clumsy code, output = clean original. **Runs internet code: Colab only**
-- `sources/long_file_fix.py` — "fix the bug in this file" (`debug`) records: a tested OpenCodeInstruct function hidden among other working functions (earlier functions of the stream), one bug planted INSIDE it, tests re-run inside the file; output = ONLY the corrected function + one-line explanation (teaches "fix just the broken part" on long input). Bug kinds rotated. **Runs internet code: Colab only**
+- `sources/improve_synthetic.py` — "improve this code" (`refactor`) records: clumsy rewrites applied one at a time, tests re-run after each, behaviour-changing rewrites dropped; instruction = request + clumsy code, output = clean original. **Runs internet code: Kaggle / Colab only**
+- `sources/long_file_fix.py` — "fix the bug in this file" (`debug`) records: a tested OpenCodeInstruct function hidden among other working functions (earlier functions of the stream), one bug planted INSIDE it, tests re-run inside the file; output = ONLY the corrected function + one-line explanation (teaches "fix just the broken part" on long input). Bug kinds rotated. **Runs internet code: Kaggle / Colab only**
 - `sources/commitpack_refactor.py` — "improve this code" records from real CommitPackFT refactor commits: subject must say refactor/simplify/clean up/improve/optimise/readability (not fix/test/docs/text), exactly one function changed, not only strings, both versions short. Nothing runs; yields ~0.3% of commits (~150–200 total)
 - `sources/common.py` also holds `IMPROVE_TEMPLATES` (shared request wordings) and `pick()` (stable template choice per id)
 - `experiments/code_runner.py` is shared with the code-running sources (`run_python_capture()` also returns stdout)
@@ -352,7 +367,7 @@ Rules:
 - `decontaminate.py` — `BenchmarkIndex`: any 10-word run shared with an MBPP (all configs/splits) or HumanEval problem statement, or identical normalised code to a benchmark solution → record dropped. Keeps the MBPP scoring test honest
 - Mix settings (`take`, `max_tokens`, `max_tokens_per_source`, `seed`, `val_share`) live in `CFG.dataset_v2.build`; tokens counted with the config brain's tokenizer
 - Dataset v3 (2026-09-26) = v2's mix + 1,200 `long_file_fix` records (limit 930 tokens) → `data/datasets/v3`; v2 stays as it was (Phi-2 was trained on it)
-- Runs on Colab (the source files are on Drive); needs no GPU and runs no code
+- Runs in the GPU pipeline's data lane on Kaggle / Colab (where the source files are); needs no GPU and runs no code
 
 ---
 
@@ -372,7 +387,7 @@ Rules:
 - `dataset_loader.py` — `get_tokenized_dataset(tokenizer, prompt_format)`: reads `CFG.paths.dataset` / `val_dataset`, builds input_ids + labels per record (mode = `metadata.task`; prompt in V's template or, for `native_chat`, re-wrapped exactly like `format_for_model()`), drops over-long records and prints how many; the answer is tokenized without special tokens; shared by both trainers
 - `max_seq_length` 1024 (since 2026-09-26, was 768) so long-file examples fit
 - `train_lora_t4.py` — Colab trainer: fresh from the plain brain in config, LoRA layers from `CFG.training.lora_target_modules`, hyperparameters from `CFG.training`, batch size + gradient checkpointing measured on the GPU at start (`pick_batch_setup()`: checkpointing off if it fits, then the biggest batch whose worst case — every example at `max_seq_length` — stays under 85% of GPU memory; effective batch always 16, so results don't depend on the GPU), `--output-dir` (Drive) with automatic resume, eval loss every `eval_steps`; `--model` / `--prompt-format` override config (the pipeline trains both Granite versions). At the end writes `v_adapter.json` (brain, prompt format, dataset, steps, losses, GPU setup, minutes) and `training_log.json` (every logged loss) next to the adapter. Colab has transformers **5.x**, the laptop 4.57 — the script must run on both (e.g. `_length_grouping()`: v5 replaced `group_by_length=True` with `train_sampling_strategy="group_by_length"`)
-- `train_lora.py` — laptop trainer (GTX 1650), all settings from `CFG.training`; 768-token examples may not fit in 4 GB — train on Colab
+- `train_lora.py` — laptop trainer (GTX 1650), all settings from `CFG.training`; 768-token examples may not fit in 4 GB — train on Kaggle / Colab
 
 ---
 
@@ -615,29 +630,35 @@ python -m retrieval.indexer
 # RAG retrieval test
 python -m retrieval.test_rag
 
-# Brain answers — short chat test (big tests go to Colab)
+# Brain answers — short chat test (big tests go to Kaggle / Colab)
 python -m experiments.eval_chat --adapter model/lora
 
 # Chat system (terminal — Phase 7/8)
 python test_chat.py
 
-# Scoring test (big test — run it on Colab via the runner notebook; ~15–25 min on the T4, 30–110 min on the laptop)
+# Scoring test (big test — run it on Kaggle / Colab via a runner notebook; ~15–25 min on the T4, 30–110 min on the laptop)
 python -m experiments.eval_mbpp
 python -m experiments.eval_mbpp --base
 python -m experiments.eval_mbpp --adapter model/lora_v2
 
-# Long-question test (big test — run it on Colab; on the laptop ~10–40 min per model, watch system RAM)
+# Long-question test (big test — run it on Kaggle / Colab; on the laptop ~10–40 min per model, watch system RAM)
 python -m experiments.eval_long_context --adapter model/lora_v2
 
 # Memory smoke test (no brain, CPU only)
 python -m memory.test_memory
 
-# All four tests with one model load (big — Colab); fix/improve test alone
+# All four tests with one model load (big — Kaggle / Colab); fix/improve test alone
 python -m experiments.eval_all --adapter model/lora --skip-done
 python -m experiments.eval_fix --adapter model/lora
 
-# One-button Colab run (on Colab only, from the notebook's RUN EVERYTHING cell)
-python -m scripts.colab_pipeline --drive /content/drive/MyDrive/PY-V
+# One-button GPU run (cloud only, from a runner notebook's RUN EVERYTHING cell)
+python -m scripts.gpu_pipeline --root /kaggle/working/PY-V --inputs /kaggle/input --stop-after 11   # Kaggle
+python -m scripts.gpu_pipeline --root /content/drive/MyDrive/PY-V                                  # Colab
+
+# Kaggle run status / results on the laptop (Kaggle CLI + key in ~/.kaggle/)
+kaggle kernels list --mine
+kaggle kernels status <user>/<notebook>
+kaggle kernels output <user>/<notebook> -p "Kaggle downloads"
 
 # API boot
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000

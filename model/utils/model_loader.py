@@ -38,10 +38,13 @@ def load_model():
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     tokenizer.pad_token = tokenizer.eos_token
 
+    # Whole model on the first visible GPU. "auto" would split it across both
+    # GPUs of a 2-GPU machine (Kaggle T4 x2) — slower, and train_lora_t4 sizes
+    # its batch from GPU 0 only. The GPU pipeline gives every job its own GPU.
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         quantization_config=bnb_config,
-        device_map="auto",
+        device_map={"": 0},
         trust_remote_code=True,
     )
     model.v_prompt_format = CFG.model.prompt_format

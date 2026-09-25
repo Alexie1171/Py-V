@@ -21,7 +21,7 @@ from collections import Counter, deque
 
 from data.scripts.sources.common import make_record, pick
 from data.scripts.sources.mutations import all_mutations
-from data.scripts.sources.unit_tests import require_colab, run_tests, tested_functions
+from data.scripts.sources.unit_tests import require_cloud, run_tests, tested_functions
 
 SOURCE  = "long_file_fix"
 LICENSE = "cc-by-4.0"
@@ -89,7 +89,7 @@ def _instruction(result: dict, name: str, module: str, source_id: str) -> str:
 
 
 def iter_records(cfg: dict, stats):
-    require_colab(SOURCE)
+    require_cloud(SOURCE)
     pool       = deque(maxlen=POOL_SIZE)
     kind_count = Counter()
     min_chars, max_chars = cfg["module_chars"]

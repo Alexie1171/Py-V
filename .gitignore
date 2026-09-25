@@ -28,6 +28,7 @@ experiments/outputs/
 model/lora*/
 model_t4/
 Drive downloads/
+Kaggle downloads/
 
 # Private conversations — V's memory database (Phase 11) and old session files
 data/memory/
@@ -54,6 +55,7 @@ retrieval/index/
 # API keys / secrets (never commit these)
 .env
 *.env
+kaggle.json
 
 # VS Code extension build artifacts
 extension/node_modules/

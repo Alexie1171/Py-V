@@ -15,7 +15,7 @@ Runs code from the internet — Colab only. License: CC-BY-4.0 — credit NVIDIA
 import random
 
 from data.scripts.sources.common import IMPROVE_TEMPLATES, make_record, pick
-from data.scripts.sources.unit_tests import require_colab, run_tests, tested_functions
+from data.scripts.sources.unit_tests import require_cloud, run_tests, tested_functions
 from data.scripts.sources.unrefactor import rewrites
 
 SOURCE  = "improve_synthetic"
@@ -43,7 +43,7 @@ def clumsify(code: str, tests: list, cfg: dict, seed: str) -> tuple:
 
 
 def iter_records(cfg: dict, stats):
-    require_colab(SOURCE)
+    require_cloud(SOURCE)
     kept = 0
 
     for row_id, _, code, tests in tested_functions(cfg, stats):
