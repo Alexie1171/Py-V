@@ -2,6 +2,22 @@ model:
   name: "microsoft/phi-2"
   max_tokens: 512
 
+generation:
+  # Answer settings per mode (inference/engine/generator.py); `default` covers
+  # any mode not listed. Code modes must copy names and code from the prompt,
+  # so no repeat penalties there — repetition_penalty 1.1 renamed functions
+  # (find_Volume → find_volume) and cost 13 of 49 MBPP failures (2026-09-25).
+  # Prose modes keep them against loops.
+  default:
+    repetition_penalty: 1.0
+    no_repeat_ngram_size: 0
+  chat:
+    repetition_penalty: 1.1
+    no_repeat_ngram_size: 4
+  explain:
+    repetition_penalty: 1.1
+    no_repeat_ngram_size: 4
+
 training:
   # Runs on Colab (train_lora_t4.py, its own T4 batch settings); batch_size and
   # gradient_accumulation are for the laptop trainer (train_lora.py).

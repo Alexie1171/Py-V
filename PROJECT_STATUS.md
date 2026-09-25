@@ -10,6 +10,8 @@ The rulebook for how code must be written is `.github/CLAUDE.md`. This file is t
 
 A private coding assistant that runs entirely on this laptop.
 
+**Long-term vision (owner, 2026-09-25):** Py-V is the foundation of **V**, an assistant that helps in most areas, not only Python. Each programming language will get its own database that V searches for problems in that language. Python came first because it is the easiest to work with. Decisions should favour what carries over to other languages and areas.
+
 - **Brain:** Microsoft Phi-2 (a small 2.7B-parameter model), loaded in 4-bit so it fits a 4 GB GPU.
 - **Training:** LoRA fine-tuning on Python examples scraped from GitHub and StackOverflow.
 - **Server:** FastAPI app that loads the model once and answers requests.
@@ -159,6 +161,7 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 | **Debug / refactor / explain training examples** | 2026-09-25 | Dataset is 99% "write a function"; model can't debug or refactor (test 3) | In dataset v2 now (2,945 fix / 2,062 improve / 1,800 explain). Comes back with the v2 adapter above |
 | **Cleaner v4 dataset rebuild** | 2026-05-04 | Not applied yet; drops 266 of 5,508 rows (~5%) | Probably never needed: dataset v2 takes only the best 800 old examples, through the same English filter. Drop this row once the v2 adapter is in use |
 | **2nd training pass** | 2026-09-25 | Owner chose 1 pass first, score, then decide | After Job G: if v2 beats the old adapter and the check-set loss was still falling at the end, continue from `model_v2` for a 2nd pass, with a lower learning rate (5e-5 or less — rule in CLAUDE.md) |
+| **Qwen3.5 in the brain check** (newest small Qwen, Feb 2026, Apache 2.0) | 2026-09-25 | Needs transformers 5; the laptop has 4.57 (the app runs on it) | Test on Colab (has transformers 5) once its GPU time resets, or when the laptop moves to transformers 5 |
 | **Scoring test for fixing / improving code** | 2026-09-25 | MBPP only measures writing functions | After the v2 score: small held-out test of broken functions + their tests (the `bug_fix` generator can make it from rows not used in training) |
 | **Phase 11 (long-term memory)** | 2026-09-25 | Better training data + retrain chosen first — memory on top of a model that can't debug/refactor adds little | After the dataset improvement and Colab retrain |
 | **Speed work** (llama.cpp / GGUF, streaming) | 2026-09-25 | Memory chosen first | After Phase 11 |
@@ -190,7 +193,19 @@ Order: better training data + retrain first, then Phase 11, then 9, 10 and speed
    - eval loss now actually computed (`eval_strategy="steps"` + `label_names`; the v1 run recorded none), every 100 steps
    - T4 trainer: settings from config, `--output-dir` with automatic resume from the newest checkpoint there (old code looked in the wrong folder), ETA print fixed (was 10× too high)
    - `eval_mbpp.py --adapter DIR` to score any adapter; training data path now `data/datasets/v2/`
-7. Retrain on Colab, re-score against step 1 — **ready, not run.** Notebook **Job F** trains → Drive `MyDrive/PY-V/model_v2/lora` (~690 steps, rough guess 2–3 h, checkpoint every 50 steps, resumes after a disconnect); **Job G** scores it on the same 100 MBPP problems → `mbpp_lora_v2.jsonl`. Needs Phase 8.1.12 pushed + 1b re-run. The new adapter replaces `model/lora/` only if it beats the old one (51/100). First Job F try crashed before step 1: Colab has transformers 5.x, which renamed `group_by_length` → fixed for both versions (Phase 8.1.13); a CPU dry run with a tiny model on transformers 5.17 + peft 0.21 then passed (train steps, eval loss, checkpoints, final save, resume). Data loading on Colab was fine: 11,027 train + 580 val, none too long
+7. Retrain on Colab, re-score against step 1 — **ready, not run.** Notebook **Job F** trains → Drive `MyDrive/PY-V/model_v2/lora` (~690 steps, rough guess 2–3 h, checkpoint every 50 steps, resumes after a disconnect); **Job G** scores it on the same 100 MBPP problems → `mbpp_lora_v2.jsonl`. Needs Phase 8.1.12 pushed + 1b re-run. The new adapter replaces `model/lora/` only if it beats the old one (51/100). First Job F try crashed before step 1: Colab has transformers 5.x, which renamed `group_by_length` → fixed for both versions (Phase 8.1.13); a CPU dry run with a tiny model on transformers 5.17 + peft 0.21 then passed (train steps, eval loss, checkpoints, final save, resume). Data loading on Colab was fine: 11,027 train + 580 val, none too long. **Job F done (2026-09-25, 2 h 40 min, 690 steps):** v2 adapter saved to Drive `MyDrive/PY-V/model_v2/lora`. Check-set loss (answer tokens only) 0.379 (step 100) → 0.365 → 0.358 → 0.355 → 0.352 → 0.3505 → **0.3498** (step 690) — still falling at the end, but only just. Average train loss 0.377 (steps ~0.24–0.61; spikes come from length-grouped batches). **Job G (score) not run yet** — Colab then refused a GPU ("insufficient quota": free-tier GPU time used up after ~4 h of T4 jobs that day; resets on its own, usually within 12–24 h). Owner chose to score on the **laptop** instead when it is free: adapter files downloaded from Drive into `model/lora_v2/` (gitignored), then `python -m experiments.eval_mbpp --adapter model/lora_v2` (~1 h on the GTX 1650). PEFT 0.19.1 on the laptop ignores config keys added by Colab's newer PEFT, so the adapter loads. **Scored on the laptop (2026-09-25): v2 = 51/100** — same as the old adapter (51), base 48. Answers are short and clean (median 5 lines). **The model now stops on its own**: a raw greedy check emitted the end token after 22–32 tokens on every problem. 13 of the 49 failures are wrong function names (`find_Volume` → `find_volume`, `empty_dit` → `empty_dict`). Cause found: `generator.py` uses `repetition_penalty=1.1` in every mode, which pushes the model away from any token already in the prompt — including the function name in the test. Raw greedy without it copied the names correctly. Old and base scores were measured with the same penalty, so the 51/51/48 comparison is fair but all three are held down. The penalty also works against debug/refactor answers, which must repeat the user's code. **Fixed (owner approved):** repeat settings moved to config per mode (`generation:` — off for code modes, kept for chat/explain), and every score now saves its settings (`mbpp_{tag}_summary.json`). Re-scoring all three on the laptop with the fix (in progress); the penalty run is kept as `mbpp_lora_v2_reppen1.1.jsonl`. First re-run stopped after 8 problems and restarted: a stop word (`"\ndef test_"`) killed the answer to a problem whose function is named `test_duplicate` — now needs a blank line first. Also seen: without the penalty the model sometimes loops until the 512-token limit (task 20, 2.5 min) — wrong answer anyway, but slow; watch how often. **Result v2 without penalty: 66/100** (35 min, median 17.7 s/problem on the GTX 1650) — **67** counting task 19, which failed only because the laptop stalled while the downloads finished (re-run passes in 0.1 s; the scorer now retries a timeout once). Name errors 13 → 1; only 2 answers looped (tasks 11, 20). Remaining failures: 28 wrong results, 3 TypeError, 1 IndexError. **Old adapter with the same settings: 33/100** (110 min — it never learned to stop, so without the penalty most answers ran to the 512-token limit; it needed the penalty). So v2 beats it under both settings (51 vs 51 with penalty, 66 vs 33 without). **Plain Phi-2 with the same settings: 62/100** (31 min). **Fair result (laptop, no penalty for code): v2 66 (67 with the hiccup re-check) / plain Phi-2 62 / old adapter 33.** Most of the jump from 51 came from removing the penalty; the new training itself adds **+4–5** on writing functions. MBPP does not measure what v2 was mainly trained for (fixing, improving, explaining, stopping on its own) — the fix/improve scoring test (section 5) is needed to measure that
+8. **Brain check (step 3 of the owner's plan, 2026-09-25):** Phi-2 is from 2023. Same test, same settings, on 3 newer base models that fit the laptop — all Apache 2.0, no custom code, supported by the laptop's transformers 4.57: **Qwen3-4B-Base** (4.0B), **Granite-4.1-3B-base** (IBM, 3.4B), **SmolLM3-3B-Base** (3.1B). Measuring only — switching brains would be a separate decision. Downloads to `E:\huggingface Assets` (~21 GB). Results (plain, untrained, same settings and scorer as above): **Qwen3-4B-Base 74/100** (47 min, ~24 s/problem, 3.9 of 4 GB GPU memory — only just fits), **Granite-4.1-3B-base 69/100** (42 min, 3.4 GB), **SmolLM3-3B-Base 67/100** (38 min, 3.5 GB).
+
+   | Model (laptop, same settings) | MBPP | Median s/problem | Loops (>60 s) | GPU memory |
+   |---|---|---|---|---|
+   | Qwen3-4B-Base (plain) | **74** | 25.1 | 1 | 3.9 GB of 4 |
+   | Granite-4.1-3B-base (plain) | 69 | 23.5 | 0 | 3.4 GB |
+   | SmolLM3-3B-Base (plain) | 67 | 22.2 | 0 | 3.5 GB |
+   | **Phi-2 + v2 adapter (ours)** | 66 (67) | 17.6 | 2 | ~2.7 GB |
+   | Phi-2 (plain) | 62 | 14.1 | 7 | ~2.7 GB |
+   | Phi-2 + old adapter | 33 | 53.2 | 49 | ~2.7 GB |
+
+   All three newer brains beat our trained Phi-2 **without any training**. Trained on dataset v2 they would likely gain more (Phi-2 gained +4–5). Open decision: switch the brain (section 9). Qwen3.5 still untested (section 5)
 
 **Decided:** ~12,000 clean examples, mix ≈ 40% write / 25% fix errors / 20% improve code / 15% explain, using the sources below; old GitHub data trimmed to its best-scored part. Every code sample run-checked; English only; deduped.
 
@@ -265,6 +280,10 @@ Options, all need measuring on this laptop first:
 | 2026-09-25 | 1 training pass, score, then decide on a 2nd | Early result; a 2nd pass can continue from the first |
 | 2026-09-25 | Loss on answers only | Standard for question → answer training; all learning goes into the answers |
 | 2026-09-25 | New adapter goes to a new Drive folder (`model_v2/lora`) and replaces `model/lora/` only if it beats the old one on MBPP | The old adapter is never at risk |
+| 2026-09-25 | Repeat penalty off for code modes, kept for chat/explain; settings per mode in config | It renamed functions copied from the prompt (13 of 49 MBPP failures) and fights debug/refactor answers; the v2 model stops on its own. Per-mode config carries over to future languages/areas |
+| 2026-09-25 | The laptop is the standard scoring machine; every score saves its settings | Always available (Colab quota runs out), it is where V runs, and results stay comparable as the project grows |
+| 2026-09-25 | Test newer small base models before more training on Phi-2 | Phi-2 is from 2023; the base model is the foundation of all of V. Measure first, decide later |
+| 2026-09-25 | Phi-4-mini not in the brain check | Only an instruct version exists and it needs custom code from its repo |
 
 ---
 
@@ -309,7 +328,9 @@ Options, all need measuring on this laptop first:
 
 ## 9. Open questions
 
-1. **Is the Colab model better than epoch 1?** Needs a side-by-side test (less important now — the v2 adapter replaces both if it wins).
+1. **Switch the brain from Phi-2?** Brain check (section 6, step 8): Qwen3-4B 74, Granite-4.1-3B 69, SmolLM3-3B 67 untrained vs our trained Phi-2 66. Qwen3-4B only just fits the 4 GB GPU — needs a long-prompt memory test first. A switch means retraining on Colab with dataset v2 (LoRA target module names differ per model).
+2. **Make the v2 adapter the app's adapter?** It beats the old one under both settings (51 vs 51 with penalty, 66 vs 33 without) and stops on its own — replaces `model/lora/` unless the brain is switched first.
+3. **Is the Colab model better than epoch 1?** Moot — both old adapters lose to v2.
 2. **Order after Phase 11:** Phase 9, Phase 10 or speed work next?
 
 ---

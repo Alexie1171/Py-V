@@ -111,7 +111,7 @@ Rules:
 ---
 
 ### `model/training/config_loader.py`
-- Parses `config.yaml` into typed dataclasses (`ModelConfig`, `TrainingConfig`, `PathsConfig`, `RAGConfig`, `DatasetV2Config`, `EvaluationConfig`)
+- Parses `config.yaml` into typed dataclasses (`ModelConfig`, `GenerationConfig`, `TrainingConfig`, `PathsConfig`, `RAGConfig`, `DatasetV2Config`, `EvaluationConfig`)
 - Exports a module-level `CFG` singleton
 - All other modules import `CFG` from here — never re-parse yaml elsewhere
 
@@ -164,9 +164,10 @@ Rules:
 - `remove_code_if_not_allowed()` also removes stray `"""` / `'''` / ``` markers and a dangling last line ending in ":" (lead-in to code that was cut)
 - Stop words are passed to `model.generate()` as `stop_strings` so generation halts early instead of running to `max_new_tokens`; `_apply_stop_words()` then cuts at the earliest match
 - Stop words are per mode via `_stop_words_for()`: base list + code-mode list (test/demo code starts) or prose-mode list (code starts)
-- The current adapter was trained without an end-of-text token, so it does not stop on its own — stop words are the only brake until retraining fixes this
+- `stop_strings` also match across the prompt/answer boundary (the prompt ends in "\n"), so a stop word must never match the start of a legitimate answer — code-mode test stops need a blank line first (`"\n\ndef test_"`); `"\ndef test_"` killed a function named `test_duplicate`
+- The current adapter (`model/lora/`) was trained without an end-of-text token, so it does not stop on its own — stop words are its only brake. The v2 adapter stops on its own (end token learned); stop words stay as a safety net
 - Retry logic uses temperature 0.5 on second attempt for chat/explain modes
-- Generation settings: `repetition_penalty=1.1`; `no_repeat_ngram_size=4` for `chat` / `explain` only, off (0) for code modes — code must repeat names
+- Repeat settings come from `CFG.generation.for_mode(mode)` (config `generation:` section, `default` for unlisted modes) — never hard-code them here. Code modes (generate/debug/refactor): `repetition_penalty` 1.0 and `no_repeat_ngram_size` 0 — code must copy names and the user's code from the prompt (1.1 renamed `find_Volume` → `find_volume`, 13 of 49 MBPP failures). Prose modes (chat/explain): 1.1 and 4, against loops
 
 ---
 
@@ -243,7 +244,9 @@ Rules:
 - Scoring test: model writes a function per MBPP problem, the problem's asserts are run against it, score = problems passed
 - Same prompt + generation path as chat (`generate` mode), greedy decoding (repeatable)
 - Settings from `CFG.evaluation.*`; results to `experiments/outputs/mbpp_{base | adapter folder name}.jsonl`
-- `--base` scores Phi-2 without the LoRA adapter for comparison; `--adapter DIR` scores another adapter (default `CFG.paths.model_output`)
+- `--base` scores Phi-2 without the LoRA adapter for comparison; `--adapter DIR` scores another adapter (default `CFG.paths.model_output`); `--base --model NAME` scores another base model (tag `base_<name>`)
+- Every run also writes `mbpp_{tag}_summary.json`: score + every setting that can change it (base model, adapter md5, decoding settings, benchmark, GPU, library versions). Only compare runs whose settings match
+- The laptop (GTX 1650) is the standard scoring machine since 2026-09-25 — always available, no Colab quota, and it is where V runs. Adapters trained on Colab are downloaded and scored here
 - MBPP / HumanEval are for scoring only — never add them to training data
 
 ---

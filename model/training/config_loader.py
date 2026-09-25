@@ -31,6 +31,20 @@ class ModelConfig:
 
 
 @dataclass
+class GenerationModeConfig:
+    repetition_penalty:   float
+    no_repeat_ngram_size: int
+
+
+@dataclass
+class GenerationConfig:
+    modes: dict   # mode name (or "default") → GenerationModeConfig
+
+    def for_mode(self, mode: str) -> GenerationModeConfig:
+        return self.modes.get(mode, self.modes["default"])
+
+
+@dataclass
 class TrainingConfig:
     batch_size:             int
     gradient_accumulation:  int
@@ -83,6 +97,7 @@ class EvaluationConfig:
 @dataclass
 class AppConfig:
     model:      ModelConfig
+    generation: GenerationConfig
     training:   TrainingConfig
     paths:      PathsConfig
     rag:        RAGConfig
@@ -103,6 +118,16 @@ def load_config() -> AppConfig:
         name       = raw["model"]["name"],
         max_tokens = raw["model"]["max_tokens"],
     )
+
+    g = raw.get("generation", {})
+    g.setdefault("default", {})
+    generation_cfg = GenerationConfig(modes={
+        mode: GenerationModeConfig(
+            repetition_penalty   = s.get("repetition_penalty",   1.0),
+            no_repeat_ngram_size = s.get("no_repeat_ngram_size", 0),
+        )
+        for mode, s in g.items()
+    })
 
     t = raw.get("training", {})
     training_cfg = TrainingConfig(
@@ -158,6 +183,7 @@ def load_config() -> AppConfig:
 
     return AppConfig(
         model      = model_cfg,
+        generation = generation_cfg,
         training   = training_cfg,
         paths      = paths_cfg,
         rag        = rag_cfg,

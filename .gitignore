@@ -29,7 +29,9 @@ model/lora/
 model/lora_epoch1_backup/
 model/lora_epoch1_backup_v2/
 model/lora_new_dataset_checkpoint50/
+model/lora_v2/
 model_t4/
+Drive downloads/
 Google Colab/
 
 # ── PY-V specific ──────────────────────

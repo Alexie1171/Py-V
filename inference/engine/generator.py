@@ -1,5 +1,6 @@
 import torch
 import re
+from model.training.config_loader import CFG
 from inference.engine.prompt_builder import max_new_tokens
 from inference.engine.prompt_templates import TEMPLATES
 
@@ -164,12 +165,14 @@ _STOP_WORDS = [
     "\n[3]\n",
 ]
 
-# Code modes: the model was trained without an end-of-text token, so after a
-# finished answer it keeps writing tests and demo calls. Stop at those.
+# Code modes: the v1 model was trained without an end-of-text token, so after a
+# finished answer it keeps writing tests and demo calls. Stop at those. Test
+# code starts after a blank line — a single "\n" also matched the prompt's
+# last newline and killed answers whose function is named test_* (MBPP 19).
 _CODE_STOP_WORDS = [
-    "\ndef test_",
-    "\nclass Test",
-    "\n@pytest",
+    "\n\ndef test_",
+    "\n\nclass Test",
+    "\n\n@pytest",
     "\nif __name__",
     "\n\nprint(",
 ]
@@ -205,14 +208,13 @@ def _apply_stop_words(text: str, mode: str = None) -> str:
 
 # ─── Core generation ─────────────────────────────────────────────────────────
 
-# no_repeat_ngram_size bans repeating any 4-token run. Fine for prose, but code
-# must repeat names (it produced is_palindrom, is_PALINODES), so code modes
-# turn it off.
-_NO_REPEAT_NGRAM_SIZE = {"chat": 4, "explain": 4}
-
+# Repeat penalties come from CFG.generation per mode: prose modes keep them
+# against loops; code modes turn them off — code must repeat names and the
+# user's code (with them on it produced is_palindrom, find_volume for find_Volume).
 
 def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None):
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    inputs   = tokenizer(prompt, return_tensors="pt").to(model.device)
+    settings = CFG.generation.for_mode(mode)
 
     with torch.inference_mode():
         output_ids = model.generate(
@@ -220,8 +222,8 @@ def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None
             max_new_tokens       = max_tokens or max_new_tokens(),
             do_sample            = temperature > 0,
             temperature          = temperature if temperature > 0 else 1.0,
-            repetition_penalty   = 1.1,
-            no_repeat_ngram_size = _NO_REPEAT_NGRAM_SIZE.get(mode, 0),
+            repetition_penalty   = settings.repetition_penalty,
+            no_repeat_ngram_size = settings.no_repeat_ngram_size,
             stop_strings         = _stop_words_for(mode),
             tokenizer            = tokenizer,
             eos_token_id         = tokenizer.eos_token_id,

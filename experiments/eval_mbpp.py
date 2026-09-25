@@ -11,10 +11,16 @@ Usage (from repo root):
     python -m experiments.eval_mbpp          # fine-tuned model (base + LoRA)
     python -m experiments.eval_mbpp --base   # base Phi-2 only, for comparison
     python -m experiments.eval_mbpp --adapter model/lora_v2   # another adapter
-Results go to {output_dir}/mbpp_{base | adapter folder name}.jsonl.
+    python -m experiments.eval_mbpp --base --model Qwen/Qwen3-4B-Base   # another base model
+Results go to {output_dir}/mbpp_{tag}.jsonl (one line per problem) and
+mbpp_{tag}_summary.json (score + every setting that can change it), where tag
+is "base", "base_<model>" or the adapter folder name.
 """
 
 import argparse
+import dataclasses
+import datetime
+import hashlib
 import json
 import os
 import re
@@ -53,6 +59,17 @@ def extract_code(response: str) -> str:
     return match.group(1) if match else response
 
 
+def run_tests(problem: dict, code: str, timeout: int) -> tuple:
+    """Run the problem's asserts. A timeout is retried once: a busy laptop can
+    stall process start-up (seen when a download finished mid-run) — a real
+    endless loop still fails the second time."""
+    program   = build_program(problem, code)
+    ok, error = run_python(program, timeout)
+    if not ok and error.startswith("timeout"):
+        ok, error = run_python(program, timeout)
+    return ok, error
+
+
 def build_program(problem: dict, code: str) -> str:
     return "\n".join([
         *problem.get("test_imports", []),
@@ -68,9 +85,16 @@ def main():
                         help="score base Phi-2 without the LoRA adapter")
     parser.add_argument("--adapter", default=str(CFG.paths.model_output),
                         help="LoRA adapter folder to score (default: the app's adapter)")
+    parser.add_argument("--model", default=CFG.model.name,
+                        help="base model to load (default: config model.name)")
     args = parser.parse_args()
 
-    tag = "base" if args.base else Path(args.adapter).name
+    default_model  = CFG.model.name
+    CFG.model.name = args.model
+    if args.base:
+        tag = "base" if args.model == default_model else f"base_{args.model.split('/')[-1]}"
+    else:
+        tag = Path(args.adapter).name
     ev  = CFG.evaluation
 
     problems = load_problems()
@@ -91,7 +115,7 @@ def main():
             response  = generate_from_prompt(model, tokenizer, prompt,
                                              mode="generate", temperature=0.0)
             code      = extract_code(response)
-            ok, error = run_python(build_program(problem, code), ev.timeout_seconds)
+            ok, error = run_tests(problem, code, ev.timeout_seconds)
             seconds   = time.perf_counter() - t
 
             passed += ok
@@ -111,6 +135,38 @@ def main():
     minutes = (time.perf_counter() - start) / 60
     print(f"\nMBPP score ({tag}): {passed}/{len(problems)} "
           f"= {100 * passed / len(problems):.1f}% in {minutes:.0f} min -> {out_path}")
+
+    write_summary(ev.output_dir / f"mbpp_{tag}_summary.json", args, passed, len(problems), minutes)
+
+
+def write_summary(path: Path, args, passed: int, total: int, minutes: float):
+    """Score plus every setting that can change it, so runs stay comparable."""
+    import peft, torch, transformers
+
+    adapter = None
+    if not args.base:
+        weights = Path(args.adapter) / "adapter_model.safetensors"
+        adapter = {"path": args.adapter,
+                   "md5":  hashlib.md5(weights.read_bytes()).hexdigest()}
+
+    summary = {
+        "score":        passed,
+        "problems":     total,
+        "minutes":      round(minutes, 1),
+        "date":         datetime.datetime.now().isoformat(timespec="seconds"),
+        "base_model":   CFG.model.name,
+        "adapter":      adapter,
+        "benchmark":    dataclasses.asdict(CFG.evaluation) | {"output_dir": str(CFG.evaluation.output_dir)},
+        "prompt_mode":  "generate",
+        "decoding":     {"temperature": 0.0, "max_new_tokens": CFG.model.max_tokens,
+                         **dataclasses.asdict(CFG.generation.for_mode("generate"))},
+        "device":       torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",
+        "versions":     {"torch": torch.__version__, "transformers": transformers.__version__,
+                         "peft": peft.__version__},
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2)
+    print(f"Settings saved -> {path}")
 
 
 if __name__ == "__main__":
