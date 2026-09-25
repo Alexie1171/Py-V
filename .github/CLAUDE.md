@@ -305,7 +305,7 @@ Rules:
 - Checkpoint saving and resumption logic
 - No inference or API code
 - `dataset_loader.py` — `get_tokenized_dataset(tokenizer)`: reads `CFG.paths.dataset` / `val_dataset`, builds input_ids + labels per record (mode = `metadata.task`), drops over-long records and prints how many; shared by both trainers
-- `train_lora_t4.py` — Colab trainer: fresh from plain Phi-2, hyperparameters from `CFG.training`, T4 batch settings (4 × 4) in the script, `--output-dir` (Drive) with automatic resume, eval loss every `eval_steps`
+- `train_lora_t4.py` — Colab trainer: fresh from plain Phi-2, hyperparameters from `CFG.training`, T4 batch settings (4 × 4) in the script, `--output-dir` (Drive) with automatic resume, eval loss every `eval_steps`. Colab has transformers **5.x**, the laptop 4.57 — the script must run on both (e.g. `_length_grouping()`: v5 replaced `group_by_length=True` with `train_sampling_strategy="group_by_length"`)
 - `train_lora.py` — laptop trainer (GTX 1650), all settings from `CFG.training`; 768-token examples may not fit in 4 GB — train on Colab
 
 ---

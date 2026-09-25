@@ -14,6 +14,7 @@ Usage (from repo root):
 """
 
 import argparse
+import dataclasses
 import os
 import time
 
@@ -118,6 +119,16 @@ def apply_lora(model):
 # =========================
 # TRAINING
 # =========================
+def _length_grouping() -> dict:
+    """Batch similar-length examples (less padding, faster). transformers 5
+    replaced `group_by_length=True` with `train_sampling_strategy`; Colab has
+    5.x, the laptop 4.57."""
+    fields = {f.name for f in dataclasses.fields(TrainingArguments)}
+    if "train_sampling_strategy" in fields:
+        return {"train_sampling_strategy": "group_by_length"}
+    return {"group_by_length": True}
+
+
 def train(output_dir: str):
     t = CFG.training
 
@@ -164,7 +175,7 @@ def train(output_dir: str):
 
         dataloader_num_workers=2,
         dataloader_pin_memory=True,
-        group_by_length=True,
+        **_length_grouping(),
 
         report_to="none",
     )
