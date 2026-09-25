@@ -40,7 +40,7 @@ from datasets import load_dataset
 from transformers import AutoTokenizer
 
 from model.training.config_loader import CFG
-from inference.engine.prompt_builder import build_prompt
+from inference.engine.prompt_builder import build_prompt, format_for_model
 from inference.engine.generator import generate_from_prompt
 from experiments.code_runner import run_python
 from experiments.eval_common import add_model_args, load_for_eval
@@ -87,9 +87,21 @@ def _snippet_pool(tokenizer) -> list:
     return pool
 
 
+def function_dump(code: str, name: str):
+    """The syntax tree of function `name` as text (None if missing) — to tell
+    whether a planted bug is inside it. Shared with eval_fix.py."""
+    for node in ast.walk(ast.parse(code)):
+        if isinstance(node, ast.FunctionDef) and node.name == name:
+            return ast.dump(node)
+    return None
+
+
 def _plant_bug(snippet: dict, module_parts: list, index: int, rng):
-    """First mutation of the target snippet that makes its tests fail inside the module."""
-    mutations = all_mutations(snippet["code"])
+    """First mutation of the target snippet that makes its tests fail inside the
+    module — only bugs inside the tested function (the question asks to fix that one)."""
+    original  = function_dump(snippet["code"], snippet["name"])
+    mutations = [m for m in all_mutations(snippet["code"])
+                 if function_dump(m.buggy, snippet["name"]) != original]
     rng.shuffle(mutations)
     for mutation in mutations:
         parts  = module_parts[:index] + [mutation.buggy] + module_parts[index + 1:]
@@ -202,12 +214,16 @@ def main():
     parser = argparse.ArgumentParser()
     add_model_args(parser)
     args = parser.parse_args()
+    model, tokenizer, tag = load_for_eval(args)
+    run(model, tokenizer, tag, args)
 
+
+def run(model, tokenizer, tag: str, args):
+    """Score an already-loaded model (also called by eval_all.py)."""
     out_dir = CFG.evaluation.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     tasks   = json.load(open(TASKS, encoding="utf-8")) if TASKS.exists() else build_tasks(TASKS)
 
-    model, tokenizer, tag, wrap = load_for_eval(args)
     context   = getattr(model.config, "max_position_embeddings", None)
     weights_mb = torch.cuda.memory_allocated() / 2**20
     print(f"{tag}: context window {context} tokens, weights on GPU {weights_mb:.0f} MB", flush=True)
@@ -215,8 +231,8 @@ def main():
     results, first_oom = [], None
     with open(out_dir / f"longctx_{tag}.jsonl", "w", encoding="utf-8") as out:
         for task in tasks:
-            prompt   = wrap(build_prompt("debug", task["question"], {}))
-            n_prompt = len(tokenizer(prompt)["input_ids"])
+            prompt   = build_prompt("debug", task["question"], {})
+            n_prompt = len(tokenizer(format_for_model(prompt, model, tokenizer))["input_ids"])
             row      = {"id": task["id"], "size": task["size"], "prompt_tokens": n_prompt,
                         "passed": False, "status": "", "seconds": 0.0, "peak_mb": None, "response": ""}
 
@@ -253,7 +269,7 @@ def main():
         by_size[row["size"]].append(row)
     summary = {
         "tag": tag, "base_model": CFG.model.name, "adapter": None if args.base else args.adapter,
-        "prompt_format": "native chat" if args.native_chat else "template",
+        "prompt_format": model.v_prompt_format,
         "context_window": context, "weights_mb": round(weights_mb), "max_new_tokens": MAX_NEW,
         "passed": sum(r["passed"] for r in results), "questions": len(results),
         "by_size": {size: {"passed": sum(r["passed"] for r in rows), "questions": len(rows),

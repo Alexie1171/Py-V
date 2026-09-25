@@ -9,7 +9,6 @@ from pathlib import Path
 
 from model.training.config_loader import CFG
 from inference.engine.model_loader import load_model, load_lora_model
-from inference.engine.prompt_builder import to_native_chat
 
 DEFAULT_MODEL = CFG.model.name   # captured before --model overrides it
 
@@ -35,12 +34,14 @@ def result_tag(args) -> str:
 
 
 def load_for_eval(args):
-    """Load the chosen model. Returns (model, tokenizer, tag, wrap), where
-    wrap(prompt) applies the chosen prompt format to a template prompt."""
+    """Load the chosen model. Returns (model, tokenizer, tag).
+    The prompt format travels with the model (model.v_prompt_format: config, or
+    the adapter's v_adapter.json; --native-chat forces the brain's own chat
+    format) and the generator applies it — the scripts pass template prompts."""
     tag            = result_tag(args)
     CFG.model.name = args.model
     model, tokenizer = load_model() if args.base else load_lora_model(args.adapter, require_adapter=True)
     model.eval()
     if args.native_chat:
-        return model, tokenizer, tag, lambda prompt: to_native_chat(prompt, tokenizer)
-    return model, tokenizer, tag, lambda prompt: prompt
+        model.v_prompt_format = "native_chat"
+    return model, tokenizer, tag

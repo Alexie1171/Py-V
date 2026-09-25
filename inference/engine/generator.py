@@ -1,7 +1,7 @@
 import torch
 import re
 from model.training.config_loader import CFG
-from inference.engine.prompt_builder import max_new_tokens
+from inference.engine.prompt_builder import max_new_tokens, format_for_model
 from inference.engine.prompt_templates import TEMPLATES
 
 
@@ -155,9 +155,11 @@ _STOP_WORDS = [
     "\nTask:",
     "\nQuestion:",
     "\nAnswer:",
-    # Echoes of the prompt's own RAG / history blocks (see prompt_builder.py)
+    # Echoes of the prompt's own RAG / history / memory blocks (see prompt_builder.py)
     "Relevant examples from codebase:",
     "Recent context:",
+    "Things V remembers",
+    "Code V wrote earlier",
     "\nINSTRUCTION:",
     "\nOUTPUT:",
     "\n[1]\n",
@@ -213,6 +215,7 @@ def _apply_stop_words(text: str, mode: str = None) -> str:
 # user's code (with them on it produced is_palindrom, find_volume for find_Volume).
 
 def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None):
+    prompt   = format_for_model(prompt, model, tokenizer)
     inputs   = tokenizer(prompt, return_tensors="pt").to(model.device)
     settings = CFG.generation.for_mode(mode)
 

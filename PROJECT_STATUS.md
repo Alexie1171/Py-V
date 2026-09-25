@@ -37,9 +37,9 @@ Work paused on **2026-05-04** and resumed on **2026-09-25**.
 | 8 | RAG | Done, but **turned off** since 2026-09-25 — see section 5 |
 | 9 | Multi-language adapters (JS/TS etc.) | Planned — nothing started |
 | 10 | VS Code chat panel | Planned — nothing started |
-| 11 | Long-term memory | **Next up** — built before 9 and 10; design agreed (see section 6) |
+| 11 | Long-term memory | **Built 2026-09-26** (`memory/`, on by default; smoke test passes) — not yet tried with a trained Granite |
 
-**Build order:** loose ends (section 4) → **better training data + one Colab retrain** (debug/refactor/explain examples, cleaner v4, end-of-text token) → Phase 11 → Phases 9, 10 and speed work (order of those three not decided yet).
+**Build order:** better training data + Colab retrain (8.1.x commits — the Granite retrain now runs in the one-button Colab pipeline) and **Phase 11 memory (built 2026-09-26) — current phase, commits numbered 11.x** → then Phases 9, 10 and speed work (order of those three not decided yet).
 
 **Things switched off or put off for later** are listed in section 5 — check it before starting new work.
 
@@ -143,7 +143,7 @@ Small cosmetic issues — **fixed 2026-09-25** in `generator.py` (checked agains
    - this file
 5. **Remove duplicate backups:** `model/lora_epoch1_backup/`, `model/lora_epoch1_backup_v2/` and `model/lora_new_dataset_checkpoint50/` all hold the same epoch-1 adapter. Keep one.
 6. **Minor:** model weights were committed and then removed in May (commits `83df449`, `e7ddbf4`) — they still sit in git history and make the repo bigger.
-7. ~~`retrieval/index/` not gitignored~~ — added to `.gitignore` 2026-09-25. Still open: `sessions/` is not gitignored, and its path is hardcoded in `context_manager.py:8` (Phase 11 replaces it).
+7. ~~`retrieval/index/` not gitignored~~ — added to `.gitignore` 2026-09-25. ~~`sessions/` not gitignored, path hardcoded~~ — done 2026-09-26: sessions now live in the memory database (`data/memory/`), both gitignored.
 8. **Model cache settings (owner to do — needs admin):** `HF_HOME` points to `E:\huggingface Assets` (folder re-created; Phi-2 and bge-small re-downloaded 2026-09-25). The old **system-wide** `TRANSFORMERS_CACHE` setting points to `E:\huggingface Assets\transformers`, which makes loading Phi-2 download it a second time. Remove it: Start → "Edit the system environment variables" → Environment Variables → System variables → `TRANSFORMERS_CACHE` → Delete → OK, then restart VS Code.
 9. **Windows console encoding:** `indexer.py` crashes on the `→` character when output goes to a file; run with `PYTHONUTF8=1`.
 
@@ -156,15 +156,14 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 | What | Since | Why | Bring back when / how |
 |------|-------|-----|-----------------------|
 | **RAG (code search)** | 2026-09-25 | Weak dataset matches were pasted into answers instead of helping (2 of 3 code answers broken in test 2) | After the dataset is improved (cleaner v4 + better instructions). Maybe add a "strong matches only" cut-off. Switch: `rag.enabled: true` in `configs/config.yaml`. The index must be rebuilt first — it now reads dataset v2 (`paths.dataset`) |
-| **Chat history in prompts** (all modes) | 2026-09-25 | Model answered the previous question / copied the previous answer instead of the new one | Phase 11 — replaced by short memory facts. `format_context()` in `prompt_builder.py` is kept for this |
+| **Raw chat history in prompts** (all modes) | 2026-09-25 | Model answered the previous question / copied the previous answer instead of the new one | Replaced by Phase 11 memory (built 2026-09-26): short facts in every mode, earlier code only in code modes. Raw history stays out of prompts; `format_context()` is unused |
 | **Fine-tuned adapter — V runs the plain brain** | 2026-09-26 | Brain upgraded Phi-2 → Granite; Phi-2 adapters don't fit Granite and were deleted. The end-token / answer-only training fixes are built and worked on Phi-2 v2 (it learned to stop) | Granite retrain on Colab (Job F; ideally after the long-file examples below are added), then download the adapter into `model/lora/` |
 | **Debug / refactor / explain training examples** | 2026-09-25 | Dataset is 99% "write a function"; model can't debug or refactor (test 3) | In dataset v2 now (2,945 fix / 2,062 improve / 1,800 explain). Comes back with the v2 adapter above |
 | **Cleaner v4 dataset rebuild** | 2026-05-04 | Not applied yet; drops 266 of 5,508 rows (~5%) | Probably never needed: dataset v2 takes only the best 800 old examples, through the same English filter. Drop this row once the v2 adapter is in use |
 | **Qwen3.5 in the brain check** (newest small Qwen, Feb 2026, Apache 2.0) | 2026-09-25 | Needs transformers 5; the laptop has 4.57 (the app runs on it) | Test on Colab (has transformers 5) once its GPU time resets, or when the laptop moves to transformers 5 |
-| **"Long file → return only the fixed part" training examples** | 2026-09-26 | Long-question test: v2 (and plain Phi-2) copy the whole file instead of writing the fixed function; every v2 fix example was one short function | Next dataset build (before retraining on the chosen brain): fix-the-error / improve examples inside multi-function files, answer = only the changed function |
+| **"Long file → return only the fixed part" training examples** | 2026-09-26 | Long-question test: Phi-2 copied the whole file instead of writing the fixed function; every v2 fix example was one short function | **Built** (`data/scripts/sources/long_file_fix.py`, 1,200 in dataset v3); generated + trained in the one-button Colab run. Remove this row once the trained Granite is scored |
 | **Qwen3-4B's two ~5,000-token long questions** | 2026-09-26 | Stopped to protect the laptop (RAM at 15.1 of 15.4 GB, free RAM ~1 GB) | Only if the laptop gets more RAM/GPU memory, or on Colab |
-| **Scoring test for fixing / improving code** | 2026-09-25 | MBPP only measures writing functions | After the v2 score: small held-out test of broken functions + their tests (the `bug_fix` generator can make it from rows not used in training) |
-| **Phase 11 (long-term memory)** | 2026-09-25 | Better training data + retrain chosen first — memory on top of a model that can't debug/refactor adds little | After the dataset improvement and Colab retrain |
+| **Scoring test for fixing / improving code** | 2026-09-25 | MBPP only measures writing functions | **Built** (`experiments/eval_fix.py`, 40 fix + 40 improve held-out MBPP questions); runs for every brain in the one-button Colab run. Remove this row once it has run |
 | **Speed work** (llama.cpp / GGUF, streaming) | 2026-09-25 | Memory chosen first | After Phase 11 |
 | **Phases 9 and 10** | 2026-09-25 | Phase 11 goes first | After Phase 11 |
 | **Colibri** | 2026-09-25 | Built for huge mixture-of-experts models; our dense 3–4B brains gain nothing from SSD streaming | Only if hardware grows (≥32 GB RAM, bigger GPU) |
@@ -226,6 +225,7 @@ Order: better training data + retrain first, then Phase 11, then 9, 10 and speed
    - 10 questions is a small sample (one question = 10 points) — read it together with MBPP, not alone
 
 10. **Granite chat version test — ready, not run (Colab notebook Job H, 2026-09-26).** New short chat test (`experiments/eval_chat.py`, 8 questions: explain, answer from memory notes / search results, admit what it doesn't know, follow up, ask for a search, follow a format, keep it simple) plus a `--native-chat` option (the model's own chat format, thinking off) for all three tests. Job H runs MBPP + long-file + chat on the T4 for: Granite chat version in its own format → plain Granite → our Phi-2 v2 (reference) → Granite chat version with V's template. ~2 h of T4 time; skips what's already on Drive. Needs Phase 8.1.15 pushed + 1a–1c. Decides: plain or chat version as V's starting point
+11. **One-button Colab run — ready, not run (2026-09-26, owner's request).** `scripts/colab_pipeline.py`, started by the notebook's top cell **▶ RUN EVERYTHING** (setup + everything). The notebook was restructured to just that cell + **👀 CHECK PROGRESS** (read-only, no GPU); old setup/job cells removed — missing training-data files are re-made by the pipeline itself. Stages: test untrained Granite chat (own chat format) and plain → make 1,500 long-file fix examples → build dataset v3 → train Granite chat (own chat format) → test → train Granite plain (V's template) → test → extra: chat with V's template. Every test = MBPP + long-file + chat + fix/improve (one model load per brain, `experiments/eval_all.py`). ~8–9 h of T4 → 2–3 days of free GPU time; re-run the cell each day, finished stages are skipped and training resumes. Report after every stage: Drive `results/PIPELINE_REPORT.md` (+ `.json`, `pipeline_log.txt`). Training uses the whole T4 (measured at start), writes `v_adapter.json` + `training_log.json`. Dry run on transformers 5.17 + peft 0.21 with a tiny model passed (train, adapter note, reload with its format, all four tests, skip logic). Job H (step 10) is part of it
 
    All three newer brains beat our trained Phi-2 **without any training**. Trained on dataset v2 they would likely gain more (Phi-2 gained +4–5). Open decision: switch the brain (section 9). Qwen3.5 still untested (section 5)
 
@@ -251,7 +251,7 @@ One LoRA adapter per language (Python first, then JS/TS), swapped at runtime on 
 ### Phase 10 — VS Code chat panel (planned)
 Copilot-style chat panel inside VS Code with streaming answers (words appear as they are generated). Rules in `.github/CLAUDE.md`.
 
-### Phase 11 — Long-term memory (next up — before 9, 10 and speed work)
+### Phase 11 — Long-term memory (**built 2026-09-26** — `memory/`; smoke test `python -m memory.test_memory` passes; next: try it with the trained Granite)
 
 **Idea:** Py-V keeps a notebook of every chat. It writes down important facts, looks things up before answering, always trusts the newest fact, and lets you erase pages.
 
@@ -310,6 +310,12 @@ Options, all need measuring on this laptop first:
 | 2026-09-26 | **Brain: IBM Granite** (3B) replaces Phi-2 while V runs on this laptop; revisit after a hardware upgrade (better laptop / workstation) | Best balance here: 69/100 MBPP, 7/10 long questions, stays within the 4 GB GPU for normal questions. Qwen3-4B is stronger on short questions but nearly exhausts RAM; Phi-2 cannot read past 2,048 tokens. Plain (`granite-4.1-3b-base`) vs chat version (`granite-4.2-3b`) still to decide |
 | 2026-09-26 | **Phi-2 retired completely** — config `model.name` → `ibm-granite/granite-4.1-3b-base`; deleted from the laptop: Phi-2 in the HF cache (5.2 GB), 6 Phi-2 adapter folders + `model_t4/` (~1 GB), `Drive downloads/`, `experiments/test_phi2.py`, unused `model/utils/model_loader_t4.py`, empty `model/base`, `model/configs`; Phi-2-only notebook cells (1d, Jobs B, G). Granite chat version downloaded too. Drive copies of the Phi-2 adapters left for the owner to keep or delete | Owner: "we are switching completely from phi 2 to granite … our first brain upgrade for V" |
 | 2026-09-26 | Brain-specific settings in config (`training.lora_target_modules`); `load_lora_model()` refuses an adapter trained on another brain and runs the plain brain when none exists; result files always carry the brain's name | Future brain upgrades change config, not code, and can never mix adapters or results |
+| 2026-09-26 | **Phase 11 memory built** (`memory/`): SQLite store + FTS5 keyword search + meaning search (bge-small on the CPU) + recency; rule-based facts from the user's messages only, newest per key wins; list/forget via `GET`/`DELETE /api/v1/memory`; sessions move from `sessions/*.json` into SQLite | Owner chose it for this round. Memory goes into the templates' existing `{context}` slot, so the adapters being trained now stay valid |
+| 2026-09-26 | API server loads the brain once (shared with the chat engine) | It loaded it twice — two copies alone fill the 4 GB laptop GPU |
+| 2026-09-26 | **Train both Granite versions** (chat in its own chat format, plain with V's template), one after the other, and score both | Owner: "we want as much data output as possible to work with later when colab is down" — T4 time and laptop GPU memory are the throttle |
+| 2026-09-26 | **One-button Colab run** (`scripts/colab_pipeline.py`): everything in order, skip-if-done, resumable, report after every stage | Owner: "one button run starts in colab and we get all the outputs we need to progress further" |
+| 2026-09-26 | Prompt format travels with the model (`model.v_prompt_format`; an adapter's `v_adapter.json` wins over config) and the generator applies it; training wraps prompts the same way | App, tests and training can never disagree on the format — needed to use the chat version |
+| 2026-09-26 | Dataset v3 = v2 + 1,200 long-file fix examples; `max_seq_length` 768 → 1024 | Fixes the "copy the whole file" habit; long files need room |
 | 2026-09-26 | Colab training measures the T4 at start and uses as much of it as fits (checkpointing off if possible, biggest batch; effective batch stays 16) | Owner: "utilize the entire t4 gpu while training so its faster". 4-bit kept (matches the laptop) |
 | 2026-09-26 | SSD as extra GPU memory (colibri-style streaming) not used | Colibri streams only the small active part of huge mixture-of-experts models; our dense 3–4B brains read all their weights for every word, so SSD speed (~1.8 GB/s vs 128 GB/s GPU) would make answers take minutes. Windows already spills GPU → RAM → SSD, which is what made long questions take 13 min. Better: send V only the relevant parts (search), a leaner engine (llama.cpp), more RAM |
 

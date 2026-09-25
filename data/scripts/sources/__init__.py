@@ -12,6 +12,7 @@ from data.scripts.sources import (
     commitpack_refactor,
     glaive,
     improve_synthetic,
+    long_file_fix,
     old_github,
     opencodeinstruct,
     self_oss_instruct,
@@ -26,4 +27,5 @@ SOURCES = {
     "bug_fix":             bug_fix.iter_records,            # runs code — Colab only
     "improve_synthetic":   improve_synthetic.iter_records,  # runs code — Colab only
     "commitpack_refactor": commitpack_refactor.iter_records,
+    "long_file_fix":       long_file_fix.iter_records,      # runs code — Colab only
 }

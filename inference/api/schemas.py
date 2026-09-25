@@ -55,6 +55,26 @@ class ChatResponse(BaseModel):
     mode:        str   = Field(..., description="Detected intent mode (generate/debug/explain/refactor/chat).")
     confidence:  float = Field(..., description="Controller confidence score for the detected mode.")
     rag_chunks:  int   = Field(..., description="Number of RAG chunks injected into the prompt.")
+    memories:    int   = Field(0,   description="Number of memory items (facts / earlier code) added to the prompt.")
+
+
+class MemoryFact(BaseModel):
+    id:      int   = Field(..., description="Fact id — use it to delete the fact.")
+    key:     str   = Field(..., description="What the fact is about; a newer fact with the same key replaces it.")
+    text:    str   = Field(..., description="The fact as V sees it.")
+    created: float = Field(..., description="When it was saved (unix time).")
+
+
+class MemoryListResponse(BaseModel):
+    enabled:  bool             = Field(..., description="Whether memory is on.")
+    facts:    list[MemoryFact] = Field(default_factory=list, description="Active facts, newest first.")
+    messages: int              = Field(0, description="Messages saved across all chats.")
+    sessions: int              = Field(0, description="Chats with saved messages.")
+
+
+class MemoryDeleteResponse(BaseModel):
+    id:      int  = Field(..., description="The fact id that was asked to be deleted.")
+    deleted: bool = Field(..., description="True if it existed and is now gone.")
 
 
 class HealthResponse(BaseModel):

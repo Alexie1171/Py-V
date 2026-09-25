@@ -4,6 +4,11 @@ model:
   # (ibm-granite/granite-4.2-3b, same layers) is being tested (Colab Job H).
   name: "ibm-granite/granite-4.1-3b-base"
   max_tokens: 512
+  # How prompts reach the brain: "template" = V's "### Instruction / ### Answer"
+  # templates (plain/base brains); "native_chat" = the brain's own chat format,
+  # thinking off (chat versions, e.g. granite-4.2-3b). A trained adapter's own
+  # setting (v_adapter.json) wins over this — the format it was trained with.
+  prompt_format: "template"
 
 generation:
   # Answer settings per mode (inference/engine/generator.py); `default` covers
@@ -37,15 +42,31 @@ training:
   # Layers LoRA trains — names depend on the brain (Granite: attention + MLP;
   # Phi-2 was q/k/v_proj, dense, fc1, fc2). Change together with model.name.
   lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-  max_seq_length: 768      # prompt template + answer + end token; longer records are dropped, not cut
+  max_seq_length: 1024     # prompt template + answer + end token; longer records are dropped, not cut.
+                           # 1024 (was 768) so the long-file fix examples fit
 
 paths:
   raw_data: "./data/raw"
   processed_data: "./data/processed"
-  # Dataset v2 (build_dataset_v2.py). The v1 files stay at ./data/datasets/*.jsonl.
-  dataset: "./data/datasets/v2/train.jsonl"
-  val_dataset: "./data/datasets/v2/val.jsonl"
+  # Dataset v3 = v2 + long-file fix examples (build_dataset_v2.py). v2 stays at
+  # ./data/datasets/v2 (Phi-2 was trained on it), v1 at ./data/datasets/*.jsonl.
+  dataset: "./data/datasets/v3/train.jsonl"
+  val_dataset: "./data/datasets/v3/val.jsonl"
   model_output: "./model/lora"
+
+memory:
+  # Phase 11 — long-term memory across all chats (memory/). SQLite file on
+  # disk + a small embedding model on the CPU — never uses the GPU. Every
+  # message is saved; short facts are tagged by rules; before each answer the
+  # best matches go into the prompt's context slot.
+  enabled: true
+  db_path: "./data/memory/v_memory.db"   # private conversations — gitignored, never committed
+  top_k: 5                  # facts added to a prompt (all modes)
+  code_top_k: 2             # earlier code answers added (code modes only)
+  max_prompt_tokens: 300    # the whole memory block — the 4 GB laptop GPU slows down past ~1,500 prompt tokens
+  history_turns: 6          # recent messages kept per session (session state, not injected into prompts)
+  active_code_modes: ["generate", "debug", "refactor"]   # only these get code from memory
+  semantic_search: true     # meaning search (retrieval/embedder.py on CPU); false = keyword search only
 
 rag:
   # Off since 2026-09-25: weak matches were copied into answers instead of
@@ -67,11 +88,14 @@ dataset_v2:
   output_dir: "./data/raw/v2"
   sample_size: 20          # --sample mode: small batch per source to check quality
   build:
-    # Step 5: mix the source files into one training set (build_dataset_v2.py)
-    output_dir: "./data/datasets/v2"
+    # Step 5: mix the source files into one training set (build_dataset_v2.py).
+    # v3 (2026-09-26) = v2's mix + long_file_fix; v2 is kept as it was.
+    output_dir: "./data/datasets/v3"
     seed: 42
     val_share: 0.05
-    max_tokens: 700        # instruction + output; room left for the prompt template within 768
+    max_tokens: 700        # instruction + output; room left for the prompt template
+    max_tokens_per_source: # exceptions to max_tokens (must stay below training.max_seq_length)
+      long_file_fix: 930   # whole file in the question (+ ≤62 template + ~14 chat-format tokens ≤ 1024)
     take:                  # records per source — ~12k ≈ 40% write / 25% debug / 20% improve / 15% explain
       opencodeinstruct: 2300      # generate
       self_oss_instruct: 1700     # generate
@@ -81,6 +105,7 @@ dataset_v2:
       commitpack_refactor: 400    # refactor — fewer exist, takes what there is
       glaive: 1100                # explain
       code_search_net: 700        # explain
+      long_file_fix: 1200         # debug — bug inside a longer file, answer = fixed function only
   sources:
     opencodeinstruct:
       hf_id: "nvidia/OpenCodeInstruct"
@@ -149,6 +174,26 @@ dataset_v2:
       code_lines: [3, 30]
       similarity: [0.3, 0.95]  # skip near-identical and complete rewrites
       max_per_repo: 2
+    long_file_fix:
+      # "Fix the bug in this file" examples: a tested function hidden among other
+      # working functions, one bug planted inside it; answer = only the corrected
+      # function + one line. Teaches "fix just the broken part" on long input
+      # (long-question test, 2026-09-26). Runs code — Colab only.
+      hf_id: "nvidia/OpenCodeInstruct"
+      config: "train"
+      split: "train"
+      fetch: 1500
+      min_test_score: 1.0
+      max_code_lines: 25
+      max_tests: 5
+      max_tries: 6
+      timeout_seconds: 5
+      module_chars: [1000, 2600]   # size of the whole file (~300–800 tokens)
+      warmup_functions: 30         # the first functions only fill the pool of surrounding code
+      exclude_ids_from:            # target functions never repeat another source's rows
+        - "./data/raw/v2/opencodeinstruct.jsonl"
+        - "./data/raw/v2/bug_fix.jsonl"
+        - "./data/raw/v2/improve_synthetic.jsonl"
     old_github:
       # The v1 dataset. Kept at this path; v2 will be written elsewhere.
       path: "./data/datasets/train.jsonl"

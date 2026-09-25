@@ -107,16 +107,20 @@ def main():
     parser = argparse.ArgumentParser()
     add_model_args(parser)
     args = parser.parse_args()
+    model, tokenizer, tag = load_for_eval(args)
+    run(model, tokenizer, tag, args)
 
+
+def run(model, tokenizer, tag: str, args):
+    """Score an already-loaded model (also called by eval_all.py)."""
     out_dir = CFG.evaluation.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    model, tokenizer, tag, wrap = load_for_eval(args)
 
     results = []
     with open(out_dir / f"chat_{tag}.jsonl", "w", encoding="utf-8") as out:
         for q in QUESTIONS:
             t      = time.perf_counter()
-            prompt = wrap(build_prompt("chat", q["ask"], {}))
+            prompt = build_prompt("chat", q["ask"], {})
             answer = generate_from_prompt(model, tokenizer, prompt, mode="chat",
                                           max_tokens=MAX_NEW, temperature=0.0)
             row = {"id": q["id"], "skill": q["skill"], "passed": bool(q["check"](answer)),
@@ -128,7 +132,7 @@ def main():
 
     summary = {"tag": tag, "base_model": CFG.model.name,
                "adapter": None if args.base else args.adapter,
-               "prompt_format": "native chat" if args.native_chat else "template",
+               "prompt_format": model.v_prompt_format,
                "passed": sum(r["passed"] for r in results), "questions": len(results),
                "by_skill": {r["id"]: r["passed"] for r in results}}
     with open(out_dir / f"chat_{tag}_summary.json", "w", encoding="utf-8") as f:

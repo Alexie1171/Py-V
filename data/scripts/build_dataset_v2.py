@@ -74,7 +74,8 @@ def main():
     for name, take in build["take"].items():
         records = load_source(name)
         drops   = Counter()
-        usable  = clean(records, benchmarks, tokenizer, build["max_tokens"], drops)
+        limit   = build.get("max_tokens_per_source", {}).get(name, build["max_tokens"])
+        usable  = clean(records, benchmarks, tokenizer, limit, drops)
         rng.shuffle(usable)
         chosen  = usable[:take]
 

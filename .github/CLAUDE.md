@@ -36,9 +36,9 @@ It ensures:
 | Phase 8 | RAG (Retrieval Augmented Generation) | Complete — turned off since 2026-09-25 (see `PROJECT_STATUS.md`) |
 | Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
 | Phase 10 | VS Code chat panel (full UI, no terminal) | Planned |
-| Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Planned — after the data/retrain work |
+| Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Built 2026-09-26 (`memory/`, on by default) — smoke test passes; not yet tried with a trained Granite |
 
-Build order: better training data + one Colab retrain first, then Phase 11, then Phases 9 and 10 (numbering kept stable on purpose).
+Build order: better training data + Colab retrain (the 8.1.x commits; Granite retrain runs in the one-button Colab pipeline) and Phase 11 (built 2026-09-26) → then Phases 9 and 10 and speed work (numbering kept stable on purpose). Current phase: **Phase 11** — commits are numbered 11.x from here ("Phase 11: …", then 11.1, 11.1.1, …)
 
 Live status, open issues and next steps: see `PROJECT_STATUS.md` in the repo root.
 
@@ -122,6 +122,8 @@ Rules:
 - Single shared model loader for the entire project
 - Reads model name from `CFG.model.name`
 - Both `inference/engine/` and `model/training/` use this — no duplication
+- Tags the loaded model with its prompt format: `model.v_prompt_format` (config `model.prompt_format`: `template` or `native_chat`)
+- Holds `ADAPTER_META = "v_adapter.json"` — the note `train_lora_t4.py` writes next to every adapter (brain, prompt format, dataset, GPU setup, losses)
 
 ---
 
@@ -129,6 +131,7 @@ Rules:
 - Wraps `model/utils/model_loader.py`
 - Also exposes `load_lora_model()` — loads base model then applies LoRA adapter
 - This is what the API server calls at startup
+- The adapter's `v_adapter.json` sets `model.v_prompt_format` — an adapter is always used with the prompt format it was trained with, whatever config says
 
 ---
 
@@ -138,9 +141,10 @@ Rules:
 - Prompt format: the per-mode templates in `prompt_templates.py` (`### Instruction:\n...\n\n### Answer:\n`)
 - `build_training_prompt(mode, instruction)` = `build_prompt(mode, instruction, {})` — training sees exactly what inference sends (no history, no RAG); `build_inference_prompt()` = the generate template, for the stateless `/generate` endpoint
 - Any template change means retraining — the adapter learns the exact wording
-- `to_native_chat(prompt, tokenizer)` re-wraps a template prompt in the model's own chat format (`apply_chat_template`, `enable_thinking=False`) for chat-tuned brains; unchanged for models without a chat template. Used by the scoring scripts' `--native-chat`; not used by the app yet
+- `to_native_chat(prompt, tokenizer)` re-wraps a template prompt in the model's own chat format (`apply_chat_template`, `enable_thinking=False`) for chat-tuned brains; unchanged for models without a chat template
+- `format_for_model(prompt, model, tokenizer)` — the prompt exactly as the loaded model gets it: template, or `to_native_chat()` when `model.v_prompt_format == "native_chat"`. The generator calls it for every generation; `dataset_loader.py` does the same wrap for training — so app, tests and training always match. Everything else passes plain template prompts
 - Never define prompt format in any other file
-- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `format_context()`, `format_retrieved_context()`
+- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `to_native_chat()`, `format_for_model()`, `format_context()`, `format_retrieved_context()`
 - For `explain` and `chat` modes, context history is NOT injected to prevent code pattern bias
 - History is currently OFF for all modes (since 2026-09-25) — the model copied previous answers and answered previous questions instead of the new one. `format_context()` (last two user questions only, never assistant answers) is kept for Phase 11 to replace with memory facts
 - RAG context is only injected for `generate`, `debug`, `refactor` modes
@@ -271,9 +275,23 @@ Rules:
 
 ---
 
+### `experiments/eval_fix.py`
+- Fix / improve test — what MBPP doesn't measure. 40 fix questions (bug planted inside the tested function, failing test shown, debug mode; pass = all the problem's tests pass) + 40 improve questions (clumsy rewrite of the tested function via `improve_synthetic.clumsify()`, refactor mode; pass = tests still pass AND fewer syntax-tree nodes than the clumsy version)
+- Held-out MBPP problems: sanitized test from problem 101 on + full train/validation/prompt — never in training (decontamination drops all MBPP)
+- Graded on top of the code the model was shown, so helpers next to the tested function still exist
+- Questions kept in git as `experiments/fix_tasks.json`; results `fix_{tag}.jsonl` + `_summary.json`
+
+---
+
+### `experiments/eval_all.py`
+- All four tests (MBPP, long-file, chat, fix/improve) with ONE model load — each script exposes `run(model, tokenizer, tag, args)`; `--skip-done` skips tests whose summary exists; a crashing test doesn't stop the others (non-zero exit)
+- Used by the one-button Colab pipeline
+
+---
+
 ### `experiments/eval_common.py`
-- Shared by the three scoring scripts: `add_model_args()` (`--base`, `--adapter`, `--model`, `--native-chat`), `result_tag()`, `load_for_eval()` → (model, tokenizer, tag, wrap)
-- `--native-chat` wraps each prompt with `prompt_builder.to_native_chat()` — the model's own chat format, thinking off — for chat-tuned brains (Granite 4.2); tag gets `_native`
+- Shared by the scoring scripts: `add_model_args()` (`--base`, `--adapter`, `--model`, `--native-chat`), `result_tag()`, `load_for_eval()` → (model, tokenizer, tag)
+- The prompt format travels with the loaded model (`model.v_prompt_format`) and the generator applies it — scripts pass plain template prompts. `--native-chat` forces the brain's own chat format (thinking off) for an untrained chat brain; tag gets `_native`. A trained adapter uses the format from its `v_adapter.json`
 - Runs on Colab like every big test. On the T4 (15 GB) it measures ability; how much fits on the laptop (4 GB) is a separate short laptop check
 - On Windows the GPU driver spills into system RAM instead of failing when GPU memory is full ("shared GPU memory") — watch system RAM during long questions on the laptop; Qwen3-4B took it to 15.1 of 15.4 GB
 - MBPP / HumanEval are for scoring only — never add them to training data
@@ -287,11 +305,22 @@ Rules:
 
 ---
 
+### `scripts/colab_pipeline.py`
+- The one-button Colab run (owner rule, 2026-09-26: "one button run starts in colab and we get all the outputs we need"). Stages in order: test untrained Granite chat (own chat format) → test untrained Granite plain → training data (every source the mix needs must be on Drive — missing ones are re-made, `old_github` from the v1 dataset found on Drive by fingerprint — then the long-file fix examples) → build dataset v3 → train chat (native_chat) → test it → train plain (template) → test it → extra: chat with V's template
+- Every stage checks its results on Drive first and is skipped when done; training resumes from its checkpoint — re-running the cell continues after a disconnect or when the day's GPU time ran out. Stages whose inputs are missing are "blocked", not crashed
+- After every stage: `MyDrive/PY-V/results/PIPELINE_REPORT.md` + `.json` (stage status, all scores, training notes); the whole console output is appended to `results/pipeline_log.txt`
+- Adapters: `MyDrive/PY-V/model_<brain>/lora` (one folder per brain); sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for its jobs
+- New big jobs go into this pipeline as stages, not only into single notebook cells
+
+---
+
 ### `Google Colab/py_v_runner.ipynb` (gitignored)
-- Runner for heavy jobs on a Colab T4: setup cell (mount Drive, clone/pull the public GitHub repo, install requirements, link output folders to Drive, copy the adapter), then one cell per job
+- Runner for heavy jobs on a Colab T4 — restructured 2026-09-26 to two code cells only:
+  - **▶ RUN EVERYTHING**: its own setup (mount Drive, clone/pull the public GitHub repo, install peft + bitsandbytes, link `data/raw/v2` → `results/data_v2`, `data/datasets/v3` → `results/dataset_v3`, `experiments/outputs` → `results/eval`), then `scripts/colab_pipeline.py`. No separate setup cells
+  - **👀 CHECK PROGRESS**: read-only, no GPU (CPU runtime fine) — prints the pipeline report, the end of the log, and each Granite training's saved steps
+- The old setup cells 1a–1d and single-job cells (A–H) were removed — every job is a pipeline stage now; their results are recorded in `PROJECT_STATUS.md`
 - Code comes from GitHub — local changes must be pushed before running
-- Results go to Drive `MyDrive/PY-V/results/` (`data_v2/`, `dataset_v2/`, `eval/`); the trained adapter is COPIED from `MyDrive/PY-V/model/lora`, never linked, so jobs can't overwrite it
-- New training (Job F) writes only to `MyDrive/PY-V/model_v2/lora` — never to an existing adapter folder; Job G copies it to `model/lora_v2` and scores it
+- Results go to Drive `MyDrive/PY-V/results/`; adapters to `MyDrive/PY-V/model_<brain>/lora` — never to an existing adapter folder of another brain
 - The assistant writes/updates this notebook; the owner runs it and saves it, and the printed results are read back from the file
 - Heavy jobs (full dataset fetch, training, MBPP scoring, long-question test, brain checks) go here, not on the laptop (owner rule, 2026-09-26)
 - Colab's free GPU time runs out after roughly 4 hours of T4 use in a day and resets within ~12–24 h — plan jobs to fit, and put the most important job first
@@ -300,6 +329,7 @@ Rules:
 
 ### `data/scripts/fetch_sources.py` + `data/scripts/sources/` (dataset v2)
 - `fetch_sources.py` — streams each v2 source, converts rows, writes `{CFG.dataset_v2.output_dir}/{source}.jsonl`, reports kept / scanned / rejection reasons (never silent caps)
+- `fetch_sources.py` writes each source to a `.part` file and renames it when complete — a source file that exists is always finished (the pipeline relies on this)
 - `fetch_sources.py` closes each stream and ends with `os._exit(0)` — safeguard so a half-read Hugging Face stream can't keep a download thread alive after the files are written
 - `sources/{name}.py` — one module per source, each `iter_records(cfg, stats)` → PY-V records with `metadata.task` (`generate` / `debug` / `refactor` / `explain`) and `metadata.license`
 - `sources/common.py` — shared helpers only (record builder, fenced-code extraction, demo-code trimming, docstring removal)
@@ -308,6 +338,7 @@ Rules:
 - `sources/unit_tests.py` — shared by the code-running sources: `tested_functions()` (OpenCodeInstruct functions that pass their tests upstream AND here, skipping ids used by other record files), `run_tests()` (first failure as JSON, incl. the wrong value for failing `==` asserts), `require_colab()`
 - `sources/unrefactor.py` — the reverse of refactoring: clean code → clumsy code that should behave the same (comprehension → loop, `sum()` → loop, `return a == b` → if/else, enumerate → `range(len())`, truthiness → `len()`, max/min → if/else, ternary → if/else, `+=` → `x = x + ...`); pure AST work, runs nothing
 - `sources/improve_synthetic.py` — "improve this code" (`refactor`) records: clumsy rewrites applied one at a time, tests re-run after each, behaviour-changing rewrites dropped; instruction = request + clumsy code, output = clean original. **Runs internet code: Colab only**
+- `sources/long_file_fix.py` — "fix the bug in this file" (`debug`) records: a tested OpenCodeInstruct function hidden among other working functions (earlier functions of the stream), one bug planted INSIDE it, tests re-run inside the file; output = ONLY the corrected function + one-line explanation (teaches "fix just the broken part" on long input). Bug kinds rotated. **Runs internet code: Colab only**
 - `sources/commitpack_refactor.py` — "improve this code" records from real CommitPackFT refactor commits: subject must say refactor/simplify/clean up/improve/optimise/readability (not fix/test/docs/text), exactly one function changed, not only strings, both versions short. Nothing runs; yields ~0.3% of commits (~150–200 total)
 - `sources/common.py` also holds `IMPROVE_TEMPLATES` (shared request wordings) and `pick()` (stable template choice per id)
 - `experiments/code_runner.py` is shared with the code-running sources (`run_python_capture()` also returns stdout)
@@ -319,7 +350,8 @@ Rules:
 ### `data/scripts/build_dataset_v2.py` + `data/scripts/decontaminate.py` (dataset v2, step 5)
 - `build_dataset_v2.py` — mixes the per-source files into `CFG.dataset_v2.build["output_dir"]` (`train.jsonl`, `val.jsonl`, `build_report.json`): drops exact duplicates (output or instruction, via `dedupe.hash_code`), benchmark overlap, and records over `max_tokens` (never truncates — a cut answer loses its ending); then a seeded sample of `take[source]` per source; val split per task
 - `decontaminate.py` — `BenchmarkIndex`: any 10-word run shared with an MBPP (all configs/splits) or HumanEval problem statement, or identical normalised code to a benchmark solution → record dropped. Keeps the MBPP scoring test honest
-- Mix settings (`take`, `max_tokens`, `seed`, `val_share`) live in `CFG.dataset_v2.build`
+- Mix settings (`take`, `max_tokens`, `max_tokens_per_source`, `seed`, `val_share`) live in `CFG.dataset_v2.build`; tokens counted with the config brain's tokenizer
+- Dataset v3 (2026-09-26) = v2's mix + 1,200 `long_file_fix` records (limit 930 tokens) → `data/datasets/v3`; v2 stays as it was (Phi-2 was trained on it)
 - Runs on Colab (the source files are on Drive); needs no GPU and runs no code
 
 ---
@@ -337,8 +369,9 @@ Rules:
 - LoRA fine-tuning scripts
 - Checkpoint saving and resumption logic
 - No inference or API code
-- `dataset_loader.py` — `get_tokenized_dataset(tokenizer)`: reads `CFG.paths.dataset` / `val_dataset`, builds input_ids + labels per record (mode = `metadata.task`), drops over-long records and prints how many; shared by both trainers
-- `train_lora_t4.py` — Colab trainer: fresh from the plain brain in config, LoRA layers from `CFG.training.lora_target_modules`, hyperparameters from `CFG.training`, batch size + gradient checkpointing measured on the GPU at start (`pick_batch_setup()`: checkpointing off if it fits, then the biggest batch whose worst case — every example at `max_seq_length` — stays under 85% of GPU memory; effective batch always 16, so results don't depend on the GPU), `--output-dir` (Drive) with automatic resume, eval loss every `eval_steps`. Colab has transformers **5.x**, the laptop 4.57 — the script must run on both (e.g. `_length_grouping()`: v5 replaced `group_by_length=True` with `train_sampling_strategy="group_by_length"`)
+- `dataset_loader.py` — `get_tokenized_dataset(tokenizer, prompt_format)`: reads `CFG.paths.dataset` / `val_dataset`, builds input_ids + labels per record (mode = `metadata.task`; prompt in V's template or, for `native_chat`, re-wrapped exactly like `format_for_model()`), drops over-long records and prints how many; the answer is tokenized without special tokens; shared by both trainers
+- `max_seq_length` 1024 (since 2026-09-26, was 768) so long-file examples fit
+- `train_lora_t4.py` — Colab trainer: fresh from the plain brain in config, LoRA layers from `CFG.training.lora_target_modules`, hyperparameters from `CFG.training`, batch size + gradient checkpointing measured on the GPU at start (`pick_batch_setup()`: checkpointing off if it fits, then the biggest batch whose worst case — every example at `max_seq_length` — stays under 85% of GPU memory; effective batch always 16, so results don't depend on the GPU), `--output-dir` (Drive) with automatic resume, eval loss every `eval_steps`; `--model` / `--prompt-format` override config (the pipeline trains both Granite versions). At the end writes `v_adapter.json` (brain, prompt format, dataset, steps, losses, GPU setup, minutes) and `training_log.json` (every logged loss) next to the adapter. Colab has transformers **5.x**, the laptop 4.57 — the script must run on both (e.g. `_length_grouping()`: v5 replaced `group_by_length=True` with `train_sampling_strategy="group_by_length"`)
 - `train_lora.py` — laptop trainer (GTX 1650), all settings from `CFG.training`; 768-token examples may not fit in 4 GB — train on Colab
 
 ---
@@ -421,7 +454,7 @@ Phase 10 replaces terminal interaction with a Copilot-style chat panel inside VS
 
 ---
 
-## Phase 11 Rules — Long-Term Memory (Planned)
+## Phase 11 Rules — Long-Term Memory (built 2026-09-26)
 
 Phase 11 gives Py-V a memory that lasts across all chats. Every message is saved to a local SQLite database, important facts are tagged, and before each answer the memory is searched and the best matches are added to the prompt. Goal: better memory. It does not make the model smarter or faster. All rules below apply when implementing Phase 11.
 
@@ -436,18 +469,22 @@ Decisions (agreed 2026-09-25):
 | Old or wrong facts | Newest fact wins; user can list and delete memories |
 | Storage | SQLite — one local file, Python standard library `sqlite3` |
 
-Planned layout:
+Layout (as built):
 
 - `memory/` — new top-level package, same level as `retrieval/`
 - `memory/schema.py` — dataclasses only (`MemoryItem`, `Fact`), no logic
 - `memory/store.py` — SQLite access: tables for messages and facts, FTS5 index, save / update / delete / list
 - `memory/extractor.py` — rule-based fact tagging (explicit "remember", file names, error messages, versions, decisions) — no model calls
-- `memory/search.py` — hybrid search: FTS5 keyword score + embedding similarity + recency boost, merged and ranked
-- `configs/config.yaml` — new `memory:` section (`enabled`, `db_path`, `top_k`, `max_prompt_tokens`, `active_code_modes`)
+- `memory/search.py` — hybrid search: FTS5 keyword score (stopwords dropped) + embedding similarity (≥ 0.60, bge-small) + recency boost (halves every 30 days), weights 0.45 / 0.45 / 0.10
+- `memory/manager.py` — `MemoryManager`, the one entry point: `remember_turn()`, `recall()`, `list_facts()`, `forget()`, session state; embedder loaded lazily on the CPU (keyword-only if it can't load)
+- `memory/test_memory.py` — smoke test, no brain needed: `python -m memory.test_memory`
+- `configs/config.yaml` — `memory:` section (`enabled`, `db_path` = `data/memory/v_memory.db`, `top_k`, `code_top_k`, `max_prompt_tokens`, `history_turns`, `active_code_modes`, `semantic_search`)
 - `inference/engine/chat.py` — search memory before prompt build, save the turn after the reply
 - `inference/engine/prompt_builder.py` — `format_memories()`; memory is formatted here only
-- `inference/engine/prompt_templates.py` — `{memories}` slot added to templates
-- `inference/api/routes.py` — `GET /api/v1/memory` (list) and `DELETE /api/v1/memory/{id}` (delete)
+- `inference/engine/prompt_templates.py` — **unchanged**: the memory block goes into the templates' existing `{context}` slot (a new slot would change the training prompts and void the trained adapters)
+- `inference/api/routes.py` — `GET /api/v1/memory` (active facts + counts) and `DELETE /api/v1/memory/{fact_id}` (forget one fact for good); `/chat` replies carry `memories` (items used)
+- `inference/engine/context_manager.py` — session state through `MemoryManager` (SQLite) instead of `sessions/*.json`; RAM-only when memory is off
+- `retrieval/embedder.py` — `Embedder(device=...)`; memory passes `"cpu"`
 
 Rules:
 
@@ -459,6 +496,9 @@ Rules:
 - Facts carry a timestamp and a key; a newer fact with the same key replaces the older one (older one marked inactive, not silently lost)
 - Fact extraction is rule-based first — a 3B brain is not reliable enough to judge what is important (revisit with Granite's chat version)
 - If the database is missing or broken, chat continues without memory — no crash (same as RAG)
+- Only the user's own messages are read for facts — V's answers can contain made-up facts; statement rules skip questions
+- Earlier code comes only from V's answers given in the code modes, and only code modes receive it
+- The API server loads the brain once and passes it to `ChatEngine(model, tokenizer)` — never load it twice (it used to, which alone fills a 4 GB GPU)
 - Memory runs on CPU / disk only — it must not use VRAM
 - The memory database holds private conversations — it must be gitignored and never committed
 - SQLite replaces `sessions/*.json` as the store for chat history; `context_manager.py` reads and writes through `memory/store.py`
@@ -588,6 +628,16 @@ python -m experiments.eval_mbpp --adapter model/lora_v2
 
 # Long-question test (big test — run it on Colab; on the laptop ~10–40 min per model, watch system RAM)
 python -m experiments.eval_long_context --adapter model/lora_v2
+
+# Memory smoke test (no brain, CPU only)
+python -m memory.test_memory
+
+# All four tests with one model load (big — Colab); fix/improve test alone
+python -m experiments.eval_all --adapter model/lora --skip-done
+python -m experiments.eval_fix --adapter model/lora
+
+# One-button Colab run (on Colab only, from the notebook's RUN EVERYTHING cell)
+python -m scripts.colab_pipeline --drive /content/drive/MyDrive/PY-V
 
 # API boot
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000

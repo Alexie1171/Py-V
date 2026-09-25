@@ -26,8 +26,9 @@ def _load_raw() -> dict:
 
 @dataclass
 class ModelConfig:
-    name:       str
-    max_tokens: int
+    name:          str
+    max_tokens:    int
+    prompt_format: str   # "template" or "native_chat"
 
 
 @dataclass
@@ -78,6 +79,18 @@ class RAGConfig:
 
 
 @dataclass
+class MemoryConfig:
+    enabled:           bool
+    db_path:           Path
+    top_k:             int
+    code_top_k:        int
+    max_prompt_tokens: int
+    history_turns:     int
+    active_code_modes: list
+    semantic_search:   bool
+
+
+@dataclass
 class DatasetV2Config:
     output_dir:  Path
     sample_size: int
@@ -102,6 +115,7 @@ class AppConfig:
     training:   TrainingConfig
     paths:      PathsConfig
     rag:        RAGConfig
+    memory:     MemoryConfig
     dataset_v2: DatasetV2Config
     evaluation: EvaluationConfig
 
@@ -116,9 +130,12 @@ def load_config() -> AppConfig:
     raw = _load_raw()
 
     model_cfg = ModelConfig(
-        name       = raw["model"]["name"],
-        max_tokens = raw["model"]["max_tokens"],
+        name          = raw["model"]["name"],
+        max_tokens    = raw["model"]["max_tokens"],
+        prompt_format = raw["model"].get("prompt_format", "template"),
     )
+    if model_cfg.prompt_format not in ("template", "native_chat"):
+        raise ValueError(f"model.prompt_format must be 'template' or 'native_chat', not {model_cfg.prompt_format!r}")
 
     g = raw.get("generation", {})
     g.setdefault("default", {})
@@ -163,6 +180,18 @@ def load_config() -> AppConfig:
         active_modes = r.get("active_modes", ["generate", "debug", "refactor"]),
     )
 
+    m = raw.get("memory", {})
+    memory_cfg = MemoryConfig(
+        enabled           = m.get("enabled",           False),
+        db_path           = Path(m.get("db_path",      "./data/memory/v_memory.db")),
+        top_k             = m.get("top_k",             5),
+        code_top_k        = m.get("code_top_k",        2),
+        max_prompt_tokens = m.get("max_prompt_tokens", 300),
+        history_turns     = m.get("history_turns",     6),
+        active_code_modes = m.get("active_code_modes", ["generate", "debug", "refactor"]),
+        semantic_search   = m.get("semantic_search",   True),
+    )
+
     d = raw.get("dataset_v2", {})
     build = dict(d.get("build", {}))
     build["output_dir"] = Path(build.get("output_dir", "./data/datasets/v2"))
@@ -189,6 +218,7 @@ def load_config() -> AppConfig:
         training   = training_cfg,
         paths      = paths_cfg,
         rag        = rag_cfg,
+        memory     = memory_cfg,
         dataset_v2 = dataset_v2_cfg,
         evaluation = evaluation_cfg,
     )

@@ -9,13 +9,20 @@ fastest setup whose worst-case batch fits, effective batch always 16.
 
 Checkpoints go to --output-dir every save_steps; a rerun resumes from the
 newest one there (point it at Drive so a Colab disconnect loses little).
+At the end the adapter folder also gets v_adapter.json (brain, prompt format,
+dataset, GPU setup, final losses — the inference loader reads the prompt
+format from it) and training_log.json (every logged loss / eval loss).
 
 Usage (from repo root):
-    python -m model.training.train_lora_t4 --output-dir /content/drive/MyDrive/PY-V/model_v2/lora
+    python -m model.training.train_lora_t4 --output-dir /content/drive/MyDrive/PY-V/model_granite/lora
+    python -m model.training.train_lora_t4 --model ibm-granite/granite-4.2-3b --prompt-format native_chat \
+        --output-dir /content/drive/MyDrive/PY-V/model_granite-4.2-3b/lora
 """
 
 import argparse
 import dataclasses
+import datetime
+import json
 import os
 import time
 
@@ -36,7 +43,7 @@ from peft import (
 )
 
 from model.training.config_loader import CFG
-from model.utils.model_loader import load_model
+from model.utils.model_loader import ADAPTER_META, load_model
 from model.training.dataset_loader import IGNORE_INDEX, get_tokenized_dataset
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -244,15 +251,45 @@ def train(output_dir: str):
     checkpoint = get_last_checkpoint(output_dir) if os.path.isdir(output_dir) else None
     print(f"Resuming from {checkpoint}" if checkpoint else f"No checkpoint - starting fresh from plain {CFG.model.name}")
 
-    trainer.train(resume_from_checkpoint=checkpoint)
+    result = trainer.train(resume_from_checkpoint=checkpoint)
 
     model.save_pretrained(output_dir)
     tokenizer.save_pretrained(output_dir)
-    print(f"Adapter saved to {output_dir}")
+
+    history = trainer.state.log_history
+    evals   = [h["eval_loss"] for h in history if "eval_loss" in h]
+    meta = {
+        "base_model":     CFG.model.name,
+        "prompt_format":  CFG.model.prompt_format,
+        "dataset":        str(CFG.paths.dataset),
+        "train_examples": len(tokenized["train"]),
+        "val_examples":   len(tokenized["val"]),
+        "steps":          trainer.state.global_step,
+        "train_loss":     round(result.training_loss, 4),
+        "eval_loss":      [round(e, 4) for e in evals],
+        "gpu":            f"{torch.cuda.get_device_name(0)}, batch {batch_size} x accumulation {accumulation}, "
+                          f"gradient checkpointing {'on' if checkpointing else 'off'}",
+        "minutes":        round((time.time() - start_time) / 60, 1),
+        "training":       dataclasses.asdict(CFG.training),
+        "date":           datetime.datetime.now().isoformat(timespec="seconds"),
+    }
+    with open(os.path.join(output_dir, ADAPTER_META), "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+    with open(os.path.join(output_dir, "training_log.json"), "w", encoding="utf-8") as f:
+        json.dump(history, f, indent=1)
+    print(f"Adapter saved to {output_dir} (prompt format {CFG.model.prompt_format}, "
+          f"final check-set loss {evals[-1] if evals else 'n/a'})")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-dir", default=str(CFG.paths.model_output),
                         help="where checkpoints and the final adapter are saved")
-    train(parser.parse_args().output_dir)
+    parser.add_argument("--model", default=CFG.model.name,
+                        help="brain to train (default: config model.name)")
+    parser.add_argument("--prompt-format", choices=["template", "native_chat"], default=CFG.model.prompt_format,
+                        help="prompt format to train with (default: config model.prompt_format)")
+    args = parser.parse_args()
+    CFG.model.name          = args.model
+    CFG.model.prompt_format = args.prompt_format
+    train(args.output_dir)

@@ -28,6 +28,10 @@ experiments/outputs/
 model/lora*/
 model_t4/
 Drive downloads/
+
+# Private conversations — V's memory database (Phase 11) and old session files
+data/memory/
+sessions/
 Google Colab/
 
 # ── PY-V specific ──────────────────────

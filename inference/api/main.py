@@ -44,12 +44,13 @@ async def lifespan(app: FastAPI):
     """Load model and chat engine on startup, release on shutdown."""
     global _model, _tokenizer, _chat_engine
 
-    # Load base model for the stateless /generate endpoint
+    # Load the brain once — shared by /generate and the chat engine
+    # (it used to be loaded twice, which alone fills a 4 GB GPU)
     _model, _tokenizer = load_lora_model()
 
-    # Load the full chat engine (includes retriever if RAG is enabled)
+    # Load the full chat engine (memory; retriever if RAG is enabled)
     from inference.engine.chat import ChatEngine
-    _chat_engine = ChatEngine()
+    _chat_engine = ChatEngine(_model, _tokenizer)
 
     print("Server ready.")
 

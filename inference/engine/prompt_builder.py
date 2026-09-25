@@ -11,6 +11,7 @@ def build_prompt(
     user_input:         str,
     context:            dict,
     retrieved_chunks:   list = None,
+    memories:           dict = None,
 ) -> str:
     """
     Build the final prompt string for the model.
@@ -18,13 +19,17 @@ def build_prompt(
     retrieved_chunks is a list of dicts returned by Retriever.search(),
     each with a 'metadata' key containing at least a 'content' field.
     Only injected for modes in _RAG_MODES.
+
+    memories is MemoryManager.recall() output (Phase 11) — formatted into the
+    template's existing {context} slot, so the templates (and the adapters
+    trained on them) stay unchanged.
     """
     template = TEMPLATES.get(mode, TEMPLATES["chat"])
 
-    # History context — off for all modes until Phase 11 (long-term memory).
-    # explain/chat never got it (code bias); code modes answered the previous
-    # question instead of the new one. format_context() is kept for Phase 11.
-    formatted_context = ""
+    # Raw chat history stays off (the model answered the previous question
+    # instead of the new one); the context slot carries short memory facts,
+    # plus earlier code in code modes (Phase 11).
+    formatted_context = format_memories(memories, mode) if memories else ""
 
     # RAG context — only injected for relevant modes
     if mode in _RAG_MODES and retrieved_chunks:
@@ -45,6 +50,47 @@ def build_prompt(
             user_input = user_input,
             context    = formatted_context,
         )
+
+
+def format_memories(memories: dict, mode: str) -> str:
+    """
+    Memory block for the prompt's {context} slot: short facts in every mode,
+    earlier code answers only in the code modes (never in explain/chat — same
+    code-bias reason as RAG). Stays within CFG.memory.max_prompt_tokens
+    (~4 characters per token); best matches first.
+    """
+    budget = CFG.memory.max_prompt_tokens * 4
+    lines  = []
+
+    facts = memories.get("facts") or []
+    if facts:
+        lines.append("Things V remembers about the user and the project:")
+        for hit in facts:
+            line = f"- {hit.text}"
+            if sum(len(l) + 1 for l in lines) + len(line) > budget:
+                break
+            lines.append(line)
+        if len(lines) == 1:
+            lines = []
+
+    code = (memories.get("code") or []) if mode in CFG.memory.active_code_modes else []
+    for hit in code:
+        block = f"Code V wrote earlier for a similar request:\n{_code_part(hit.text)}"
+        if sum(len(l) + 1 for l in lines) + len(block) > budget:
+            break
+        lines.append(block)
+
+    return ("\n".join(lines) + "\n") if lines else ""
+
+
+def _code_part(text: str) -> str:
+    """The first fenced block of an earlier answer, else the answer itself."""
+    if "```" in text:
+        parts = text.split("```")
+        if len(parts) >= 3:
+            body = parts[1].split("\n", 1)
+            return "```python\n" + (body[1] if len(body) > 1 else body[0]).strip() + "\n```"
+    return text.strip()
 
 
 def build_training_prompt(mode: str, instruction: str) -> str:
@@ -73,6 +119,18 @@ def to_native_chat(prompt: str, tokenizer) -> str:
         add_generation_prompt = True,
         enable_thinking       = False,
     )
+
+
+def format_for_model(prompt: str, model, tokenizer) -> str:
+    """
+    The prompt exactly as the loaded model receives it: V's template, or
+    re-wrapped in the brain's own chat format when the model was loaded with
+    prompt format "native_chat" (set by the loaders as model.v_prompt_format —
+    from the adapter's v_adapter.json, else config model.prompt_format).
+    """
+    if getattr(model, "v_prompt_format", CFG.model.prompt_format) == "native_chat":
+        return to_native_chat(prompt, tokenizer)
+    return prompt
 
 
 def build_inference_prompt(instruction: str) -> str:

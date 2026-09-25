@@ -24,8 +24,9 @@ LICENSE = "cc-by-4.0"
 PROGRESS_EVERY = 100
 
 
-def _clumsify(code: str, tests: list, cfg: dict, seed: str) -> tuple:
-    """Apply up to max_rewrites behaviour-preserving rewrites of different kinds."""
+def clumsify(code: str, tests: list, cfg: dict, seed: str) -> tuple:
+    """Apply up to max_rewrites behaviour-preserving rewrites of different kinds.
+    Also used by experiments/eval_fix.py to build its improve-code questions."""
     rng, kinds, tries = random.Random(seed), [], 0
 
     while len(kinds) < cfg["max_rewrites"] and tries < cfg["max_tries"]:
@@ -46,7 +47,7 @@ def iter_records(cfg: dict, stats):
     kept = 0
 
     for row_id, _, code, tests in tested_functions(cfg, stats):
-        clumsy, kinds = _clumsify(code, tests, cfg, row_id)
+        clumsy, kinds = clumsify(code, tests, cfg, row_id)
         if len(kinds) < cfg["min_rewrites"]:
             stats["rejected: too few safe rewrites"] += 1
             continue

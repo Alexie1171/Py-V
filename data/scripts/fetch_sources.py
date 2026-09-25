@@ -45,7 +45,10 @@ def fetch_source(name: str, sample: bool) -> Counter:
 
     records = SOURCES[name](cfg, stats)
 
-    with open(path, "w", encoding="utf-8") as f:
+    # Written to a .part file and renamed only when complete — a source file
+    # that exists is always finished (an interrupted run leaves only the .part)
+    part = path.with_name(path.name + ".part")
+    with open(part, "w", encoding="utf-8") as f:
         for record in islice(records, limit):
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
             stats["kept"] += 1
@@ -56,6 +59,7 @@ def fetch_source(name: str, sample: bool) -> Counter:
                 print(f"  OUTPUT:      {record['output'][:PREVIEW_CHARS]!r}")
 
     records.close()   # stop the stream now instead of leaving it half-read
+    part.replace(path)
 
     print(f"  kept {stats['kept']}/{limit} after scanning {stats['scanned']} rows -> {path}")
     for reason, count in sorted(stats.items()):

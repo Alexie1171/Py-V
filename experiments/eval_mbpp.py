@@ -85,10 +85,14 @@ def main():
     parser = argparse.ArgumentParser()
     add_model_args(parser)
     args = parser.parse_args()
+    model, tokenizer, tag = load_for_eval(args)
+    run(model, tokenizer, tag, args)
 
+
+def run(model, tokenizer, tag: str, args):
+    """Score an already-loaded model (also called by eval_all.py)."""
     ev       = CFG.evaluation
     problems = load_problems()
-    model, tokenizer, tag, wrap = load_for_eval(args)
 
     ev.output_dir.mkdir(parents=True, exist_ok=True)
     out_path = ev.output_dir / f"mbpp_{tag}.jsonl"
@@ -100,7 +104,7 @@ def main():
         for i, problem in enumerate(problems, 1):
             t = time.perf_counter()
 
-            prompt    = wrap(build_prompt("generate", build_task(problem), {}, []))
+            prompt    = build_prompt("generate", build_task(problem), {}, [])
             response  = generate_from_prompt(model, tokenizer, prompt,
                                              mode="generate", temperature=0.0)
             code      = extract_code(response)
@@ -125,10 +129,10 @@ def main():
     print(f"\nMBPP score ({tag}): {passed}/{len(problems)} "
           f"= {100 * passed / len(problems):.1f}% in {minutes:.0f} min -> {out_path}")
 
-    write_summary(ev.output_dir / f"mbpp_{tag}_summary.json", args, passed, len(problems), minutes)
+    write_summary(ev.output_dir / f"mbpp_{tag}_summary.json", args, model, passed, len(problems), minutes)
 
 
-def write_summary(path: Path, args, passed: int, total: int, minutes: float):
+def write_summary(path: Path, args, model, passed: int, total: int, minutes: float):
     """Score plus every setting that can change it, so runs stay comparable."""
     import peft, torch, transformers
 
@@ -147,7 +151,7 @@ def write_summary(path: Path, args, passed: int, total: int, minutes: float):
         "adapter":      adapter,
         "benchmark":    dataclasses.asdict(CFG.evaluation) | {"output_dir": str(CFG.evaluation.output_dir)},
         "prompt_mode":  "generate",
-        "prompt_format": "native chat" if args.native_chat else "template",
+        "prompt_format": model.v_prompt_format,
         "decoding":     {"temperature": 0.0, "max_new_tokens": CFG.model.max_tokens,
                          **dataclasses.asdict(CFG.generation.for_mode("generate"))},
         "device":       torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",

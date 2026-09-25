@@ -1,0 +1,1448 @@
+[
+ {
+  "id": "fix-630",
+  "task_id": 630,
+  "name": "get_coordinates",
+  "imports": "",
+  "tests": [
+   "assert get_coordinates((3, 4)) == [[2, 3], [2, 4], [2, 5], [3, 3], [3, 4], [3, 5], [4, 3], [4, 4], [4, 5]]",
+   "assert get_coordinates((4, 5)) ==[[3, 4], [3, 5], [3, 6], [4, 4], [4, 5], [4, 6], [5, 4], [5, 5], [5, 6]]",
+   "assert get_coordinates((5, 6)) == [[4, 5], [4, 6], [4, 7], [5, 5], [5, 6], [5, 7], [6, 5], [6, 6], [6, 7]]"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "def adjac(ele, sub = []): \n  if not ele: \n     yield sub \n  else: \n     yield from [idx for j in range(ele[0] - 1, ele[0] + 2) \n                for idx in adjac(ele[1:], sub + [j])] \ndef get_coordinates(test_tup):\n  res = list(adjac(testtup))\n  return (res)",
+  "question": "This test fails:\n\nassert get_coordinates((3, 4)) == [[2, 3], [2, 4], [2, 5], [3, 3], [3, 4], [3, 5], [4, 3], [4, 4], [4, 5]]\n\nIt raises:\n\nNameError: name 'testtup' is not defined\n\nFix the bug and write the corrected `get_coordinates` function.\n\n```python\ndef adjac(ele, sub = []): \n  if not ele: \n     yield sub \n  else: \n     yield from [idx for j in range(ele[0] - 1, ele[0] + 2) \n                for idx in adjac(ele[1:], sub + [j])] \ndef get_coordinates(test_tup):\n  res = list(adjac(testtup))\n  return (res)\n```"
+ },
+ {
+  "id": "fix-716",
+  "task_id": 716,
+  "name": "rombus_perimeter",
+  "imports": "",
+  "tests": [
+   "assert rombus_perimeter(10)==40",
+   "assert rombus_perimeter(5)==20",
+   "assert rombus_perimeter(4)==16"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "def rombus_perimeter(a):\n  perimeter=4*a\n  return perieter",
+  "question": "This test fails:\n\nassert rombus_perimeter(10)==40\n\nIt raises:\n\nNameError: name 'perieter' is not defined\n\nFix the bug and write the corrected `rombus_perimeter` function.\n\n```python\ndef rombus_perimeter(a):\n  perimeter=4*a\n  return perieter\n```"
+ },
+ {
+  "id": "fix-3",
+  "task_id": 3,
+  "name": "is_not_prime",
+  "imports": "",
+  "tests": [
+   "assert is_not_prime(2) == False",
+   "assert is_not_prime(10) == True",
+   "assert is_not_prime(35) == True"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "missing_return",
+  "shown": "import math\ndef is_not_prime(n):\n    result = False\n    for i in range(2,int(math.sqrt(n)) + 1):\n        if n % i == 0:\n            result = True\n",
+  "question": "This test fails:\n\nassert is_not_prime(2) == False\n\nThe result is wrong (it returns None).\n\nFix the bug and write the corrected `is_not_prime` function.\n\n```python\nimport math\ndef is_not_prime(n):\n    result = False\n    for i in range(2,int(math.sqrt(n)) + 1):\n        if n % i == 0:\n            result = True\n\n```"
+ },
+ {
+  "id": "fix-614",
+  "task_id": 614,
+  "name": "cummulative_sum",
+  "imports": "",
+  "tests": [
+   "assert cummulative_sum([(1, 3), (5, 6, 7), (2, 6)]) == 30",
+   "assert cummulative_sum([(2, 4), (6, 7, 8), (3, 7)]) == 37",
+   "assert cummulative_sum([(3, 5), (7, 8, 9), (4, 8)]) == 44"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "missing_return",
+  "shown": "def cummulative_sum(test_list):\n  res = sum(map(sum, test_list))\n",
+  "question": "This test fails:\n\nassert cummulative_sum([(1, 3), (5, 6, 7), (2, 6)]) == 30\n\nThe result is wrong (it returns None).\n\nFix the bug and write the corrected `cummulative_sum` function.\n\n```python\ndef cummulative_sum(test_list):\n  res = sum(map(sum, test_list))\n\n```"
+ },
+ {
+  "id": "fix-962",
+  "task_id": 962,
+  "name": "sum_Even",
+  "imports": "",
+  "tests": [
+   "assert sum_Even(2,5) == 6",
+   "assert sum_Even(3,8) == 18",
+   "assert sum_Even(4,6) == 10"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def sum_Natural(n): \n    sum = (n * (n + 1)) \n    return int(sum) \ndef sum_Even(l,r): \n    return (sum_Natural(int(r / 2)) - sum_Natural(int((l + 1) / 2)))",
+  "question": "This test fails:\n\nassert sum_Even(2,5) == 6\n\nThe result is wrong (it returns 4).\n\nFix the bug and write the corrected `sum_Even` function.\n\n```python\ndef sum_Natural(n): \n    sum = (n * (n + 1)) \n    return int(sum) \ndef sum_Even(l,r): \n    return (sum_Natural(int(r / 2)) - sum_Natural(int((l + 1) / 2)))\n```"
+ },
+ {
+  "id": "fix-877",
+  "task_id": 877,
+  "name": "sort_String",
+  "imports": "",
+  "tests": [
+   "assert sort_String(\"cba\") == \"abc\"",
+   "assert sort_String(\"data\") == \"aadt\"",
+   "assert sort_String(\"zxy\") == \"xyz\""
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "missing_return",
+  "shown": "def sort_String(str) : \n    str = ''.join(sorted(str)) \n",
+  "question": "This test fails:\n\nassert sort_String(\"cba\") == \"abc\"\n\nThe result is wrong (it returns None).\n\nFix the bug and write the corrected `sort_String` function.\n\n```python\ndef sort_String(str) : \n    str = ''.join(sorted(str)) \n\n```"
+ },
+ {
+  "id": "fix-567",
+  "task_id": 567,
+  "name": "issort_list",
+  "imports": "",
+  "tests": [
+   "assert issort_list([1,2,4,6,8,10,12,14,16,17])==True",
+   "assert issort_list([1, 2, 4, 6, 8, 10, 12, 14, 20, 17])==False",
+   "assert issort_list([1, 2, 4, 6, 8, 10,15,14,20])==False"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def issort_list(list1):\n    result = all(list1[i] <= list1[i-1] for i in range(len(list1)-1))\n    return result",
+  "question": "This test fails:\n\nassert issort_list([1,2,4,6,8,10,12,14,16,17])==True\n\nThe result is wrong (it returns False).\n\nFix the bug and write the corrected `issort_list` function.\n\n```python\ndef issort_list(list1):\n    result = all(list1[i] <= list1[i-1] for i in range(len(list1)-1))\n    return result\n```"
+ },
+ {
+  "id": "fix-555",
+  "task_id": 555,
+  "name": "difference",
+  "imports": "",
+  "tests": [
+   "assert difference(3) == 30",
+   "assert difference(5) == 210",
+   "assert difference(2) == 6"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def difference(n) :  \n    S = (n*(n - 1))//2;  \n    res = S*(S-1);  \n    return res;",
+  "question": "This test fails:\n\nassert difference(3) == 30\n\nThe result is wrong (it returns 6).\n\nFix the bug and write the corrected `difference` function.\n\n```python\ndef difference(n) :  \n    S = (n*(n - 1))//2;  \n    res = S*(S-1);  \n    return res;\n```"
+ },
+ {
+  "id": "fix-411",
+  "task_id": 411,
+  "name": "snake_to_camel",
+  "imports": "",
+  "tests": [
+   "assert snake_to_camel('android_tv') == 'AndroidTv'",
+   "assert snake_to_camel('google_pixel') == 'GooglePixel'",
+   "assert snake_to_camel('apple_watch') == 'AppleWatch'"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "and_or",
+  "shown": "import re\ndef snake_to_camel(word):\n  return ''.join(x.capitalize() and '_' for x in word.split('_'))",
+  "question": "This test fails:\n\nassert snake_to_camel('android_tv') == 'AndroidTv'\n\nThe result is wrong (it returns '__').\n\nFix the bug and write the corrected `snake_to_camel` function.\n\n```python\nimport re\ndef snake_to_camel(word):\n  return ''.join(x.capitalize() and '_' for x in word.split('_'))\n```"
+ },
+ {
+  "id": "fix-840",
+  "task_id": 840,
+  "name": "Check_Solution",
+  "imports": "",
+  "tests": [
+   "assert Check_Solution(2,0,-1) == \"Yes\"",
+   "assert Check_Solution(1,-5,6) == \"No\"",
+   "assert Check_Solution(2,0,2) == \"Yes\""
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "compare",
+  "shown": "def Check_Solution(a,b,c):  \n    if b != 0:  \n        return (\"Yes\")  \n    else: \n        return (\"No\")",
+  "question": "This test fails:\n\nassert Check_Solution(2,0,-1) == \"Yes\"\n\nThe result is wrong (it returns 'No').\n\nFix the bug and write the corrected `Check_Solution` function.\n\n```python\ndef Check_Solution(a,b,c):  \n    if b != 0:  \n        return (\"Yes\")  \n    else: \n        return (\"No\")\n```"
+ },
+ {
+  "id": "fix-967",
+  "task_id": 967,
+  "name": "check",
+  "imports": "",
+  "tests": [
+   "assert check(\"SEEquoiaL\") == 'accepted'",
+   "assert check('program') == \"not accepted\"",
+   "assert check('fine') == \"not accepted\""
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "compare",
+  "shown": "def check(string): \n  if len(set(string).intersection(\"AEIOUaeiou\"))>5: \n    return ('accepted') \n  else: \n    return (\"not accepted\")",
+  "question": "This test fails:\n\nassert check(\"SEEquoiaL\") == 'accepted'\n\nThe result is wrong (it returns 'not accepted').\n\nFix the bug and write the corrected `check` function.\n\n```python\ndef check(string): \n  if len(set(string).intersection(\"AEIOUaeiou\"))>5: \n    return ('accepted') \n  else: \n    return (\"not accepted\")\n```"
+ },
+ {
+  "id": "fix-910",
+  "task_id": 910,
+  "name": "check_date",
+  "imports": "",
+  "tests": [
+   "assert check_date(11,11,2002)==True",
+   "assert check_date(13,11,2002)==False",
+   "assert check_date('11','11','2002')==True"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "wrong_bool",
+  "shown": "import datetime\ndef check_date(m, d, y):\n    try:\n        m, d, y = map(int, (m, d, y))\n        datetime.date(y, m, d)\n        return True\n    except ValueError:\n        return True",
+  "question": "This test fails:\n\nassert check_date(13,11,2002)==False\n\nThe result is wrong (it returns True).\n\nFix the bug and write the corrected `check_date` function.\n\n```python\nimport datetime\ndef check_date(m, d, y):\n    try:\n        m, d, y = map(int, (m, d, y))\n        datetime.date(y, m, d)\n        return True\n    except ValueError:\n        return True\n```"
+ },
+ {
+  "id": "fix-740",
+  "task_id": 740,
+  "name": "tuple_to_dict",
+  "imports": "",
+  "tests": [
+   "assert tuple_to_dict((1, 5, 7, 10, 13, 5)) == {1: 5, 7: 10, 13: 5}",
+   "assert tuple_to_dict((1, 2, 3, 4, 5, 6)) == {1: 2, 3: 4, 5: 6}",
+   "assert tuple_to_dict((7, 8, 9, 10, 11, 12)) == {7: 8, 9: 10, 11: 12}"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def tuple_to_dict(test_tup):\n  res = dict(test_tup[idx : idx - 2] for idx in range(0, len(test_tup), 2))\n  return (res)",
+  "question": "This test fails:\n\nassert tuple_to_dict((1, 5, 7, 10, 13, 5)) == {1: 5, 7: 10, 13: 5}\n\nIt raises:\n\nValueError: dictionary update sequence element #0 has length 4; 2 is required\n\nFix the bug and write the corrected `tuple_to_dict` function.\n\n```python\ndef tuple_to_dict(test_tup):\n  res = dict(test_tup[idx : idx - 2] for idx in range(0, len(test_tup), 2))\n  return (res)\n```"
+ },
+ {
+  "id": "fix-702",
+  "task_id": 702,
+  "name": "removals",
+  "imports": "",
+  "tests": [
+   "assert removals([1, 3, 4, 9, 10,11, 12, 17, 20], 9, 4) == 5",
+   "assert removals([1, 5, 6, 2, 8], 5, 2) == 3",
+   "assert removals([1, 2, 3 ,4, 5, 6], 6, 3) == 2"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def find_ind(key, i, n, \n\t\t\tk, arr):\n\tind = -1\n\tstart = i + 1\n\tend = n - 1;\n\twhile (start < end):\n\t\tmid = int(start +\n\t\t\t\t(end - start) / 2)\n\t\tif (arr[mid] - key <= k):\n\t\t\tind = mid\n\t\t\tstart = mid + 1\n\t\telse:\n\t\t\tend = mid\n\treturn ind\ndef removals(arr, n, k):\n\tans = n - 1\n\tarr.sort()\n\tfor i in range(0, n):\n\t\tj = find_ind(arr[i], i, \n\t\t\t\t\tn, k, arr)\n\t\tif (j != -1):\n\t\t\tans = min(ans, n -\n\t\t\t\t\t\t(j + i + 1))\n\treturn ans",
+  "question": "This test fails:\n\nassert removals([1, 3, 4, 9, 10,11, 12, 17, 20], 9, 4) == 5\n\nThe result is wrong (it returns -3).\n\nFix the bug and write the corrected `removals` function.\n\n```python\ndef find_ind(key, i, n, \n\t\t\tk, arr):\n\tind = -1\n\tstart = i + 1\n\tend = n - 1;\n\twhile (start < end):\n\t\tmid = int(start +\n\t\t\t\t(end - start) / 2)\n\t\tif (arr[mid] - key <= k):\n\t\t\tind = mid\n\t\t\tstart = mid + 1\n\t\telse:\n\t\t\tend = mid\n\treturn ind\ndef removals(arr, n, k):\n\tans = n - 1\n\tarr.sort()\n\tfor i in range(0, n):\n\t\tj = find_ind(arr[i], i, \n\t\t\t\t\tn, k, arr)\n\t\tif (j != -1):\n\t\t\tans = min(ans, n -\n\t\t\t\t\t\t(j + i + 1))\n\treturn ans\n```"
+ },
+ {
+  "id": "fix-261",
+  "task_id": 261,
+  "name": "division_elements",
+  "imports": "",
+  "tests": [
+   "assert division_elements((10, 4, 6, 9),(5, 2, 3, 3)) == (2, 2, 2, 3)",
+   "assert division_elements((12, 6, 8, 16),(6, 3, 4, 4)) == (2, 2, 2, 4)",
+   "assert division_elements((20, 14, 36, 18),(5, 7, 6, 9)) == (4, 2, 6, 2)"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "def division_elements(test_tup1, test_tup2):\n  res = tuple(ele1 // ele2 for ele1, ele2 in zip(test_tup1, testtup2))\n  return (res)",
+  "question": "This test fails:\n\nassert division_elements((10, 4, 6, 9),(5, 2, 3, 3)) == (2, 2, 2, 3)\n\nIt raises:\n\nNameError: name 'testtup2' is not defined\n\nFix the bug and write the corrected `division_elements` function.\n\n```python\ndef division_elements(test_tup1, test_tup2):\n  res = tuple(ele1 // ele2 for ele1, ele2 in zip(test_tup1, testtup2))\n  return (res)\n```"
+ },
+ {
+  "id": "fix-826",
+  "task_id": 826,
+  "name": "check_Type_Of_Triangle",
+  "imports": "",
+  "tests": [
+   "assert check_Type_Of_Triangle(1,2,3) == \"Obtuse-angled Triangle\"",
+   "assert check_Type_Of_Triangle(2,2,2) == \"Acute-angled Triangle\"",
+   "assert check_Type_Of_Triangle(1,0,1) == \"Right-angled Triangle\""
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "compare",
+  "shown": "def check_Type_Of_Triangle(a,b,c): \n    sqa = pow(a,2) \n    sqb = pow(b,2) \n    sqc = pow(c,2) \n    if (sqa != sqa + sqb or sqb == sqa + sqc or sqc == sqa + sqb): \n        return (\"Right-angled Triangle\") \n    elif (sqa > sqc + sqb or sqb > sqa + sqc or sqc > sqa + sqb): \n        return (\"Obtuse-angled Triangle\") \n    else: \n        return (\"Acute-angled Triangle\")",
+  "question": "This test fails:\n\nassert check_Type_Of_Triangle(1,2,3) == \"Obtuse-angled Triangle\"\n\nThe result is wrong (it returns 'Right-angled Triangle').\n\nFix the bug and write the corrected `check_Type_Of_Triangle` function.\n\n```python\ndef check_Type_Of_Triangle(a,b,c): \n    sqa = pow(a,2) \n    sqb = pow(b,2) \n    sqc = pow(c,2) \n    if (sqa != sqa + sqb or sqb == sqa + sqc or sqc == sqa + sqb): \n        return (\"Right-angled Triangle\") \n    elif (sqa > sqc + sqb or sqb > sqa + sqc or sqc > sqa + sqb): \n        return (\"Obtuse-angled Triangle\") \n    else: \n        return (\"Acute-angled Triangle\")\n```"
+ },
+ {
+  "id": "fix-656",
+  "task_id": 656,
+  "name": "find_Min_Sum",
+  "imports": "",
+  "tests": [
+   "assert find_Min_Sum([3,2,1],[2,1,3],3) == 0",
+   "assert find_Min_Sum([1,2,3],[4,5,6],3) == 9",
+   "assert find_Min_Sum([4,1,8,7],[2,3,6,5],4) == 6"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "none_init",
+  "shown": "def find_Min_Sum(a,b,n): \n    a.sort() \n    b.sort() \n    sum = None  \n    for i in range(n): \n        sum = sum + abs(a[i] - b[i]) \n    return sum",
+  "question": "This test fails:\n\nassert find_Min_Sum([3,2,1],[2,1,3],3) == 0\n\nIt raises:\n\nTypeError: unsupported operand type(s) for +: 'NoneType' and 'int'\n\nFix the bug and write the corrected `find_Min_Sum` function.\n\n```python\ndef find_Min_Sum(a,b,n): \n    a.sort() \n    b.sort() \n    sum = None  \n    for i in range(n): \n        sum = sum + abs(a[i] - b[i]) \n    return sum\n```"
+ },
+ {
+  "id": "fix-643",
+  "task_id": 643,
+  "name": "text_match_wordz_middle",
+  "imports": "",
+  "tests": [
+   "assert text_match_wordz_middle(\"pythonzabc.\")==('Found a match!')",
+   "assert text_match_wordz_middle(\"xyzabc.\")==('Found a match!')",
+   "assert text_match_wordz_middle(\"  lang  .\")==('Not matched!')"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "import re\ndef text_match_wordz_middle(text):\n        patterns = '\\Bz\\B'\n        if re.search(pattrns,  text):\n                return 'Found a match!'\n        else:\n                return('Not matched!')",
+  "question": "This test fails:\n\nassert text_match_wordz_middle(\"pythonzabc.\")==('Found a match!')\n\nIt raises:\n\nNameError: name 'pattrns' is not defined\n\nFix the bug and write the corrected `text_match_wordz_middle` function.\n\n```python\nimport re\ndef text_match_wordz_middle(text):\n        patterns = '\\Bz\\B'\n        if re.search(pattrns,  text):\n                return 'Found a match!'\n        else:\n                return('Not matched!')\n```"
+ },
+ {
+  "id": "fix-476",
+  "task_id": 476,
+  "name": "big_sum",
+  "imports": "",
+  "tests": [
+   "assert big_sum([1,2,3]) == 4",
+   "assert big_sum([-1,2,3,4]) == 3",
+   "assert big_sum([2,3,6]) == 8"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "missing_return",
+  "shown": "def big_sum(nums):\n      sum= max(nums)+min(nums)\n",
+  "question": "This test fails:\n\nassert big_sum([1,2,3]) == 4\n\nThe result is wrong (it returns None).\n\nFix the bug and write the corrected `big_sum` function.\n\n```python\ndef big_sum(nums):\n      sum= max(nums)+min(nums)\n\n```"
+ },
+ {
+  "id": "fix-924",
+  "task_id": 924,
+  "name": "max_of_two",
+  "imports": "",
+  "tests": [
+   "assert max_of_two(10,20)==20",
+   "assert max_of_two(19,15)==19",
+   "assert max_of_two(-10,-20)==-10"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "missing_return",
+  "shown": "def max_of_two( x, y ):\n    if x > y:\n        return x\n",
+  "question": "This test fails:\n\nassert max_of_two(10,20)==20\n\nThe result is wrong (it returns None).\n\nFix the bug and write the corrected `max_of_two` function.\n\n```python\ndef max_of_two( x, y ):\n    if x > y:\n        return x\n\n```"
+ },
+ {
+  "id": "fix-513",
+  "task_id": 513,
+  "name": "add_str",
+  "imports": "",
+  "tests": [
+   "assert add_str((5, 6, 7, 4, 9) , \"FDF\") == [5, 'FDF', 6, 'FDF', 7, 'FDF', 4, 'FDF', 9, 'FDF']",
+   "assert add_str((7, 8, 9, 10) , \"PF\") == [7, 'PF', 8, 'PF', 9, 'PF', 10, 'PF']",
+   "assert add_str((11, 14, 12, 1, 4) , \"JH\") == [11, 'JH', 14, 'JH', 12, 'JH', 1, 'JH', 4, 'JH']"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "missing_return",
+  "shown": "def add_str(test_tup, K):\n  res = [ele for sub in test_tup for ele in (sub, K)]\n",
+  "question": "This test fails:\n\nassert add_str((5, 6, 7, 4, 9) , \"FDF\") == [5, 'FDF', 6, 'FDF', 7, 'FDF', 4, 'FDF', 9, 'FDF']\n\nThe result is wrong (it returns None).\n\nFix the bug and write the corrected `add_str` function.\n\n```python\ndef add_str(test_tup, K):\n  res = [ele for sub in test_tup for ele in (sub, K)]\n\n```"
+ },
+ {
+  "id": "fix-432",
+  "task_id": 432,
+  "name": "median_trapezium",
+  "imports": "",
+  "tests": [
+   "assert median_trapezium(15,25,35)==20",
+   "assert median_trapezium(10,20,30)==15",
+   "assert median_trapezium(6,9,4)==7.5"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "def median_trapezium(base1,base2,height):\n median = 0.5 * (base1+ bae2)\n return median",
+  "question": "This test fails:\n\nassert median_trapezium(15,25,35)==20\n\nIt raises:\n\nNameError: name 'bae2' is not defined\n\nFix the bug and write the corrected `median_trapezium` function.\n\n```python\ndef median_trapezium(base1,base2,height):\n median = 0.5 * (base1+ bae2)\n return median\n```"
+ },
+ {
+  "id": "fix-748",
+  "task_id": 748,
+  "name": "capital_words_spaces",
+  "imports": "",
+  "tests": [
+   "assert capital_words_spaces(\"Python\") == 'Python'",
+   "assert capital_words_spaces(\"PythonProgrammingExamples\") == 'Python Programming Examples'",
+   "assert capital_words_spaces(\"GetReadyToBeCodingFreak\") == 'Get Ready To Be Coding Freak'"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "import re\ndef capital_words_spaces(str1):\n  return re.sub(r\"(\\w)([A-Z])\", r\"\\1 \\2\", st1)",
+  "question": "This test fails:\n\nassert capital_words_spaces(\"Python\") == 'Python'\n\nIt raises:\n\nNameError: name 'st1' is not defined\n\nFix the bug and write the corrected `capital_words_spaces` function.\n\n```python\nimport re\ndef capital_words_spaces(str1):\n  return re.sub(r\"(\\w)([A-Z])\", r\"\\1 \\2\", st1)\n```"
+ },
+ {
+  "id": "fix-399",
+  "task_id": 399,
+  "name": "bitwise_xor",
+  "imports": "",
+  "tests": [
+   "assert bitwise_xor((10, 4, 6, 9), (5, 2, 3, 3)) == (15, 6, 5, 10)",
+   "assert bitwise_xor((11, 5, 7, 10), (6, 3, 4, 4)) == (13, 6, 3, 14)",
+   "assert bitwise_xor((12, 6, 8, 11), (7, 4, 5, 6)) == (11, 2, 13, 13)"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "def bitwise_xor(test_tup1, test_tup2):\n  res = tuple(ele1 ^ ele2 for ele1, ele2 in zip(testtup1, test_tup2))\n  return (res)",
+  "question": "This test fails:\n\nassert bitwise_xor((10, 4, 6, 9), (5, 2, 3, 3)) == (15, 6, 5, 10)\n\nIt raises:\n\nNameError: name 'testtup1' is not defined\n\nFix the bug and write the corrected `bitwise_xor` function.\n\n```python\ndef bitwise_xor(test_tup1, test_tup2):\n  res = tuple(ele1 ^ ele2 for ele1, ele2 in zip(testtup1, test_tup2))\n  return (res)\n```"
+ },
+ {
+  "id": "fix-884",
+  "task_id": 884,
+  "name": "all_Bits_Set_In_The_Given_Range",
+  "imports": "",
+  "tests": [
+   "assert all_Bits_Set_In_The_Given_Range(10,2,1) == True ",
+   "assert all_Bits_Set_In_The_Given_Range(5,2,4) == False",
+   "assert all_Bits_Set_In_The_Given_Range(22,2,3) == True "
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def all_Bits_Set_In_The_Given_Range(n,l,r): \n    num = ((1 << r) - 1) ^ ((1 << (l + 1)) - 1) \n    new_num = n & num \n    if (num == new_num): \n        return True\n    return False",
+  "question": "This test fails:\n\nassert all_Bits_Set_In_The_Given_Range(10,2,1) == True\n\nThe result is wrong (it returns False).\n\nFix the bug and write the corrected `all_Bits_Set_In_The_Given_Range` function.\n\n```python\ndef all_Bits_Set_In_The_Given_Range(n,l,r): \n    num = ((1 << r) - 1) ^ ((1 << (l + 1)) - 1) \n    new_num = n & num \n    if (num == new_num): \n        return True\n    return False\n```"
+ },
+ {
+  "id": "fix-872",
+  "task_id": 872,
+  "name": "check_subset",
+  "imports": "",
+  "tests": [
+   "assert check_subset([[1, 3], [5, 7], [9, 11], [13, 15, 17]] ,[[1, 3],[13,15,17]])==True",
+   "assert check_subset([[1, 2], [2, 3], [3, 4], [5, 6]],[[3, 4], [5, 6]])==True",
+   "assert check_subset([[[1, 2], [2, 3]], [[3, 4], [5, 7]]],[[[3, 4], [5, 6]]])==False"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "def check_subset(list1,list2): \n    return all(map(list1.__contains__,lit2))",
+  "question": "This test fails:\n\nassert check_subset([[1, 3], [5, 7], [9, 11], [13, 15, 17]] ,[[1, 3],[13,15,17]])==True\n\nIt raises:\n\nNameError: name 'lit2' is not defined\n\nFix the bug and write the corrected `check_subset` function.\n\n```python\ndef check_subset(list1,list2): \n    return all(map(list1.__contains__,lit2))\n```"
+ },
+ {
+  "id": "fix-650",
+  "task_id": 650,
+  "name": "are_Equal",
+  "imports": "",
+  "tests": [
+   "assert are_Equal([1,2,3],[3,2,1],3,3) == True",
+   "assert are_Equal([1,1,1],[2,2,2],3,3) == False",
+   "assert are_Equal([8,9],[4,5,6],2,3) == False"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def are_Equal(arr1,arr2,n,m):\n    if (n != m):\n        return False\n    arr1.sort()\n    arr2.sort()\n    for i in range(0,n + 1):\n        if (arr1[i] != arr2[i]):\n            return False\n    return True",
+  "question": "This test fails:\n\nassert are_Equal([1,2,3],[3,2,1],3,3) == True\n\nIt raises:\n\nIndexError: list index out of range\n\nFix the bug and write the corrected `are_Equal` function.\n\n```python\ndef are_Equal(arr1,arr2,n,m):\n    if (n != m):\n        return False\n    arr1.sort()\n    arr2.sort()\n    for i in range(0,n + 1):\n        if (arr1[i] != arr2[i]):\n            return False\n    return True\n```"
+ },
+ {
+  "id": "fix-405",
+  "task_id": 405,
+  "name": "check_tuplex",
+  "imports": "",
+  "tests": [
+   "assert check_tuplex((\"w\", 3, \"r\", \"e\", \"s\", \"o\", \"u\", \"r\", \"c\", \"e\"),'r')==True",
+   "assert check_tuplex((\"w\", 3, \"r\", \"e\", \"s\", \"o\", \"u\", \"r\", \"c\", \"e\"),'5')==False",
+   "assert check_tuplex((\"w\", 3, \"r\", \"e\", \"s\", \"o\", \"u\", \"r\", \"c\",\"e\"),3)==True"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "def check_tuplex(tuplex,tuple1): \n  if tupe1 in tuplex:\n    return True\n  else:\n     return False",
+  "question": "This test fails:\n\nassert check_tuplex((\"w\", 3, \"r\", \"e\", \"s\", \"o\", \"u\", \"r\", \"c\", \"e\"),'r')==True\n\nIt raises:\n\nNameError: name 'tupe1' is not defined\n\nFix the bug and write the corrected `check_tuplex` function.\n\n```python\ndef check_tuplex(tuplex,tuple1): \n  if tupe1 in tuplex:\n    return True\n  else:\n     return False\n```"
+ },
+ {
+  "id": "fix-478",
+  "task_id": 478,
+  "name": "remove_lowercase",
+  "imports": "",
+  "tests": [
+   "assert remove_lowercase(\"PYTHon\")==('PYTH')",
+   "assert remove_lowercase(\"FInD\")==('FID')",
+   "assert remove_lowercase(\"STRinG\")==('STRG')"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "import re\ndef remove_lowercase(str1):\n return re.sub('[a-z]', '', st1)",
+  "question": "This test fails:\n\nassert remove_lowercase(\"PYTHon\")==('PYTH')\n\nIt raises:\n\nNameError: name 'st1' is not defined\n\nFix the bug and write the corrected `remove_lowercase` function.\n\n```python\nimport re\ndef remove_lowercase(str1):\n return re.sub('[a-z]', '', st1)\n```"
+ },
+ {
+  "id": "fix-777",
+  "task_id": 777,
+  "name": "find_Sum",
+  "imports": "",
+  "tests": [
+   "assert find_Sum([1,2,3,1,1,4,5,6],8) == 21",
+   "assert find_Sum([1,10,9,4,2,10,10,45,4],9) == 71",
+   "assert find_Sum([12,10,9,45,2,10,10,45,10],9) == 78"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def find_Sum(arr,n): \n    arr.sort() \n    sum = arr[0] \n    for i in range(0,n+1): \n        if (arr[i] != arr[i+1]): \n            sum = sum + arr[i+1]   \n    return sum",
+  "question": "This test fails:\n\nassert find_Sum([1,2,3,1,1,4,5,6],8) == 21\n\nIt raises:\n\nIndexError: list index out of range\n\nFix the bug and write the corrected `find_Sum` function.\n\n```python\ndef find_Sum(arr,n): \n    arr.sort() \n    sum = arr[0] \n    for i in range(0,n+1): \n        if (arr[i] != arr[i+1]): \n            sum = sum + arr[i+1]   \n    return sum\n```"
+ },
+ {
+  "id": "fix-703",
+  "task_id": 703,
+  "name": "is_key_present",
+  "imports": "",
+  "tests": [
+   "assert is_key_present({1: 10, 2: 20, 3: 30, 4: 40, 5: 50, 6: 60},5)==True",
+   "assert is_key_present({1: 10, 2: 20, 3: 30, 4: 40, 5: 50, 6: 60},6)==True",
+   "assert is_key_present({1: 10, 2: 20, 3: 30, 4: 40, 5: 50, 6: 60},10)==False"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "wrong_bool",
+  "shown": "def is_key_present(d,x):\n  if x in d:\n    return True\n  else:\n     return True",
+  "question": "This test fails:\n\nassert is_key_present({1: 10, 2: 20, 3: 30, 4: 40, 5: 50, 6: 60},10)==False\n\nThe result is wrong (it returns True).\n\nFix the bug and write the corrected `is_key_present` function.\n\n```python\ndef is_key_present(d,x):\n  if x in d:\n    return True\n  else:\n     return True\n```"
+ },
+ {
+  "id": "fix-960",
+  "task_id": 960,
+  "name": "get_noOfways",
+  "imports": "",
+  "tests": [
+   "assert get_noOfways(4)==3",
+   "assert get_noOfways(3)==2",
+   "assert get_noOfways(5)==5"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "compare",
+  "shown": "def get_noOfways(n):\n    if (n != 0):\n        return 0;\n    if (n == 1):\n        return 1; \n    return get_noOfways(n - 1) + get_noOfways(n - 2);",
+  "question": "This test fails:\n\nassert get_noOfways(4)==3\n\nThe result is wrong (it returns 0).\n\nFix the bug and write the corrected `get_noOfways` function.\n\n```python\ndef get_noOfways(n):\n    if (n != 0):\n        return 0;\n    if (n == 1):\n        return 1; \n    return get_noOfways(n - 1) + get_noOfways(n - 2);\n```"
+ },
+ {
+  "id": "fix-894",
+  "task_id": 894,
+  "name": "float_to_tuple",
+  "imports": "",
+  "tests": [
+   "assert float_to_tuple(\"1.2, 1.3, 2.3, 2.4, 6.5\") == (1.2, 1.3, 2.3, 2.4, 6.5)",
+   "assert float_to_tuple(\"2.3, 2.4, 5.6, 5.4, 8.9\") == (2.3, 2.4, 5.6, 5.4, 8.9)",
+   "assert float_to_tuple(\"0.3, 0.5, 7.8, 9.4\") == (0.3, 0.5, 7.8, 9.4)"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "missing_return",
+  "shown": "def float_to_tuple(test_str):\n  res = tuple(map(float, test_str.split(', ')))\n",
+  "question": "This test fails:\n\nassert float_to_tuple(\"1.2, 1.3, 2.3, 2.4, 6.5\") == (1.2, 1.3, 2.3, 2.4, 6.5)\n\nThe result is wrong (it returns None).\n\nFix the bug and write the corrected `float_to_tuple` function.\n\n```python\ndef float_to_tuple(test_str):\n  res = tuple(map(float, test_str.split(', ')))\n\n```"
+ },
+ {
+  "id": "fix-528",
+  "task_id": 528,
+  "name": "min_length",
+  "imports": "",
+  "tests": [
+   "assert min_length([[0], [1, 3], [5, 7], [9, 11], [13, 15, 17]])==(1, [0])",
+   "assert min_length([[1], [5, 7], [10, 12, 14,15]])==(1, [1])",
+   "assert min_length([[5], [15,20,25]])==(1, [5])"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "def min_length(list1):\n   min_length = min(len(x) for x in  list1 )  \n   min_list = min((x) for x in   list1)\n   return(min_length, min_ist)",
+  "question": "This test fails:\n\nassert min_length([[0], [1, 3], [5, 7], [9, 11], [13, 15, 17]])==(1, [0])\n\nIt raises:\n\nNameError: name 'min_ist' is not defined\n\nFix the bug and write the corrected `min_length` function.\n\n```python\ndef min_length(list1):\n   min_length = min(len(x) for x in  list1 )  \n   min_list = min((x) for x in   list1)\n   return(min_length, min_ist)\n```"
+ },
+ {
+  "id": "fix-415",
+  "task_id": 415,
+  "name": "max_Product",
+  "imports": "",
+  "tests": [
+   "assert max_Product([1,2,3,4,7,0,8,4]) == (7,8)",
+   "assert max_Product([0,-1,-2,-4,5,0,-6]) == (-4,-6)",
+   "assert max_Product([1,2,3]) == (2,3)"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "off_by_one",
+  "shown": "def max_Product(arr): \n    arr_len = len(arr) \n    if (arr_len < 2): \n        return (\"No pairs exists\")           \n    x = arr[0]; y = arr[1]      \n    for i in range(0,arr_len): \n        for j in range(i + 1,arr_len + 1): \n            if (arr[i] * arr[j] > x * y): \n                x = arr[i]; y = arr[j] \n    return x,y",
+  "question": "This test fails:\n\nassert max_Product([1,2,3,4,7,0,8,4]) == (7,8)\n\nIt raises:\n\nIndexError: list index out of range\n\nFix the bug and write the corrected `max_Product` function.\n\n```python\ndef max_Product(arr): \n    arr_len = len(arr) \n    if (arr_len < 2): \n        return (\"No pairs exists\")           \n    x = arr[0]; y = arr[1]      \n    for i in range(0,arr_len): \n        for j in range(i + 1,arr_len + 1): \n            if (arr[i] * arr[j] > x * y): \n                x = arr[i]; y = arr[j] \n    return x,y\n```"
+ },
+ {
+  "id": "fix-845",
+  "task_id": 845,
+  "name": "find_Digits",
+  "imports": "",
+  "tests": [
+   "assert find_Digits(7) == 4",
+   "assert find_Digits(5) == 3",
+   "assert find_Digits(4) == 2"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "import math \ndef find_Digits(n): \n    if (n < 0): \n        return 0;\n    if (n <= 1): \n        return 1; \n    x = ((n * math.log10(n / math.e) + math.log10(2 * math.pi * n) /2.0)); \n    return math.floor(x) - 1;",
+  "question": "This test fails:\n\nassert find_Digits(7) == 4\n\nThe result is wrong (it returns 2).\n\nFix the bug and write the corrected `find_Digits` function.\n\n```python\nimport math \ndef find_Digits(n): \n    if (n < 0): \n        return 0;\n    if (n <= 1): \n        return 1; \n    x = ((n * math.log10(n / math.e) + math.log10(2 * math.pi * n) /2.0)); \n    return math.floor(x) - 1;\n```"
+ },
+ {
+  "id": "fix-959",
+  "task_id": 959,
+  "name": "Average",
+  "imports": "",
+  "tests": [
+   "assert Average([15, 9, 55, 41, 35, 20, 62, 49]) == 35.75",
+   "assert Average([4, 5, 1, 2, 9, 7, 10, 8]) == 5.75",
+   "assert Average([1,2,3]) == 2"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def Average(lst): \n    return sum(lst) // len(lst)",
+  "question": "This test fails:\n\nassert Average([15, 9, 55, 41, 35, 20, 62, 49]) == 35.75\n\nThe result is wrong (it returns 35).\n\nFix the bug and write the corrected `Average` function.\n\n```python\ndef Average(lst): \n    return sum(lst) // len(lst)\n```"
+ },
+ {
+  "id": "fix-940",
+  "task_id": 940,
+  "name": "heap_sort",
+  "imports": "",
+  "tests": [
+   "assert heap_sort([12, 2, 4, 5, 2, 3]) == [2, 2, 3, 4, 5, 12]",
+   "assert heap_sort([32, 14, 5, 6, 7, 19]) == [5, 6, 7, 14, 19, 32]",
+   "assert heap_sort([21, 15, 29, 78, 65]) == [15, 21, 29, 65, 78]"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "operator",
+  "shown": "def heap_sort(arr):\n    heapify(arr)  \n    end = len(arr) + 1\n    while end > 0:\n        arr[end], arr[0] = arr[0], arr[end]\n        shift_down(arr, 0, end - 1)\n        end -= 1\n    return arr\n\ndef heapify(arr):\n    start = len(arr) // 2\n    while start >= 0:\n        shift_down(arr, start, len(arr) - 1)\n        start -= 1\ndef shift_down(arr, start, end):\n    root = start\n    while root * 2 + 1 <= end:\n        child = root * 2 + 1\n        if child + 1 <= end and arr[child] < arr[child + 1]:\n            child += 1\n        if child <= end and arr[root] < arr[child]:\n            arr[root], arr[child] = arr[child], arr[root]\n            root = child\n        else:\n            return",
+  "question": "This test fails:\n\nassert heap_sort([12, 2, 4, 5, 2, 3]) == [2, 2, 3, 4, 5, 12]\n\nIt raises:\n\nIndexError: list index out of range\n\nFix the bug and write the corrected `heap_sort` function.\n\n```python\ndef heap_sort(arr):\n    heapify(arr)  \n    end = len(arr) + 1\n    while end > 0:\n        arr[end], arr[0] = arr[0], arr[end]\n        shift_down(arr, 0, end - 1)\n        end -= 1\n    return arr\n\ndef heapify(arr):\n    start = len(arr) // 2\n    while start >= 0:\n        shift_down(arr, start, len(arr) - 1)\n        start -= 1\ndef shift_down(arr, start, end):\n    root = start\n    while root * 2 + 1 <= end:\n        child = root * 2 + 1\n        if child + 1 <= end and arr[child] < arr[child + 1]:\n            child += 1\n        if child <= end and arr[root] < arr[child]:\n            arr[root], arr[child] = arr[child], arr[root]\n            root = child\n        else:\n            return\n```"
+ },
+ {
+  "id": "fix-719",
+  "task_id": 719,
+  "name": "text_match",
+  "imports": "",
+  "tests": [
+   "assert text_match(\"ac\")==('Found a match!')",
+   "assert text_match(\"dc\")==('Not matched!')",
+   "assert text_match(\"abba\")==('Found a match!')"
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "name_typo",
+  "shown": "import re\ndef text_match(text):\n        patterns = 'ab*?'\n        if re.search(patterns,  tet):\n                return 'Found a match!'\n        else:\n                return('Not matched!')",
+  "question": "This test fails:\n\nassert text_match(\"ac\")==('Found a match!')\n\nIt raises:\n\nNameError: name 'tet' is not defined\n\nFix the bug and write the corrected `text_match` function.\n\n```python\nimport re\ndef text_match(text):\n        patterns = 'ab*?'\n        if re.search(patterns,  tet):\n                return 'Found a match!'\n        else:\n                return('Not matched!')\n```"
+ },
+ {
+  "id": "fix-966",
+  "task_id": 966,
+  "name": "remove_empty",
+  "imports": "",
+  "tests": [
+   "assert remove_empty([(), (), ('',), ('a', 'b'), ('a', 'b', 'c'), ('d')])==[('',), ('a', 'b'), ('a', 'b', 'c'), 'd']  ",
+   "assert remove_empty([(), (), ('',), (\"python\"), (\"program\")])==[('',), (\"python\"), (\"program\")]  ",
+   "assert remove_empty([(), (), ('',), (\"java\")])==[('',),(\"java\") ]  "
+  ],
+  "kind": "fix",
+  "mode": "debug",
+  "bug": "missing_return",
+  "shown": "def remove_empty(tuple1): #L = [(), (), ('',), ('a', 'b'), ('a', 'b', 'c'), ('d')]\n   tuple1 = [t for t in tuple1 if t]\n",
+  "question": "This test fails:\n\nassert remove_empty([(), (), ('',), ('a', 'b'), ('a', 'b', 'c'), ('d')])==[('',), ('a', 'b'), ('a', 'b', 'c'), 'd']\n\nThe result is wrong (it returns None).\n\nFix the bug and write the corrected `remove_empty` function.\n\n```python\ndef remove_empty(tuple1): #L = [(), (), ('',), ('a', 'b'), ('a', 'b', 'c'), ('d')]\n   tuple1 = [t for t in tuple1 if t]\n\n```"
+ },
+ {
+  "id": "improve-649",
+  "task_id": 649,
+  "name": "sum_Range_list",
+  "imports": "",
+  "tests": [
+   "assert sum_Range_list([2, 1, 5, 6, 8, 3, 4, 9, 10, 11, 8, 12],8,10) == 29",
+   "assert sum_Range_list([1,2,3,4,5],1,2) == 5",
+   "assert sum_Range_list([1,0,1,2,5,6],4,5) == 11"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def sum_Range_list(nums, m, n):                                                                                                                                                                                                \n    sum_range = 0                                                                                                                                                                                                         \n    for i in range(m, n+1, 1):                                                                                                                                                                                        \n        sum_range = sum_range + nums[i]\n    return sum_range",
+  "clumsy_nodes": 39,
+  "clean_nodes": 36,
+  "question": "Improve this code: make `sum_Range_list` simpler and more readable without changing what it does.\n\n```python\ndef sum_Range_list(nums, m, n):                                                                                                                                                                                                \n    sum_range = 0                                                                                                                                                                                                         \n    for i in range(m, n+1, 1):                                                                                                                                                                                        \n        sum_range = sum_range + nums[i]\n    return sum_range\n```"
+ },
+ {
+  "id": "improve-515",
+  "task_id": 515,
+  "name": "modular_sum",
+  "imports": "",
+  "tests": [
+   "assert modular_sum([3, 1, 7, 5], 4, 6) == True",
+   "assert modular_sum([1, 7], 2, 5) == False",
+   "assert modular_sum([1, 6], 2, 5) == False"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def modular_sum(arr, n, m): \n\tif (n > m): \n\t\treturn True\n\tDP = []\n\tfor i in range(m):\n\t    DP.append(False)\n\tfor i in range(n): \n\t\tif (DP[0]): \n\t\t\treturn True\n\t\ttemp = [False for i in range(m)] \n\t\tfor j in range(m): \n\t\t\tif (DP[j] == True): \n\t\t\t\tif (DP[(j + arr[i]) % m] == False): \n\t\t\t\t\ttemp[(j + arr[i]) % m] = True\n\t\tfor j in range(m): \n\t\t\tif (temp[j]): \n\t\t\t\tDP[j] = True\n\t\tDP[arr[i] % m] = True\n\treturn DP[0]",
+  "clumsy_nodes": 168,
+  "clean_nodes": 161,
+  "question": "Improve this code: make `modular_sum` simpler and more readable without changing what it does.\n\n```python\ndef modular_sum(arr, n, m): \n\tif (n > m): \n\t\treturn True\n\tDP = []\n\tfor i in range(m):\n\t    DP.append(False)\n\tfor i in range(n): \n\t\tif (DP[0]): \n\t\t\treturn True\n\t\ttemp = [False for i in range(m)] \n\t\tfor j in range(m): \n\t\t\tif (DP[j] == True): \n\t\t\t\tif (DP[(j + arr[i]) % m] == False): \n\t\t\t\t\ttemp[(j + arr[i]) % m] = True\n\t\tfor j in range(m): \n\t\t\tif (temp[j]): \n\t\t\t\tDP[j] = True\n\t\tDP[arr[i] % m] = True\n\treturn DP[0]\n```"
+ },
+ {
+  "id": "improve-663",
+  "task_id": 663,
+  "name": "find_max_val",
+  "imports": "",
+  "tests": [
+   "assert find_max_val(15, 10, 5) == 15",
+   "assert find_max_val(187, 10, 5) == 185",
+   "assert find_max_val(16, 11, 1) == 12"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "max_min_to_if"
+  ],
+  "shown": "import sys \ndef find_max_val(n, x, y): \n\tans = -sys.maxsize \n\tfor k in range(n + 1): \n\t\tif (k % x == y): \n\t\t\tif ans >= k:\n\t\t\t    ans = ans\n\t\t\telse:\n\t\t\t    ans = k\n\treturn (ans if (ans >= 0 and\n\t\t\t\t\tans <= n) else -1)",
+  "clumsy_nodes": 73,
+  "clean_nodes": 66,
+  "question": "Improve this code: make `find_max_val` simpler and more readable without changing what it does.\n\n```python\nimport sys \ndef find_max_val(n, x, y): \n\tans = -sys.maxsize \n\tfor k in range(n + 1): \n\t\tif (k % x == y): \n\t\t\tif ans >= k:\n\t\t\t    ans = ans\n\t\t\telse:\n\t\t\t    ans = k\n\treturn (ans if (ans >= 0 and\n\t\t\t\t\tans <= n) else -1)\n```"
+ },
+ {
+  "id": "improve-245",
+  "task_id": 245,
+  "name": "max_sum",
+  "imports": "",
+  "tests": [
+   "assert max_sum([1, 15, 51, 45, 33, 100, 12, 18, 9]) == 194",
+   "assert max_sum([80, 60, 30, 40, 20, 10]) == 210",
+   "assert max_sum([2, 3 ,14, 16, 21, 23, 29, 30]) == 138"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "max_min_to_if"
+  ],
+  "shown": "def max_sum(arr): \n\tMSIBS = arr[:] \n\tfor i in range(len(arr)): \n\t\tfor j in range(0, i): \n\t\t\tif arr[i] > arr[j] and MSIBS[i] < MSIBS[j] + arr[i]: \n\t\t\t\tMSIBS[i] = MSIBS[j] + arr[i] \n\tMSDBS = arr[:] \n\tfor i in range(1, len(arr) + 1): \n\t\tfor j in range(1, i): \n\t\t\tif arr[-i] > arr[-j] and MSDBS[-i] < MSDBS[-j] + arr[-i]: \n\t\t\t\tMSDBS[-i] = MSDBS[-j] + arr[-i] \n\tmax_sum = float(\"-Inf\") \n\tfor i, j, k in zip(MSIBS, MSDBS, arr): \n\t\tif max_sum >= i + j - k:\n\t\t    max_sum = max_sum\n\t\telse:\n\t\t    max_sum = i + j - k\n\treturn max_sum",
+  "clumsy_nodes": 260,
+  "clean_nodes": 245,
+  "question": "Improve this code: make `max_sum` simpler and more readable without changing what it does.\n\n```python\ndef max_sum(arr): \n\tMSIBS = arr[:] \n\tfor i in range(len(arr)): \n\t\tfor j in range(0, i): \n\t\t\tif arr[i] > arr[j] and MSIBS[i] < MSIBS[j] + arr[i]: \n\t\t\t\tMSIBS[i] = MSIBS[j] + arr[i] \n\tMSDBS = arr[:] \n\tfor i in range(1, len(arr) + 1): \n\t\tfor j in range(1, i): \n\t\t\tif arr[-i] > arr[-j] and MSDBS[-i] < MSDBS[-j] + arr[-i]: \n\t\t\t\tMSDBS[-i] = MSDBS[-j] + arr[-i] \n\tmax_sum = float(\"-Inf\") \n\tfor i, j, k in zip(MSIBS, MSDBS, arr): \n\t\tif max_sum >= i + j - k:\n\t\t    max_sum = max_sum\n\t\telse:\n\t\t    max_sum = i + j - k\n\treturn max_sum\n```"
+ },
+ {
+  "id": "improve-859",
+  "task_id": 859,
+  "name": "sub_lists",
+  "imports": "",
+  "tests": [
+   "assert sub_lists([10, 20, 30, 40])==[[], [10], [20], [30], [40], [10, 20], [10, 30], [10, 40], [20, 30], [20, 40], [30, 40], [10, 20, 30], [10, 20, 40], [10, 30, 40], [20, 30, 40], [10, 20, 30, 40]]",
+   "assert sub_lists(['X', 'Y', 'Z'])==[[], ['X'], ['Y'], ['Z'], ['X', 'Y'], ['X', 'Z'], ['Y', 'Z'], ['X', 'Y', 'Z']]",
+   "assert sub_lists([1,2,3])==[[],[1],[2],[3],[1,2],[1,3],[2,3],[1,2,3]]"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "from itertools import combinations\ndef sub_lists(my_list):\n\tsubs = []\n\tfor i in range(0, len(my_list)+1):\n\t  temp = []\n\t  for x in combinations(my_list, i):\n\t      temp.append(list(x))\n\t  if len(temp)>0:\n\t    subs.extend(temp)\n\treturn subs",
+  "clumsy_nodes": 69,
+  "clean_nodes": 62,
+  "question": "Improve this code: make `sub_lists` simpler and more readable without changing what it does.\n\n```python\nfrom itertools import combinations\ndef sub_lists(my_list):\n\tsubs = []\n\tfor i in range(0, len(my_list)+1):\n\t  temp = []\n\t  for x in combinations(my_list, i):\n\t      temp.append(list(x))\n\t  if len(temp)>0:\n\t    subs.extend(temp)\n\treturn subs\n```"
+ },
+ {
+  "id": "improve-601",
+  "task_id": 601,
+  "name": "max_chain_length",
+  "imports": "",
+  "tests": [
+   "assert max_chain_length([Pair(5, 24), Pair(15, 25),Pair(27, 40), Pair(50, 60)], 4) == 3",
+   "assert max_chain_length([Pair(1, 2), Pair(3, 4),Pair(5, 6), Pair(7, 8)], 4) == 4",
+   "assert max_chain_length([Pair(19, 10), Pair(11, 12),Pair(13, 14), Pair(15, 16), Pair(31, 54)], 5) == 5"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "class Pair(object): \n\tdef __init__(self, a, b): \n\t\tself.a = a \n\t\tself.b = b \ndef max_chain_length(arr, n): \n\tmax = 0\n\tmcl = []\n\tfor i in range(n):\n\t    mcl.append(1)\n\tfor i in range(1, n): \n\t\tfor j in range(0, i): \n\t\t\tif (arr[i].a > arr[j].b and\n\t\t\t\tmcl[i] < mcl[j] + 1): \n\t\t\t\tmcl[i] = mcl[j] + 1\n\tfor i in range(n): \n\t\tif (max < mcl[i]): \n\t\t\tmax = mcl[i] \n\treturn max",
+  "clumsy_nodes": 131,
+  "clean_nodes": 124,
+  "question": "Improve this code: make `max_chain_length` simpler and more readable without changing what it does.\n\n```python\nclass Pair(object): \n\tdef __init__(self, a, b): \n\t\tself.a = a \n\t\tself.b = b \ndef max_chain_length(arr, n): \n\tmax = 0\n\tmcl = []\n\tfor i in range(n):\n\t    mcl.append(1)\n\tfor i in range(1, n): \n\t\tfor j in range(0, i): \n\t\t\tif (arr[i].a > arr[j].b and\n\t\t\t\tmcl[i] < mcl[j] + 1): \n\t\t\t\tmcl[i] = mcl[j] + 1\n\tfor i in range(n): \n\t\tif (max < mcl[i]): \n\t\t\tmax = mcl[i] \n\treturn max\n```"
+ },
+ {
+  "id": "improve-869",
+  "task_id": 869,
+  "name": "remove_list_range",
+  "imports": "",
+  "tests": [
+   "assert remove_list_range([[2], [0], [1, 2, 3], [0, 1, 2, 3, 6, 7], [9, 11], [13, 14, 15, 17]],13,17)==[[13, 14, 15, 17]]",
+   "assert remove_list_range([[2], [0], [1, 2, 3], [0, 1, 2, 3, 6, 7], [9, 11], [13, 14, 15, 17]],1,3)==[[2], [1, 2, 3]]",
+   "assert remove_list_range([[2], [0], [1, 2, 3], [0, 1, 2, 3, 6, 7], [9, 11], [13, 14, 15, 17]],0,7)==[[2], [0], [1, 2, 3], [0, 1, 2, 3, 6, 7]]"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def remove_list_range(list1, leftrange, rigthrange):\n   result = []\n   for i in list1:\n       if min(i)>=leftrange and max(i)<=rigthrange:\n           result.append(i)\n   return result",
+  "clumsy_nodes": 47,
+  "clean_nodes": 39,
+  "question": "Improve this code: make `remove_list_range` simpler and more readable without changing what it does.\n\n```python\ndef remove_list_range(list1, leftrange, rigthrange):\n   result = []\n   for i in list1:\n       if min(i)>=leftrange and max(i)<=rigthrange:\n           result.append(i)\n   return result\n```"
+ },
+ {
+  "id": "improve-714",
+  "task_id": 714,
+  "name": "count_Fac",
+  "imports": "",
+  "tests": [
+   "assert count_Fac(24) == 3",
+   "assert count_Fac(12) == 2",
+   "assert count_Fac(4) == 1"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def count_Fac(n):  \n    m = n \n    count = 0\n    i = 2\n    while((i * i) <= m): \n        total = 0\n        while (n % i == 0): \n            n /= i \n            total = total + 1\n        temp = 0\n        j = 1\n        while((temp + j) <= total): \n            temp += j \n            count += 1\n            j += 1 \n        i += 1\n    if (n != 1): \n        count += 1 \n    return count",
+  "clumsy_nodes": 109,
+  "clean_nodes": 106,
+  "question": "Improve this code: make `count_Fac` simpler and more readable without changing what it does.\n\n```python\ndef count_Fac(n):  \n    m = n \n    count = 0\n    i = 2\n    while((i * i) <= m): \n        total = 0\n        while (n % i == 0): \n            n /= i \n            total = total + 1\n        temp = 0\n        j = 1\n        while((temp + j) <= total): \n            temp += j \n            count += 1\n            j += 1 \n        i += 1\n    if (n != 1): \n        count += 1 \n    return count\n```"
+ },
+ {
+  "id": "improve-612",
+  "task_id": 612,
+  "name": "merge",
+  "imports": "",
+  "tests": [
+   "assert merge([['x', 'y'], ['a', 'b'], ['m', 'n']]) == [['x', 'a', 'm'], ['y', 'b', 'n']]",
+   "assert merge([[1, 2], [3, 4], [5, 6], [7, 8]]) == [[1, 3, 5, 7], [2, 4, 6, 8]]",
+   "assert merge([['x', 'y','z' ], ['a', 'b','c'], ['m', 'n','o']]) == [['x', 'a', 'm'], ['y', 'b', 'n'],['z', 'c','o']]"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def merge(lst):  \n    result = []\n    for ele in list(zip(*lst)):\n        result.append(list(ele))\n    return result",
+  "clumsy_nodes": 35,
+  "clean_nodes": 23,
+  "question": "Improve this code: make `merge` simpler and more readable without changing what it does.\n\n```python\ndef merge(lst):  \n    result = []\n    for ele in list(zip(*lst)):\n        result.append(list(ele))\n    return result\n```"
+ },
+ {
+  "id": "improve-875",
+  "task_id": 875,
+  "name": "min_difference",
+  "imports": "",
+  "tests": [
+   "assert min_difference([(3, 5), (1, 7), (10, 3), (1, 2)]) == 1",
+   "assert min_difference([(4, 6), (12, 8), (11, 4), (2, 13)]) == 2",
+   "assert min_difference([(5, 17), (3, 9), (12, 5), (3, 24)]) == 6"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def min_difference(test_list):\n  temp = []\n  for a, b in test_list:\n      temp.append(abs(b - a))\n  res = min(temp)\n  return (res)",
+  "clumsy_nodes": 43,
+  "clean_nodes": 36,
+  "question": "Improve this code: make `min_difference` simpler and more readable without changing what it does.\n\n```python\ndef min_difference(test_list):\n  temp = []\n  for a, b in test_list:\n      temp.append(abs(b - a))\n  res = min(temp)\n  return (res)\n```"
+ },
+ {
+  "id": "improve-734",
+  "task_id": 734,
+  "name": "sum_Of_Subarray_Prod",
+  "imports": "",
+  "tests": [
+   "assert sum_Of_Subarray_Prod([1,2,3],3) == 20",
+   "assert sum_Of_Subarray_Prod([1,2],2) == 5",
+   "assert sum_Of_Subarray_Prod([1,2,3,4],4) == 84"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def sum_Of_Subarray_Prod(arr,n):\n    ans = 0\n    res = 0\n    i = n - 1\n    while (i >= 0):\n        incr = arr[i]*(1 + res)\n        ans += incr\n        res = incr\n        i = i - 1\n    return (ans)",
+  "clumsy_nodes": 64,
+  "clean_nodes": 61,
+  "question": "Improve this code: make `sum_Of_Subarray_Prod` simpler and more readable without changing what it does.\n\n```python\ndef sum_Of_Subarray_Prod(arr,n):\n    ans = 0\n    res = 0\n    i = n - 1\n    while (i >= 0):\n        incr = arr[i]*(1 + res)\n        ans += incr\n        res = incr\n        i = i - 1\n    return (ans)\n```"
+ },
+ {
+  "id": "improve-952",
+  "task_id": 952,
+  "name": "nCr_mod_p",
+  "imports": "",
+  "tests": [
+   "assert nCr_mod_p(10, 2, 13) == 6",
+   "assert nCr_mod_p(11, 3, 14) == 11",
+   "assert nCr_mod_p(18, 14, 19) == 1"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def nCr_mod_p(n, r, p): \n\tif (r > n- r): \n\t\tr = n - r \n\tC = []\n\tfor i in range(r + 1):\n\t    C.append(0)\n\tC[0] = 1 \n\tfor i in range(1, n + 1): \n\t\tfor j in range(min(i, r), 0, -1): \n\t\t\tC[j] = (C[j] + C[j-1]) % p \n\treturn C[r]",
+  "clumsy_nodes": 119,
+  "clean_nodes": 112,
+  "question": "Improve this code: make `nCr_mod_p` simpler and more readable without changing what it does.\n\n```python\ndef nCr_mod_p(n, r, p): \n\tif (r > n- r): \n\t\tr = n - r \n\tC = []\n\tfor i in range(r + 1):\n\t    C.append(0)\n\tC[0] = 1 \n\tfor i in range(1, n + 1): \n\t\tfor j in range(min(i, r), 0, -1): \n\t\t\tC[j] = (C[j] + C[j-1]) % p \n\treturn C[r]\n```"
+ },
+ {
+  "id": "improve-813",
+  "task_id": 813,
+  "name": "string_length",
+  "imports": "",
+  "tests": [
+   "assert string_length('python')==6",
+   "assert string_length('program')==7",
+   "assert string_length('language')==8"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def string_length(str1):\n    count = 0\n    for char in str1:\n        count = count + 1\n    return count",
+  "clumsy_nodes": 23,
+  "clean_nodes": 20,
+  "question": "Improve this code: make `string_length` simpler and more readable without changing what it does.\n\n```python\ndef string_length(str1):\n    count = 0\n    for char in str1:\n        count = count + 1\n    return count\n```"
+ },
+ {
+  "id": "improve-622",
+  "task_id": 622,
+  "name": "get_median",
+  "imports": "",
+  "tests": [
+   "assert get_median([1, 12, 15, 26, 38], [2, 13, 17, 30, 45], 5) == 16.0",
+   "assert get_median([2, 4, 8, 9], [7, 13, 19, 28], 4) == 8.5",
+   "assert get_median([3, 6, 14, 23, 36, 42], [2, 18, 27, 39, 49, 55], 6) == 25.0"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def get_median(arr1, arr2, n):\n  i = 0\n  j = 0\n  m1 = -1\n  m2 = -1\n  count = 0\n  while count < n + 1:\n    count += 1\n    if i == n:\n      m1 = m2\n      m2 = arr2[0]\n      break\n    elif j == n:\n      m1 = m2\n      m2 = arr1[0]\n      break\n    if arr1[i] <= arr2[j]:\n      m1 = m2\n      m2 = arr1[i]\n      i = i + 1\n    else:\n      m1 = m2\n      m2 = arr2[j]\n      j += 1\n  return (m1 + m2)/2",
+  "clumsy_nodes": 152,
+  "clean_nodes": 149,
+  "question": "Improve this code: make `get_median` simpler and more readable without changing what it does.\n\n```python\ndef get_median(arr1, arr2, n):\n  i = 0\n  j = 0\n  m1 = -1\n  m2 = -1\n  count = 0\n  while count < n + 1:\n    count += 1\n    if i == n:\n      m1 = m2\n      m2 = arr2[0]\n      break\n    elif j == n:\n      m1 = m2\n      m2 = arr1[0]\n      break\n    if arr1[i] <= arr2[j]:\n      m1 = m2\n      m2 = arr1[i]\n      i = i + 1\n    else:\n      m1 = m2\n      m2 = arr2[j]\n      j += 1\n  return (m1 + m2)/2\n```"
+ },
+ {
+  "id": "improve-724",
+  "task_id": 724,
+  "name": "power_base_sum",
+  "imports": "",
+  "tests": [
+   "assert power_base_sum(2,100)==115",
+   "assert power_base_sum(8,10)==37",
+   "assert power_base_sum(8,15)==62"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "sum_to_loop",
+   "augassign_to_assign"
+  ],
+  "shown": "def power_base_sum(base, power):\n    total = 0\n    for i in str(pow(base, power)):\n        total = total + int(i)\n    return total",
+  "clumsy_nodes": 36,
+  "clean_nodes": 27,
+  "question": "Improve this code: make `power_base_sum` simpler and more readable without changing what it does.\n\n```python\ndef power_base_sum(base, power):\n    total = 0\n    for i in str(pow(base, power)):\n        total = total + int(i)\n    return total\n```"
+ },
+ {
+  "id": "improve-425",
+  "task_id": 425,
+  "name": "count_element_in_list",
+  "imports": "",
+  "tests": [
+   "assert count_element_in_list([[1, 3], [5, 7], [1, 11], [1, 15, 7]],1)==3",
+   "assert count_element_in_list([['A', 'B'], ['A', 'C'], ['A', 'D', 'E'], ['B', 'C', 'D']],'A')==3",
+   "assert count_element_in_list([['A', 'B'], ['A', 'C'], ['A', 'D', 'E'], ['B', 'C', 'D']],'E')==1"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def count_element_in_list(list1, x): \n    ctr = 0\n    for i in range(len(list1)): \n        if x in list1[i]: \n            ctr = ctr + 1\n    return ctr",
+  "clumsy_nodes": 41,
+  "clean_nodes": 38,
+  "question": "Improve this code: make `count_element_in_list` simpler and more readable without changing what it does.\n\n```python\ndef count_element_in_list(list1, x): \n    ctr = 0\n    for i in range(len(list1)): \n        if x in list1[i]: \n            ctr = ctr + 1\n    return ctr\n```"
+ },
+ {
+  "id": "improve-524",
+  "task_id": 524,
+  "name": "max_sum_increasing_subsequence",
+  "imports": "",
+  "tests": [
+   "assert max_sum_increasing_subsequence([1, 101, 2, 3, 100, 4, 5], 7) == 106",
+   "assert max_sum_increasing_subsequence([3, 4, 5, 10], 4) == 22",
+   "assert max_sum_increasing_subsequence([10, 5, 4, 3], 4) == 10"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def max_sum_increasing_subsequence(arr, n): \n\tmax = 0\n\tmsis = []\n\tfor x in range(n):\n\t    msis.append(0)\n\tfor i in range(n): \n\t\tmsis[i] = arr[i] \n\tfor i in range(1, n): \n\t\tfor j in range(i): \n\t\t\tif (arr[i] > arr[j] and\n\t\t\t\tmsis[i] < msis[j] + arr[i]): \n\t\t\t\tmsis[i] = msis[j] + arr[i] \n\tfor i in range(n): \n\t\tif max < msis[i]: \n\t\t\tmax = msis[i] \n\treturn max",
+  "clumsy_nodes": 157,
+  "clean_nodes": 150,
+  "question": "Improve this code: make `max_sum_increasing_subsequence` simpler and more readable without changing what it does.\n\n```python\ndef max_sum_increasing_subsequence(arr, n): \n\tmax = 0\n\tmsis = []\n\tfor x in range(n):\n\t    msis.append(0)\n\tfor i in range(n): \n\t\tmsis[i] = arr[i] \n\tfor i in range(1, n): \n\t\tfor j in range(i): \n\t\t\tif (arr[i] > arr[j] and\n\t\t\t\tmsis[i] < msis[j] + arr[i]): \n\t\t\t\tmsis[i] = msis[j] + arr[i] \n\tfor i in range(n): \n\t\tif max < msis[i]: \n\t\t\tmax = msis[i] \n\treturn max\n```"
+ },
+ {
+  "id": "improve-1",
+  "task_id": 1,
+  "name": "min_cost",
+  "imports": "",
+  "tests": [
+   "assert min_cost([[1, 2, 3], [4, 8, 2], [1, 5, 3]], 2, 2) == 8",
+   "assert min_cost([[2, 3, 4], [5, 9, 3], [2, 6, 4]], 2, 2) == 12",
+   "assert min_cost([[3, 4, 5], [6, 10, 4], [3, 7, 5]], 2, 2) == 16"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "R = 3\nC = 3\ndef min_cost(cost, m, n): \n\ttc = []\n\tfor x in range(R):\n\t    tc.append([0 for x in range(C)])\n\ttc[0][0] = cost[0][0] \n\tfor i in range(1, m+1): \n\t\ttc[i][0] = tc[i-1][0] + cost[i][0] \n\tfor j in range(1, n+1): \n\t\ttc[0][j] = tc[0][j-1] + cost[0][j] \n\tfor i in range(1, m+1): \n\t\tfor j in range(1, n+1): \n\t\t\ttc[i][j] = min(tc[i-1][j-1], tc[i-1][j], tc[i][j-1]) + cost[i][j] \n\treturn tc[m][n]",
+  "clumsy_nodes": 244,
+  "clean_nodes": 237,
+  "question": "Improve this code: make `min_cost` simpler and more readable without changing what it does.\n\n```python\nR = 3\nC = 3\ndef min_cost(cost, m, n): \n\ttc = []\n\tfor x in range(R):\n\t    tc.append([0 for x in range(C)])\n\ttc[0][0] = cost[0][0] \n\tfor i in range(1, m+1): \n\t\ttc[i][0] = tc[i-1][0] + cost[i][0] \n\tfor j in range(1, n+1): \n\t\ttc[0][j] = tc[0][j-1] + cost[0][j] \n\tfor i in range(1, m+1): \n\t\tfor j in range(1, n+1): \n\t\t\ttc[i][j] = min(tc[i-1][j-1], tc[i-1][j], tc[i][j-1]) + cost[i][j] \n\treturn tc[m][n]\n```"
+ },
+ {
+  "id": "improve-673",
+  "task_id": 673,
+  "name": "convert",
+  "imports": "",
+  "tests": [
+   "assert convert([1,2,3]) == 123",
+   "assert convert([4,5,6]) == 456",
+   "assert convert([7,8,9]) == 789"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def convert(list): \n    s = []\n    for i in list:\n        s.append(str(i))\n    res = int(\"\".join(s))  \n    return (res)",
+  "clumsy_nodes": 39,
+  "clean_nodes": 32,
+  "question": "Improve this code: make `convert` simpler and more readable without changing what it does.\n\n```python\ndef convert(list): \n    s = []\n    for i in list:\n        s.append(str(i))\n    res = int(\"\".join(s))  \n    return (res)\n```"
+ },
+ {
+  "id": "improve-938",
+  "task_id": 938,
+  "name": "find_closet",
+  "imports": "",
+  "tests": [
+   "assert find_closet([1, 4, 10],[2, 15, 20],[10, 12],3,3,2) == (10, 15, 10)",
+   "assert find_closet([20, 24, 100],[2, 19, 22, 79, 800],[10, 12, 23, 24, 119],3,5,5) == (24, 22, 23)",
+   "assert find_closet([2, 5, 11],[3, 16, 21],[11, 13],3,3,2) == (11, 16, 11)"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "max_min_to_if"
+  ],
+  "shown": "import sys \n\ndef find_closet(A, B, C, p, q, r): \n\tdiff = sys.maxsize \n\tres_i = 0\n\tres_j = 0\n\tres_k = 0\n\ti = 0\n\tj = 0\n\tk = 0\n\twhile(i < p and j < q and k < r): \n\t\tif A[i] <= min(B[j], C[k]):\n\t\t    minimum = A[i]\n\t\telse:\n\t\t    minimum = min(B[j], C[k])\n\t\tmaximum = max(A[i], max(B[j], C[k])); \n\t\tif maximum-minimum < diff: \n\t\t\tres_i = i \n\t\t\tres_j = j \n\t\t\tres_k = k \n\t\t\tdiff = maximum - minimum; \n\t\tif diff == 0: \n\t\t\tbreak\n\t\tif A[i] == minimum: \n\t\t\ti = i+1\n\t\telif B[j] == minimum: \n\t\t\tj = j+1\n\t\telse: \n\t\t\tk = k+1\n\treturn A[res_i],B[res_j],C[res_k]",
+  "clumsy_nodes": 247,
+  "clean_nodes": 223,
+  "question": "Improve this code: make `find_closet` simpler and more readable without changing what it does.\n\n```python\nimport sys \n\ndef find_closet(A, B, C, p, q, r): \n\tdiff = sys.maxsize \n\tres_i = 0\n\tres_j = 0\n\tres_k = 0\n\ti = 0\n\tj = 0\n\tk = 0\n\twhile(i < p and j < q and k < r): \n\t\tif A[i] <= min(B[j], C[k]):\n\t\t    minimum = A[i]\n\t\telse:\n\t\t    minimum = min(B[j], C[k])\n\t\tmaximum = max(A[i], max(B[j], C[k])); \n\t\tif maximum-minimum < diff: \n\t\t\tres_i = i \n\t\t\tres_j = j \n\t\t\tres_k = k \n\t\t\tdiff = maximum - minimum; \n\t\tif diff == 0: \n\t\t\tbreak\n\t\tif A[i] == minimum: \n\t\t\ti = i+1\n\t\telif B[j] == minimum: \n\t\t\tj = j+1\n\t\telse: \n\t\t\tk = k+1\n\treturn A[res_i],B[res_j],C[res_k]\n```"
+ },
+ {
+  "id": "improve-523",
+  "task_id": 523,
+  "name": "check_string",
+  "imports": "",
+  "tests": [
+   "assert check_string('python')==['String must have 1 upper case character.', 'String must have 1 number.', 'String length should be atleast 8.']",
+   "assert check_string('123python')==['String must have 1 upper case character.']",
+   "assert check_string('123Python')==['Valid string.']"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop",
+   "truthiness_to_len"
+  ],
+  "shown": "def check_string(str1):\n    messg = [\n    lambda str1: any(x.isupper() for x in str1) or 'String must have 1 upper case character.',\n    lambda str1: any(x.islower() for x in str1) or 'String must have 1 lower case character.',\n    lambda str1: any(x.isdigit() for x in str1) or 'String must have 1 number.',\n    lambda str1: len(str1) >= 7                 or 'String length should be atleast 8.',]\n    result = []\n    for x in [i(str1) for i in messg]:\n        if x != True:\n            result.append(x)\n    if len(result) == 0:\n        result.append('Valid string.')\n    return result",
+  "clumsy_nodes": 134,
+  "clean_nodes": 122,
+  "question": "Improve this code: make `check_string` simpler and more readable without changing what it does.\n\n```python\ndef check_string(str1):\n    messg = [\n    lambda str1: any(x.isupper() for x in str1) or 'String must have 1 upper case character.',\n    lambda str1: any(x.islower() for x in str1) or 'String must have 1 lower case character.',\n    lambda str1: any(x.isdigit() for x in str1) or 'String must have 1 number.',\n    lambda str1: len(str1) >= 7                 or 'String length should be atleast 8.',]\n    result = []\n    for x in [i(str1) for i in messg]:\n        if x != True:\n            result.append(x)\n    if len(result) == 0:\n        result.append('Valid string.')\n    return result\n```"
+ },
+ {
+  "id": "improve-701",
+  "task_id": 701,
+  "name": "equilibrium_index",
+  "imports": "",
+  "tests": [
+   "assert equilibrium_index([1, 2, 3, 4, 1, 2, 3]) == 3",
+   "assert equilibrium_index([-7, 1, 5, 2, -4, 3, 0]) == 3",
+   "assert equilibrium_index([1, 2, 3]) == -1"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign",
+   "enumerate_to_range"
+  ],
+  "shown": "def equilibrium_index(arr):\n  total_sum = sum(arr)\n  left_sum=0\n  for i in range(len(arr)):\n    num = arr[i]\n    total_sum = total_sum - num\n    if left_sum == total_sum:\n      return i\n    left_sum += num\n  return -1",
+  "clumsy_nodes": 64,
+  "clean_nodes": 53,
+  "question": "Improve this code: make `equilibrium_index` simpler and more readable without changing what it does.\n\n```python\ndef equilibrium_index(arr):\n  total_sum = sum(arr)\n  left_sum=0\n  for i in range(len(arr)):\n    num = arr[i]\n    total_sum = total_sum - num\n    if left_sum == total_sum:\n      return i\n    left_sum += num\n  return -1\n```"
+ },
+ {
+  "id": "improve-886",
+  "task_id": 886,
+  "name": "sum_num",
+  "imports": "",
+  "tests": [
+   "assert sum_num((8, 2, 3, 0, 7))==4.0",
+   "assert sum_num((-10,-20,-30))==-20.0",
+   "assert sum_num((19,15,18))==17.333333333333332"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def sum_num(numbers):\n    total = 0\n    for x in numbers:\n        total = total + x\n    return total/len(numbers)",
+  "clumsy_nodes": 31,
+  "clean_nodes": 28,
+  "question": "Improve this code: make `sum_num` simpler and more readable without changing what it does.\n\n```python\ndef sum_num(numbers):\n    total = 0\n    for x in numbers:\n        total = total + x\n    return total/len(numbers)\n```"
+ },
+ {
+  "id": "improve-516",
+  "task_id": 516,
+  "name": "radix_sort",
+  "imports": "",
+  "tests": [
+   "assert radix_sort([15, 79, 25, 68, 37]) == [15, 25, 37, 68, 79]",
+   "assert radix_sort([9, 11, 8, 7, 3, 2]) == [2, 3, 7, 8, 9, 11]",
+   "assert radix_sort([36, 12, 24, 26, 29]) == [12, 24, 26, 29, 36]"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop",
+   "augassign_to_assign"
+  ],
+  "shown": "def radix_sort(nums):\n    RADIX = 10\n    placement = 1\n    max_digit = max(nums)\n\n    while placement < max_digit:\n      buckets = []\n      for _ in range( RADIX ):\n          buckets.append(list())\n      for i in nums:\n        tmp = int((i / placement) % RADIX)\n        buckets[tmp].append(i)\n      a = 0\n      for b in range( RADIX ):\n        buck = buckets[b]\n        for i in buck:\n          nums[a] = i\n          a = a + 1\n      placement *= RADIX\n    return nums",
+  "clumsy_nodes": 133,
+  "clean_nodes": 123,
+  "question": "Improve this code: make `radix_sort` simpler and more readable without changing what it does.\n\n```python\ndef radix_sort(nums):\n    RADIX = 10\n    placement = 1\n    max_digit = max(nums)\n\n    while placement < max_digit:\n      buckets = []\n      for _ in range( RADIX ):\n          buckets.append(list())\n      for i in nums:\n        tmp = int((i / placement) % RADIX)\n        buckets[tmp].append(i)\n      a = 0\n      for b in range( RADIX ):\n        buck = buckets[b]\n        for i in buck:\n          nums[a] = i\n          a = a + 1\n      placement *= RADIX\n    return nums\n```"
+ },
+ {
+  "id": "improve-609",
+  "task_id": 609,
+  "name": "floor_Min",
+  "imports": "",
+  "tests": [
+   "assert floor_Min(10,20,30) == 15",
+   "assert floor_Min(1,2,1) == 0",
+   "assert floor_Min(11,10,9) == 9"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "max_min_to_if"
+  ],
+  "shown": "def floor_Min(A,B,N):\n    if B - 1 >= N:\n        x = B - 1\n    else:\n        x = N\n    return (A*x) // B",
+  "clumsy_nodes": 39,
+  "clean_nodes": 29,
+  "question": "Improve this code: make `floor_Min` simpler and more readable without changing what it does.\n\n```python\ndef floor_Min(A,B,N):\n    if B - 1 >= N:\n        x = B - 1\n    else:\n        x = N\n    return (A*x) // B\n```"
+ },
+ {
+  "id": "improve-958",
+  "task_id": 958,
+  "name": "int_to_roman",
+  "imports": "",
+  "tests": [
+   "assert int_to_roman(1)==(\"I\")",
+   "assert int_to_roman(50)==(\"L\")",
+   "assert int_to_roman(4)==(\"IV\")"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def int_to_roman( num):\n        val = [1000, 900, 500, 400,100, 90, 50, 40,10, 9, 5, 4,1]\n        syb = [\"M\", \"CM\", \"D\", \"CD\",\"C\", \"XC\", \"L\", \"XL\",\"X\", \"IX\", \"V\", \"IV\",\"I\"]\n        roman_num = ''\n        i = 0\n        while  num > 0:\n            for _ in range(num // val[i]):\n                roman_num += syb[i]\n                num -= val[i]\n            i = i + 1\n        return roman_num",
+  "clumsy_nodes": 100,
+  "clean_nodes": 97,
+  "question": "Improve this code: make `int_to_roman` simpler and more readable without changing what it does.\n\n```python\ndef int_to_roman( num):\n        val = [1000, 900, 500, 400,100, 90, 50, 40,10, 9, 5, 4,1]\n        syb = [\"M\", \"CM\", \"D\", \"CD\",\"C\", \"XC\", \"L\", \"XL\",\"X\", \"IX\", \"V\", \"IV\",\"I\"]\n        roman_num = ''\n        i = 0\n        while  num > 0:\n            for _ in range(num // val[i]):\n                roman_num += syb[i]\n                num -= val[i]\n            i = i + 1\n        return roman_num\n```"
+ },
+ {
+  "id": "improve-782",
+  "task_id": 782,
+  "name": "Odd_Length_Sum",
+  "imports": "",
+  "tests": [
+   "assert Odd_Length_Sum([1,2,4]) == 14",
+   "assert Odd_Length_Sum([1,2,1,2]) == 15",
+   "assert Odd_Length_Sum([1,7]) == 8"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def Odd_Length_Sum(arr):\n    Sum = 0\n    l = len(arr)\n    for i in range(l):\n        Sum = Sum + (((i + 1) *(l - i) + 1) // 2) * arr[i]\n    return Sum",
+  "clumsy_nodes": 60,
+  "clean_nodes": 57,
+  "question": "Improve this code: make `Odd_Length_Sum` simpler and more readable without changing what it does.\n\n```python\ndef Odd_Length_Sum(arr):\n    Sum = 0\n    l = len(arr)\n    for i in range(l):\n        Sum = Sum + (((i + 1) *(l - i) + 1) // 2) * arr[i]\n    return Sum\n```"
+ },
+ {
+  "id": "improve-918",
+  "task_id": 918,
+  "name": "coin_change",
+  "imports": "",
+  "tests": [
+   "assert coin_change([1, 2, 3],3,4)==4",
+   "assert coin_change([4,5,6,7,8,9],6,9)==2",
+   "assert coin_change([4,5,6,7,8,9],6,4)==1"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "ternary_to_if",
+   "comprehension_to_loop"
+  ],
+  "shown": "def coin_change(S, m, n): \n    table = []\n    for x in range(n+1):\n        table.append([0 for x in range(m)])\n    for i in range(m): \n        table[0][i] = 1\n    for i in range(1, n+1): \n        for j in range(m): \n            if i-S[j] >= 0:\n                x = table[i - S[j]][j]\n            else:\n                x = 0\n            y = table[i][j-1] if j >= 1 else 0 \n            table[i][j] = x + y   \n    return table[n][m-1]",
+  "clumsy_nodes": 169,
+  "clean_nodes": 159,
+  "question": "Improve this code: make `coin_change` simpler and more readable without changing what it does.\n\n```python\ndef coin_change(S, m, n): \n    table = []\n    for x in range(n+1):\n        table.append([0 for x in range(m)])\n    for i in range(m): \n        table[0][i] = 1\n    for i in range(1, n+1): \n        for j in range(m): \n            if i-S[j] >= 0:\n                x = table[i - S[j]][j]\n            else:\n                x = 0\n            y = table[i][j-1] if j >= 1 else 0 \n            table[i][j] = x + y   \n    return table[n][m-1]\n```"
+ },
+ {
+  "id": "improve-568",
+  "task_id": 568,
+  "name": "empty_list",
+  "imports": "",
+  "tests": [
+   "assert empty_list(5)==[{},{},{},{},{}]",
+   "assert empty_list(6)==[{},{},{},{},{},{}]",
+   "assert empty_list(7)==[{},{},{},{},{},{},{}]"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def empty_list(length):\n empty_list = []\n for _ in range(length):\n     empty_list.append({})\n return empty_list",
+  "clumsy_nodes": 26,
+  "clean_nodes": 19,
+  "question": "Improve this code: make `empty_list` simpler and more readable without changing what it does.\n\n```python\ndef empty_list(length):\n empty_list = []\n for _ in range(length):\n     empty_list.append({})\n return empty_list\n```"
+ },
+ {
+  "id": "improve-885",
+  "task_id": 885,
+  "name": "is_Isomorphic",
+  "imports": "",
+  "tests": [
+   "assert is_Isomorphic(\"paper\",\"title\") == True",
+   "assert is_Isomorphic(\"ab\",\"ba\") == True",
+   "assert is_Isomorphic(\"ab\",\"aa\") == False"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "enumerate_to_range"
+  ],
+  "shown": "def is_Isomorphic(str1,str2):          \n    dict_str1 = {}\n    dict_str2 = {}\n    for i, value in enumerate(str1):\n        dict_str1[value] = dict_str1.get(value,[]) + [i]        \n    for j in range(len(str2)):\n        value = str2[j]\n        dict_str2[value] = dict_str2.get(value,[]) + [j]\n    if sorted(dict_str1.values()) == sorted(dict_str2.values()):\n        return True\n    else:\n        return False",
+  "clumsy_nodes": 111,
+  "clean_nodes": 103,
+  "question": "Improve this code: make `is_Isomorphic` simpler and more readable without changing what it does.\n\n```python\ndef is_Isomorphic(str1,str2):          \n    dict_str1 = {}\n    dict_str2 = {}\n    for i, value in enumerate(str1):\n        dict_str1[value] = dict_str1.get(value,[]) + [i]        \n    for j in range(len(str2)):\n        value = str2[j]\n        dict_str2[value] = dict_str2.get(value,[]) + [j]\n    if sorted(dict_str1.values()) == sorted(dict_str2.values()):\n        return True\n    else:\n        return False\n```"
+ },
+ {
+  "id": "improve-527",
+  "task_id": 527,
+  "name": "get_pairs_count",
+  "imports": "",
+  "tests": [
+   "assert get_pairs_count([1, 5, 7, -1, 5], 5, 6) == 3",
+   "assert get_pairs_count([1, 5, 7, -1], 4, 6) == 2",
+   "assert get_pairs_count([1, 1, 1, 1], 4, 2) == 6"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def get_pairs_count(arr, n, sum):\n    count = 0 \n    for i in range(0, n):\n        for j in range(i + 1, n):\n            if arr[i] + arr[j] == sum:\n                count = count + 1\n    return count",
+  "clumsy_nodes": 61,
+  "clean_nodes": 58,
+  "question": "Improve this code: make `get_pairs_count` simpler and more readable without changing what it does.\n\n```python\ndef get_pairs_count(arr, n, sum):\n    count = 0 \n    for i in range(0, n):\n        for j in range(i + 1, n):\n            if arr[i] + arr[j] == sum:\n                count = count + 1\n    return count\n```"
+ },
+ {
+  "id": "improve-791",
+  "task_id": 791,
+  "name": "remove_nested",
+  "imports": "",
+  "tests": [
+   "assert remove_nested((1, 5, 7, (4, 6), 10)) == (1, 5, 7, 10)",
+   "assert remove_nested((2, 6, 8, (5, 7), 11)) == (2, 6, 8, 11)",
+   "assert remove_nested((3, 7, 9, (6, 8), 12)) == (3, 7, 9, 12)"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "enumerate_to_range"
+  ],
+  "shown": "def remove_nested(test_tup):\n  res = tuple()\n  for count in range(len(test_tup)):\n    ele = test_tup[count]\n    if not isinstance(ele, tuple):\n      res = res + (ele, )\n  return (res)",
+  "clumsy_nodes": 53,
+  "clean_nodes": 45,
+  "question": "Improve this code: make `remove_nested` simpler and more readable without changing what it does.\n\n```python\ndef remove_nested(test_tup):\n  res = tuple()\n  for count in range(len(test_tup)):\n    ele = test_tup[count]\n    if not isinstance(ele, tuple):\n      res = res + (ele, )\n  return (res)\n```"
+ },
+ {
+  "id": "improve-898",
+  "task_id": 898,
+  "name": "extract_elements",
+  "imports": "",
+  "tests": [
+   "assert extract_elements([1, 1, 3, 4, 4, 5, 6, 7],2)==[1, 4]",
+   "assert extract_elements([0, 1, 2, 3, 4, 4, 4, 4, 5, 7],4)==[4]",
+   "assert extract_elements([0,0,0,0,0],5)==[0]"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "from itertools import groupby \ndef extract_elements(numbers, n):\n    result = []\n    for i, j in groupby(numbers):\n        if len(list(j)) == n:\n            result.append(i)\n    return result",
+  "clumsy_nodes": 45,
+  "clean_nodes": 37,
+  "question": "Improve this code: make `extract_elements` simpler and more readable without changing what it does.\n\n```python\nfrom itertools import groupby \ndef extract_elements(numbers, n):\n    result = []\n    for i, j in groupby(numbers):\n        if len(list(j)) == n:\n            result.append(i)\n    return result\n```"
+ },
+ {
+  "id": "improve-876",
+  "task_id": 876,
+  "name": "lcm",
+  "imports": "",
+  "tests": [
+   "assert lcm(4,6) == 12",
+   "assert lcm(15,17) == 255",
+   "assert lcm(2,6) == 6"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def lcm(x, y):\n   if x > y:\n       z = x\n   else:\n       z = y\n   while(True):\n       if((z % x == 0) and (z % y == 0)):\n           lcm = z\n           break\n       z = z + 1\n   return lcm",
+  "clumsy_nodes": 61,
+  "clean_nodes": 58,
+  "question": "Improve this code: make `lcm` simpler and more readable without changing what it does.\n\n```python\ndef lcm(x, y):\n   if x > y:\n       z = x\n   else:\n       z = y\n   while(True):\n       if((z % x == 0) and (z % y == 0)):\n           lcm = z\n           break\n       z = z + 1\n   return lcm\n```"
+ },
+ {
+  "id": "improve-893",
+  "task_id": 893,
+  "name": "Extract",
+  "imports": "",
+  "tests": [
+   "assert Extract([[1, 2, 3], [4, 5], [6, 7, 8, 9]]) == [3, 5, 9]",
+   "assert Extract([['x', 'y', 'z'], ['m'], ['a', 'b'], ['u', 'v']]) == ['z', 'm', 'b', 'v']",
+   "assert Extract([[1, 2, 3], [4, 5]]) == [3, 5]"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def Extract(lst): \n    result = []\n    for item in lst:\n        result.append(item[-1])\n    return result",
+  "clumsy_nodes": 29,
+  "clean_nodes": 17,
+  "question": "Improve this code: make `Extract` simpler and more readable without changing what it does.\n\n```python\ndef Extract(lst): \n    result = []\n    for item in lst:\n        result.append(item[-1])\n    return result\n```"
+ },
+ {
+  "id": "improve-941",
+  "task_id": 941,
+  "name": "count_elim",
+  "imports": "",
+  "tests": [
+   "assert count_elim([10,20,30,(10,20),40])==3",
+   "assert count_elim([10,(20,30),(10,20),40])==1",
+   "assert count_elim([(10,(20,30,(10,20),40))])==0"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def count_elim(num):\n  count_elim = 0\n  for n in num:\n    if isinstance(n, tuple):\n        break\n    count_elim = count_elim + 1\n  return count_elim",
+  "clumsy_nodes": 32,
+  "clean_nodes": 29,
+  "question": "Improve this code: make `count_elim` simpler and more readable without changing what it does.\n\n```python\ndef count_elim(num):\n  count_elim = 0\n  for n in num:\n    if isinstance(n, tuple):\n        break\n    count_elim = count_elim + 1\n  return count_elim\n```"
+ },
+ {
+  "id": "improve-684",
+  "task_id": 684,
+  "name": "count_Char",
+  "imports": "",
+  "tests": [
+   "assert count_Char(\"abcac\",'a') == 4",
+   "assert count_Char(\"abca\",'c') == 2",
+   "assert count_Char(\"aba\",'a') == 7"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "augassign_to_assign"
+  ],
+  "shown": "def count_Char(str,x): \n    count = 0\n    for i in range(len(str)):  \n        if (str[i] == x) : \n            count += 1\n    n = 10\n    repititions = n // len(str)  \n    count = count * repititions  \n    l = n % len(str)  \n    for i in range(l): \n        if (str[i] == x):  \n            count = count + 1\n    return count",
+  "clumsy_nodes": 102,
+  "clean_nodes": 99,
+  "question": "Improve this code: make `count_Char` simpler and more readable without changing what it does.\n\n```python\ndef count_Char(str,x): \n    count = 0\n    for i in range(len(str)):  \n        if (str[i] == x) : \n            count += 1\n    n = 10\n    repititions = n // len(str)  \n    count = count * repititions  \n    l = n % len(str)  \n    for i in range(l): \n        if (str[i] == x):  \n            count = count + 1\n    return count\n```"
+ },
+ {
+  "id": "improve-522",
+  "task_id": 522,
+  "name": "lbs",
+  "imports": "",
+  "tests": [
+   "assert lbs([0 , 8 , 4, 12, 2, 10 , 6 , 14 , 1 , 9 , 5 , 13, 3, 11 , 7 , 15]) == 7",
+   "assert lbs([1, 11, 2, 10, 4, 5, 2, 1]) == 6",
+   "assert lbs([80, 60, 30, 40, 20, 10]) == 5"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop",
+   "max_min_to_if"
+  ],
+  "shown": "def lbs(arr): \n\tn = len(arr) \n\tlis = [1 for i in range(n+1)] \n\tfor i in range(1 , n): \n\t\tfor j in range(0 , i): \n\t\t\tif ((arr[i] > arr[j]) and (lis[i] < lis[j] +1)): \n\t\t\t\tlis[i] = lis[j] + 1\n\tlds = []\n\tfor i in range(n+1):\n\t    lds.append(1)\n\tfor i in reversed(range(n-1)): \n\t\tfor j in reversed(range(i-1 ,n)): \n\t\t\tif(arr[i] > arr[j] and lds[i] < lds[j] + 1): \n\t\t\t\tlds[i] = lds[j] + 1\n\tmaximum = lis[0] + lds[0] - 1\n\tfor i in range(1 , n): \n\t\tif lis[i] + lds[i]-1 >= maximum:\n\t\t    maximum = lis[i] + lds[i]-1\n\t\telse:\n\t\t    maximum = maximum\n\treturn maximum",
+  "clumsy_nodes": 275,
+  "clean_nodes": 246,
+  "question": "Improve this code: make `lbs` simpler and more readable without changing what it does.\n\n```python\ndef lbs(arr): \n\tn = len(arr) \n\tlis = [1 for i in range(n+1)] \n\tfor i in range(1 , n): \n\t\tfor j in range(0 , i): \n\t\t\tif ((arr[i] > arr[j]) and (lis[i] < lis[j] +1)): \n\t\t\t\tlis[i] = lis[j] + 1\n\tlds = []\n\tfor i in range(n+1):\n\t    lds.append(1)\n\tfor i in reversed(range(n-1)): \n\t\tfor j in reversed(range(i-1 ,n)): \n\t\t\tif(arr[i] > arr[j] and lds[i] < lds[j] + 1): \n\t\t\t\tlds[i] = lds[j] + 1\n\tmaximum = lis[0] + lds[0] - 1\n\tfor i in range(1 , n): \n\t\tif lis[i] + lds[i]-1 >= maximum:\n\t\t    maximum = lis[i] + lds[i]-1\n\t\telse:\n\t\t    maximum = maximum\n\treturn maximum\n```"
+ },
+ {
+  "id": "improve-548",
+  "task_id": 548,
+  "name": "longest_increasing_subsequence",
+  "imports": "",
+  "tests": [
+   "assert longest_increasing_subsequence([10, 22, 9, 33, 21, 50, 41, 60]) == 5",
+   "assert longest_increasing_subsequence([3, 10, 2, 1, 20]) == 3",
+   "assert longest_increasing_subsequence([50, 3, 10, 7, 40, 80]) == 4 "
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "max_min_to_if"
+  ],
+  "shown": "def longest_increasing_subsequence(arr): \n\tn = len(arr) \n\tlongest_increasing_subsequence = [1]*n \n\tfor i in range (1 , n): \n\t\tfor j in range(0 , i): \n\t\t\tif arr[i] > arr[j] and longest_increasing_subsequence[i]< longest_increasing_subsequence[j] + 1 : \n\t\t\t\tlongest_increasing_subsequence[i] = longest_increasing_subsequence[j]+1\n\tmaximum = 0\n\tfor i in range(n): \n\t\tif maximum >= longest_increasing_subsequence[i]:\n\t\t    maximum = maximum\n\t\telse:\n\t\t    maximum = longest_increasing_subsequence[i]\n\treturn maximum",
+  "clumsy_nodes": 129,
+  "clean_nodes": 118,
+  "question": "Improve this code: make `longest_increasing_subsequence` simpler and more readable without changing what it does.\n\n```python\ndef longest_increasing_subsequence(arr): \n\tn = len(arr) \n\tlongest_increasing_subsequence = [1]*n \n\tfor i in range (1 , n): \n\t\tfor j in range(0 , i): \n\t\t\tif arr[i] > arr[j] and longest_increasing_subsequence[i]< longest_increasing_subsequence[j] + 1 : \n\t\t\t\tlongest_increasing_subsequence[i] = longest_increasing_subsequence[j]+1\n\tmaximum = 0\n\tfor i in range(n): \n\t\tif maximum >= longest_increasing_subsequence[i]:\n\t\t    maximum = maximum\n\t\telse:\n\t\t    maximum = longest_increasing_subsequence[i]\n\treturn maximum\n```"
+ },
+ {
+  "id": "improve-565",
+  "task_id": 565,
+  "name": "split",
+  "imports": "",
+  "tests": [
+   "assert split('python') == ['p','y','t','h','o','n']",
+   "assert split('Name') == ['N','a','m','e']",
+   "assert split('program') == ['p','r','o','g','r','a','m']"
+  ],
+  "kind": "improve",
+  "mode": "refactor",
+  "rewrites": [
+   "comprehension_to_loop"
+  ],
+  "shown": "def split(word): \n    result = []\n    for char in word:\n        result.append(char)\n    return result",
+  "clumsy_nodes": 24,
+  "clean_nodes": 12,
+  "question": "Improve this code: make `split` simpler and more readable without changing what it does.\n\n```python\ndef split(word): \n    result = []\n    for char in word:\n        result.append(char)\n    return result\n```"
+ }
+]

@@ -12,6 +12,9 @@ from inference.api.schemas import (
     ChatRequest,
     ChatResponse,
     HealthResponse,
+    MemoryDeleteResponse,
+    MemoryFact,
+    MemoryListResponse,
 )
 from inference.engine.generator import generate_code
 from model.training.config_loader import CFG
@@ -77,4 +80,36 @@ def chat(request: ChatRequest):
         mode        = result["mode"],
         confidence  = result["confidence"],
         rag_chunks  = result["rag_chunks"],
+        memories    = result.get("memories", 0),
     )
+
+
+@router.get("/memory", response_model=MemoryListResponse, tags=["memory"])
+def list_memory():
+    """What V remembers: active facts (newest first) and how many messages are saved."""
+    from inference.api.main import get_chat_engine
+
+    memory = get_chat_engine().memory
+    if memory is None:
+        return MemoryListResponse(enabled=False)
+    stats = memory.stats()
+    return MemoryListResponse(
+        enabled  = True,
+        facts    = [MemoryFact(id=f.id, key=f.key, text=f.text, created=f.created) for f in memory.list_facts()],
+        messages = stats["messages"],
+        sessions = stats["sessions"],
+    )
+
+
+@router.delete("/memory/{fact_id}", response_model=MemoryDeleteResponse, tags=["memory"])
+def delete_memory(fact_id: int):
+    """Make V forget one fact for good."""
+    from inference.api.main import get_chat_engine
+
+    memory = get_chat_engine().memory
+    if memory is None:
+        raise HTTPException(status_code=409, detail="Memory is disabled (config memory.enabled)")
+    deleted = memory.forget(fact_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail=f"No fact with id {fact_id}")
+    return MemoryDeleteResponse(id=fact_id, deleted=True)
