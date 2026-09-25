@@ -10,6 +10,8 @@ with greedy decoding so a score can be repeated. Settings come from the
 Usage (from repo root):
     python -m experiments.eval_mbpp          # fine-tuned model (base + LoRA)
     python -m experiments.eval_mbpp --base   # base Phi-2 only, for comparison
+    python -m experiments.eval_mbpp --adapter model/lora_v2   # another adapter
+Results go to {output_dir}/mbpp_{base | adapter folder name}.jsonl.
 """
 
 import argparse
@@ -18,6 +20,7 @@ import os
 import re
 import sys
 import time
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -63,13 +66,15 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", action="store_true",
                         help="score base Phi-2 without the LoRA adapter")
+    parser.add_argument("--adapter", default=str(CFG.paths.model_output),
+                        help="LoRA adapter folder to score (default: the app's adapter)")
     args = parser.parse_args()
 
-    tag = "base" if args.base else "lora"
+    tag = "base" if args.base else Path(args.adapter).name
     ev  = CFG.evaluation
 
     problems = load_problems()
-    model, tokenizer = load_model() if args.base else load_lora_model()
+    model, tokenizer = load_model() if args.base else load_lora_model(args.adapter)
     model.eval()
 
     ev.output_dir.mkdir(parents=True, exist_ok=True)

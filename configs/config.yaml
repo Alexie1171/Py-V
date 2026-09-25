@@ -3,23 +3,26 @@ model:
   max_tokens: 512
 
 training:
+  # Runs on Colab (train_lora_t4.py, its own T4 batch settings); batch_size and
+  # gradient_accumulation are for the laptop trainer (train_lora.py).
   batch_size: 1
   gradient_accumulation: 16
-  epochs: 1
-  learning_rate: 0.00005
-  warmup_steps: 10
+  epochs: 1                # 1 pass, score, then decide on a 2nd (PROJECT_STATUS.md)
+  learning_rate: 0.0002    # standard LoRA strength; 5e-5 (v1 run) barely changed the model
+  warmup_steps: 20
   save_steps: 50
-  eval_steps: 50
+  eval_steps: 100
   lora_r: 8
   lora_alpha: 32
   lora_dropout: 0.05
-  max_seq_length: 384
+  max_seq_length: 768      # prompt template + answer + end token; longer records are dropped, not cut
 
 paths:
   raw_data: "./data/raw"
   processed_data: "./data/processed"
-  dataset: "./data/datasets/train.jsonl"
-  val_dataset: "./data/datasets/val.jsonl"
+  # Dataset v2 (build_dataset_v2.py). The v1 files stay at ./data/datasets/*.jsonl.
+  dataset: "./data/datasets/v2/train.jsonl"
+  val_dataset: "./data/datasets/v2/val.jsonl"
   model_output: "./model/lora"
 
 rag:

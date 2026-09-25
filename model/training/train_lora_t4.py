@@ -1,16 +1,31 @@
-import glob
+"""
+train_lora_t4.py — PY-V (model/training/)
+LoRA training on a Google Colab T4, run from the Colab runner notebook.
+Starts fresh from plain Phi-2 (4-bit). Data, prompt format, end-of-text
+token and answer-only loss come from dataset_loader.py; hyperparameters
+from the `training` section of configs/config.yaml. Batch settings are
+T4-specific and kept here.
+
+Checkpoints go to --output-dir every save_steps; a rerun resumes from the
+newest one there (point it at Drive so a Colab disconnect loses little).
+
+Usage (from repo root):
+    python -m model.training.train_lora_t4 --output-dir /content/drive/MyDrive/PY-V/model_v2/lora
+"""
+
+import argparse
 import os
 import time
+
 import torch
 
 from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    DataCollatorForLanguageModeling,
+    DataCollatorForSeq2Seq,
     Trainer,
     TrainerCallback,
     TrainingArguments,
 )
+from transformers.trainer_utils import get_last_checkpoint
 
 from peft import (
     LoraConfig,
@@ -18,8 +33,9 @@ from peft import (
     prepare_model_for_kbit_training,
 )
 
+from model.training.config_loader import CFG
 from model.utils.model_loader import load_model
-from model.training.dataset_loader import get_formatted_dataset
+from model.training.dataset_loader import IGNORE_INDEX, get_tokenized_dataset
 
 torch.backends.cuda.matmul.allow_tf32 = True
 
@@ -52,7 +68,7 @@ class TrainingLogger(TrainerCallback):
                     self.step_times.pop(0)
 
             avg_step = sum(self.step_times) / len(self.step_times) if self.step_times else 0
-            eta = avg_step * (state.max_steps - step)
+            eta = avg_step * (state.max_steps - step) / args.logging_steps
 
             is_best = ""
             if loss < self.best_loss:
@@ -63,26 +79,14 @@ class TrainingLogger(TrainerCallback):
                 f"Step {step}/{state.max_steps} | "
                 f"Loss: {loss:.4f}{is_best} | "
                 f"Elapsed: {elapsed/60:.1f}min | "
-                f"ETA: {eta/60:.1f}min"
+                f"ETA: {eta/60:.1f}min",
+                flush=True,
             )
 
             self.last_step_time = now
 
-
-# =========================
-# DATA
-# =========================
-def load_data():
-    return get_formatted_dataset()
-
-
-def tokenize(tokenizer, example):
-    return tokenizer(
-        example["text"],
-        truncation=True,
-        max_length=384,
-        padding=False,
-    )
+        if "eval_loss" in logs:
+            print(f"EVAL @ step {step} | Eval loss: {logs['eval_loss']:.4f}", flush=True)
 
 
 # =========================
@@ -90,6 +94,7 @@ def tokenize(tokenizer, example):
 # =========================
 def load_base_model():
     model, tokenizer = load_model()
+    tokenizer.padding_side = "right"
 
     model.config.use_cache = False
     model = prepare_model_for_kbit_training(model)
@@ -98,11 +103,12 @@ def load_base_model():
 
 
 def apply_lora(model):
+    t = CFG.training
     config = LoraConfig(
-        r=8,
-        lora_alpha=32,
+        r=t.lora_r,
+        lora_alpha=t.lora_alpha,
         target_modules=["q_proj", "k_proj", "v_proj", "dense", "fc1", "fc2"],
-        lora_dropout=0.05,
+        lora_dropout=t.lora_dropout,
         bias="none",
         task_type="CAUSAL_LM",
     )
@@ -110,59 +116,48 @@ def apply_lora(model):
 
 
 # =========================
-# CHECKPOINT RESUME
-# =========================
-def get_latest_checkpoint():
-    checkpoints = sorted(
-        glob.glob("model/lora/checkpoint-*"),
-        key=os.path.getmtime,
-    )
-    return checkpoints[-1] if checkpoints else None
-
-
-# =========================
 # TRAINING
 # =========================
-def train():
-
-    dataset = load_data()
+def train(output_dir: str):
+    t = CFG.training
 
     model, tokenizer = load_base_model()
     model = apply_lora(model)
-
     model.print_trainable_parameters()
 
-    tokenized = dataset.map(
-        lambda x: tokenize(tokenizer, x),
-        batched=True,
-        num_proc=2,
-        remove_columns=dataset["train"].column_names,
-    )
+    tokenized = get_tokenized_dataset(tokenizer)
 
-    data_collator = DataCollatorForLanguageModeling(
+    # Pads input_ids with the pad token and labels with IGNORE_INDEX, so padding
+    # never hides the end-of-text token even though pad == eos for Phi-2
+    data_collator = DataCollatorForSeq2Seq(
         tokenizer=tokenizer,
-        mlm=False,
+        padding=True,
+        label_pad_token_id=IGNORE_INDEX,
+        pad_to_multiple_of=8,
     )
 
     training_args = TrainingArguments(
-        output_dir="/content/drive/MyDrive/PY-V/model/lora",
+        output_dir=output_dir,
 
-        # ⚡ SPEED OPTIMIZED FOR T4
+        # ⚡ SPEED OPTIMIZED FOR T4 (effective batch 16)
         per_device_train_batch_size=4,
         per_device_eval_batch_size=4,
         gradient_accumulation_steps=4,
 
-        learning_rate=5e-5,
-        num_train_epochs=1,
-        warmup_steps=10,
+        learning_rate=t.learning_rate,
+        num_train_epochs=t.epochs,
+        warmup_steps=t.warmup_steps,
 
         logging_steps=10,
 
-        # 💾 SAVE EVERY 50 STEPS (YOUR REQUEST)
-        save_steps=50,
-        eval_steps=50,
-
+        save_steps=t.save_steps,
+        eval_strategy="steps",
+        eval_steps=t.eval_steps,
         save_total_limit=2,
+
+        # PeftModel hides the base model's arguments — name the labels, or
+        # no eval loss is computed
+        label_names=["labels"],
 
         fp16=True,
         optim="paged_adamw_8bit",
@@ -183,13 +178,18 @@ def train():
         callbacks=[TrainingLogger()],
     )
 
-    checkpoint = get_latest_checkpoint()
+    checkpoint = get_last_checkpoint(output_dir) if os.path.isdir(output_dir) else None
+    print(f"Resuming from {checkpoint}" if checkpoint else "No checkpoint - starting fresh from plain Phi-2")
 
     trainer.train(resume_from_checkpoint=checkpoint)
 
-    model.save_pretrained("/content/drive/MyDrive/PY-V/model/lora")
-    tokenizer.save_pretrained("/content/drive/MyDrive/PY-V/model/lora")
+    model.save_pretrained(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    print(f"Adapter saved to {output_dir}")
 
 
 if __name__ == "__main__":
-    train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output-dir", default=str(CFG.paths.model_output),
+                        help="where checkpoints and the final adapter are saved")
+    train(parser.parse_args().output_dir)

@@ -6,9 +6,7 @@ import torch
 torch.backends.cuda.matmul.allow_tf32 = True
 
 from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-    DataCollatorForLanguageModeling,
+    DataCollatorForSeq2Seq,
     Trainer,
     TrainerCallback,
     TrainerControl,
@@ -21,8 +19,9 @@ from peft import (
     prepare_model_for_kbit_training,
 )
 
+from model.training.config_loader import CFG
 from model.utils.model_loader import load_model
-from model.training.dataset_loader import get_formatted_dataset
+from model.training.dataset_loader import IGNORE_INDEX, get_tokenized_dataset
 
 start_time = time.time()
 
@@ -110,32 +109,12 @@ class TrainingLogger(TrainerCallback):
 
 
 # =========================
-# 1. LOAD DATASET
-# =========================
-
-def load_data():
-    return get_formatted_dataset()
-
-
-# =========================
-# 2. TOKENIZATION
-# =========================
-
-def tokenize_function(tokenizer, example):
-    return tokenizer(
-        example["text"],
-        truncation=True,
-        max_length=384,
-        padding=False,
-    )
-
-
-# =========================
-# 3. LOAD MODEL (4-bit)
+# 1. LOAD MODEL (4-bit)
 # =========================
 
 def load_base_model():
     model, tokenizer = load_model()
+    tokenizer.padding_side = "right"
     model.config.use_cache = False
     model.gradient_checkpointing_enable()
     model = prepare_model_for_kbit_training(model)
@@ -143,13 +122,14 @@ def load_base_model():
 
 
 # =========================
-# 4. APPLY LoRA
+# 2. APPLY LoRA
 # =========================
 
 def apply_lora(model):
+    t = CFG.training
     config = LoraConfig(
-        r=8,
-        lora_alpha=32,
+        r=t.lora_r,
+        lora_alpha=t.lora_alpha,
         target_modules=[
             "q_proj",
             "k_proj",
@@ -158,7 +138,7 @@ def apply_lora(model):
             "fc1",
             "fc2",
         ],
-        lora_dropout=0.05,
+        lora_dropout=t.lora_dropout,
         bias="none",
         task_type="CAUSAL_LM",
     )
@@ -166,7 +146,7 @@ def apply_lora(model):
 
 
 # =========================
-# 5. CHECKPOINT PROMPT
+# 3. CHECKPOINT PROMPT
 # =========================
 
 def resolve_checkpoint() -> str | None:
@@ -197,41 +177,42 @@ def resolve_checkpoint() -> str | None:
 
 
 # =========================
-# 6. TRAINING PIPELINE
+# 4. TRAINING PIPELINE
 # =========================
 
 def train():
-    dataset = load_data()
+    t = CFG.training
 
     model, tokenizer = load_base_model()
     model = apply_lora(model)
     model.print_trainable_parameters()
 
-    tokenized = dataset.map(
-        lambda x: tokenize_function(tokenizer, x),
-        batched=True,
-    )
+    tokenized = get_tokenized_dataset(tokenizer)
 
-    data_collator = DataCollatorForLanguageModeling(
+    # Labels padded with IGNORE_INDEX, so padding never hides the end-of-text
+    # token even though pad == eos for Phi-2
+    data_collator = DataCollatorForSeq2Seq(
         tokenizer=tokenizer,
-        mlm=False,
+        padding=True,
+        label_pad_token_id=IGNORE_INDEX,
     )
 
     training_args = TrainingArguments(
         output_dir="model/lora",
-        per_device_train_batch_size=1,
-        per_device_eval_batch_size=1,
-        gradient_accumulation_steps=16,
-        learning_rate=5e-5,
-        num_train_epochs=1,
-        warmup_steps=10,
+        per_device_train_batch_size=t.batch_size,
+        per_device_eval_batch_size=t.batch_size,
+        gradient_accumulation_steps=t.gradient_accumulation,
+        learning_rate=t.learning_rate,
+        num_train_epochs=t.epochs,
+        warmup_steps=t.warmup_steps,
         logging_steps=1,
         logging_strategy="steps",
         logging_first_step=True,
-        save_steps=50,
+        save_steps=t.save_steps,
         eval_strategy="steps",
-        eval_steps=50,
+        eval_steps=t.eval_steps,
         save_total_limit=2,
+        label_names=["labels"],   # PeftModel hides them — needed for eval loss
         fp16=True,
         report_to="none",
         optim="paged_adamw_8bit",
@@ -242,7 +223,7 @@ def train():
         args=training_args,
         train_dataset=tokenized["train"],
         eval_dataset=tokenized["val"],
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         data_collator=data_collator,
         callbacks=[TrainingLogger()],
     )

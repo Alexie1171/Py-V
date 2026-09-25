@@ -47,12 +47,18 @@ def build_prompt(
         )
 
 
-def build_training_prompt(instruction: str, output: str) -> str:
-    return f"### Instruction:\n{instruction}\n\n### Answer:\n{output}"
+def build_training_prompt(mode: str, instruction: str) -> str:
+    """
+    Prompt part of a training example: exactly what inference sends for this
+    mode (no history, no RAG). The answer + end-of-text token are appended by
+    model/training/dataset_loader.py.
+    """
+    return build_prompt(mode, instruction, {})
 
 
 def build_inference_prompt(instruction: str) -> str:
-    return f"### Instruction:\n{instruction}\n\n### Answer:\n"
+    """Prompt for the stateless /generate endpoint — the generate template, as in training."""
+    return build_prompt("generate", instruction, {})
 
 
 def format_retrieved_context(chunks: list) -> str:

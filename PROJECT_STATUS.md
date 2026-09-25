@@ -153,11 +153,13 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 
 | What | Since | Why | Bring back when / how |
 |------|-------|-----|-----------------------|
-| **RAG (code search)** | 2026-09-25 | Weak dataset matches were pasted into answers instead of helping (2 of 3 code answers broken in test 2) | After the dataset is improved (cleaner v4 + better instructions). Maybe add a "strong matches only" cut-off. Switch: `rag.enabled: true` in `configs/config.yaml` |
+| **RAG (code search)** | 2026-09-25 | Weak dataset matches were pasted into answers instead of helping (2 of 3 code answers broken in test 2) | After the dataset is improved (cleaner v4 + better instructions). Maybe add a "strong matches only" cut-off. Switch: `rag.enabled: true` in `configs/config.yaml`. The index must be rebuilt first — it now reads dataset v2 (`paths.dataset`) |
 | **Chat history in prompts** (all modes) | 2026-09-25 | Model answered the previous question / copied the previous answer instead of the new one | Phase 11 — replaced by short memory facts. `format_context()` in `prompt_builder.py` is kept for this |
-| **Retrain with an end-of-text token** | 2026-09-25 | Model never learned to stop; stop words are only a band-aid | Next training run on Colab: append the end token to every example and use a pad token that is not the end token. Do together with the cleaner v4 dataset rebuild |
-| **Debug / refactor / explain training examples** | 2026-09-25 | Dataset is 99% "write a function"; model can't debug or refactor (test 3) | Before the next retrain: add real fix-the-error, improve-this-code and explain examples to the dataset |
-| **Cleaner v4 dataset rebuild** | 2026-05-04 | Not applied yet; drops 266 of 5,508 rows (~5%) | Together with the retrain above |
+| **Retrain with an end-of-text token** | 2026-09-25 | Model never learned to stop; stop words are only a band-aid | Code built (plan step 6). Comes back when notebook Job F has trained the v2 adapter and Job G shows it beats the old one — then it replaces `model/lora/` |
+| **Debug / refactor / explain training examples** | 2026-09-25 | Dataset is 99% "write a function"; model can't debug or refactor (test 3) | In dataset v2 now (2,945 fix / 2,062 improve / 1,800 explain). Comes back with the v2 adapter above |
+| **Cleaner v4 dataset rebuild** | 2026-05-04 | Not applied yet; drops 266 of 5,508 rows (~5%) | Probably never needed: dataset v2 takes only the best 800 old examples, through the same English filter. Drop this row once the v2 adapter is in use |
+| **2nd training pass** | 2026-09-25 | Owner chose 1 pass first, score, then decide | After Job G: if v2 beats the old adapter and the check-set loss was still falling at the end, continue from `model_v2` for a 2nd pass, with a lower learning rate (5e-5 or less — rule in CLAUDE.md) |
+| **Scoring test for fixing / improving code** | 2026-09-25 | MBPP only measures writing functions | After the v2 score: small held-out test of broken functions + their tests (the `bug_fix` generator can make it from rows not used in training) |
 | **Phase 11 (long-term memory)** | 2026-09-25 | Better training data + retrain chosen first — memory on top of a model that can't debug/refactor adds little | After the dataset improvement and Colab retrain |
 | **Speed work** (llama.cpp / GGUF, streaming) | 2026-09-25 | Memory chosen first | After Phase 11 |
 | **Phases 9 and 10** | 2026-09-25 | Phase 11 goes first | After Phase 11 |
@@ -179,9 +181,16 @@ Order: better training data + retrain first, then Phase 11, then 9, 10 and speed
 **Where jobs run:** heavy jobs (full fetch, scoring test, training) run on Colab through `Google Colab/py_v_runner.ipynb` (gitignored). The notebook downloads the code from GitHub — **push changes first** — and saves results to Drive `MyDrive/PY-V/results/`. Claude writes the notebook; the owner runs it (VS Code Colab kernel or browser) and saves it, so the printed results can be read back.
 3. Break-and-fix script for fix-error examples — **built** (`data/scripts/sources/bug_fix.py` + `mutations.py`, run as source `bug_fix`), tested locally on a hand-written function only (9 bug kinds; bugs the tests don't catch are skipped). **Done on Colab (Job C, ~12 min): 3,000 records** (14,665 rows scanned). Bug kinds: missing return 475, name typo 474, compare 429, None init 429, operator 426, off-by-one 313, and/or 162, flipped bool 147, missing cast 145. User sees a failing check (with wrong value) in 1,646, an error message in 1,354. Only 44 functions had no bug the tests caught; 84 originals failed in our runner
 4. Improve-code examples — **built**, two sources because real refactor commits are rare (~0.3% of CommitPackFT): `commitpack_refactor` (real commits, ~150–200 expected; sample of 20 reviewed, filters tightened after review; runs nothing) + `improve_synthetic` (clean tested functions rewritten into clumsy-but-equivalent code, tests must still pass; target 2,000; Colab only). Checked locally on hand-written functions. **Done on Colab (Job D, ~45 min):** `improve_synthetic` **2,000** (97,248 rows scanned — only ~3% qualify: 18,118 had fewer than 2 safe rewrites, 6,760 too long, 606 originals failed here); rewrites used: truthiness→len 871, `x += 1`→`x = x + 1` 864, comprehension→loop 760, bool return→if 538, sum→loop 410, ternary→if 371, enumerate→range 277, max/min→if 167. `commitpack_refactor` **202** (all 56,025 commits scanned, 98% not refactors) — as expected; the mix takes what there is, so the improve share is ~19% instead of 20%
-5. Mix, clean, dedupe, split to ~12k — **built** (`data/scripts/build_dataset_v2.py` + `decontaminate.py`). Drops duplicates, anything overlapping MBPP/HumanEval (keeps the scoring test honest) and records over 700 tokens; takes each source's share (config `dataset_v2.build.take`); 5% val per task. Local test on 1,138 records: caught all planted duplicates and the planted MBPP copy, plus 18 real duplicates and 1 real MBPP overlap in the old data; median 306 tokens, 95% under 530. **Not run yet** — notebook Job E added: rebuilds `old_github.jsonl` on Colab from the v1 `train.jsonl` on Drive (matched by fingerprint; falls back to asking for an upload), then builds → Drive `MyDrive/PY-V/results/dataset_v2/`. Needs Phase 8.1.11 pushed + 1b re-run
-6. Training fixes: end-of-text token, pad ≠ end token, max_seq_length 384 → 768
-7. Retrain on Colab, re-score against step 1
+5. Mix, clean, dedupe, split to ~12k — **built** (`data/scripts/build_dataset_v2.py` + `decontaminate.py`). Drops duplicates, anything overlapping MBPP/HumanEval (keeps the scoring test honest) and records over 700 tokens; takes each source's share (config `dataset_v2.build.take`); 5% val per task. Local test on 1,138 records: caught all planted duplicates and the planted MBPP copy, plus 18 real duplicates and 1 real MBPP overlap in the old data; median 306 tokens, 95% under 530. **Done on Colab (Job E, 2026-09-25): 11,607 records** (11,027 train + 580 val) → Drive `MyDrive/PY-V/results/dataset_v2/`. Mix: write 41% (4,800) / fix errors 25% (2,945) / improve 18% (2,062) / explain 16% (1,800) — close to plan. Median 339 tokens, 95% under 581. Dropped: 160 overlapping MBPP/HumanEval (127 of them OpenCodeInstruct), 453 too long (OpenCodeInstruct 276, Glaive 122), 199 duplicates (115 in improve_synthetic — OpenCodeInstruct repeats the same small functions). Short vs plan: bug_fix 2,945/3,000, improve_synthetic 1,865/2,000, commitpack 197/400. `old_github.jsonl` rebuilt on Colab from the v1 `train.jsonl` on Drive (fingerprint matched, same 1,032 records)
+6. Training fixes — **built (2026-09-25)**, checked locally with the tokenizer only (no model loaded). Owner's choices: start **fresh from plain Phi-2**, **normal strength** (learning rate 2e-4, 4× the v1 run), **1 pass** then score and decide, **learn from answers only**. What changed:
+   - every example ends with the end-of-text token, and labels are padded with -100, so the end token is no longer hidden (old cause: pad == eos + `DataCollatorForLanguageModeling`)
+   - training uses the same per-mode prompt as the app (`build_training_prompt(mode, ...)` = `build_prompt(...)`, mode from `metadata.task`); the `/generate` endpoint now uses the generate template too
+   - loss on the answer only (prompt tokens -100)
+   - max_seq_length 384 → 768; longer examples are dropped, never cut (template adds ≤62 tokens, so v2's ≤700-token records all fit)
+   - eval loss now actually computed (`eval_strategy="steps"` + `label_names`; the v1 run recorded none), every 100 steps
+   - T4 trainer: settings from config, `--output-dir` with automatic resume from the newest checkpoint there (old code looked in the wrong folder), ETA print fixed (was 10× too high)
+   - `eval_mbpp.py --adapter DIR` to score any adapter; training data path now `data/datasets/v2/`
+7. Retrain on Colab, re-score against step 1 — **ready, not run.** Notebook **Job F** trains → Drive `MyDrive/PY-V/model_v2/lora` (~690 steps, rough guess 2–3 h, checkpoint every 50 steps, resumes after a disconnect); **Job G** scores it on the same 100 MBPP problems → `mbpp_lora_v2.jsonl`. Needs Phase 8.1.12 pushed + 1b re-run. The new adapter replaces `model/lora/` only if it beats the old one (51/100)
 
 **Decided:** ~12,000 clean examples, mix ≈ 40% write / 25% fix errors / 20% improve code / 15% explain, using the sources below; old GitHub data trimmed to its best-scored part. Every code sample run-checked; English only; deduped.
 
@@ -251,6 +260,11 @@ Options, all need measuring on this laptop first:
 | 2026-09-25 | Old 5,508 GitHub examples: keep only the best-scored part | Many have weak auto-generated instructions |
 | 2026-09-25 | New dataset size: ~12,000 examples | Enough for Phi-2's 4 tasks; should fit one Colab session |
 | 2026-09-25 | Heavy jobs run on Colab via a runner notebook; code comes from GitHub, results go to Drive `MyDrive/PY-V/results/` | Laptop has 16 GB RAM and is often in use; Colab T4 is faster; owner has fast internet |
+| 2026-09-25 | New training starts **fresh from plain Phi-2**, not from the old adapter | Old adapter gave no real gain (51 vs 48) and learned the never-stop habit |
+| 2026-09-25 | Learning rate 2e-4 ("normal strength") | Standard for LoRA; the v1 run's 5e-5 barely changed the model |
+| 2026-09-25 | 1 training pass, score, then decide on a 2nd | Early result; a 2nd pass can continue from the first |
+| 2026-09-25 | Loss on answers only | Standard for question → answer training; all learning goes into the answers |
+| 2026-09-25 | New adapter goes to a new Drive folder (`model_v2/lora`) and replaces `model/lora/` only if it beats the old one on MBPP | The old adapter is never at risk |
 
 ---
 
@@ -295,9 +309,8 @@ Options, all need measuring on this laptop first:
 
 ## 9. Open questions
 
-1. **Retrain now or later?** Cleaner v4 + end-of-text token fix + new debug/refactor/explain examples, one Colab run.
-2. **Is the Colab model better than epoch 1?** Needs a side-by-side test.
-3. **Order after Phase 11:** Phase 9, Phase 10 or speed work next?
+1. **Is the Colab model better than epoch 1?** Needs a side-by-side test (less important now — the v2 adapter replaces both if it wins).
+2. **Order after Phase 11:** Phase 9, Phase 10 or speed work next?
 
 ---
 

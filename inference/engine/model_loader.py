@@ -12,16 +12,16 @@ from model.training.config_loader import CFG
 __all__ = ["load_model", "load_lora_model"]
 
 
-def load_lora_model():
+def load_lora_model(lora_path: str = None):
     """
     Load the base Phi-2 model (4-bit quantized) and apply the
-    fine-tuned LoRA adapter saved at CFG.paths.model_output.
+    fine-tuned LoRA adapter saved at lora_path (default: CFG.paths.model_output).
 
     Returns:
         model:     PeftModel with LoRA adapter applied, set to eval mode
         tokenizer: matching AutoTokenizer
     """
-    lora_path = str(CFG.paths.model_output)
+    lora_path = str(lora_path or CFG.paths.model_output)
 
     print(f"Loading base model: {CFG.model.name} ...")
     model, tokenizer = load_model()

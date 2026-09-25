@@ -1,44 +1,56 @@
 """
 dataset_loader.py — PY-V
-Loads train/val JSONL datasets and formats them for LoRA training.
-All paths come from configs/config.yaml via config_loader.
+Loads the train/val JSONL datasets and turns each record into model inputs
+for LoRA training:
+  - prompt = the same mode template inference uses (record's metadata.task),
+    via prompt_builder, so training and inference never drift apart
+  - answer = output + end-of-text token, so the model learns to stop
+  - loss on the answer only: prompt tokens are labelled -100
+  - records longer than max_seq_length are dropped, never cut (a cut answer
+    has no end-of-text token and would teach the model not to stop)
+All paths and lengths come from configs/config.yaml via config_loader.
 """
 
-from datasets import load_dataset
+import json
+
+from datasets import Dataset, DatasetDict
 
 from model.training.config_loader import CFG
+from inference.engine.prompt_builder import build_training_prompt
+
+IGNORE_INDEX = -100   # label value the loss skips
 
 
-def load_py_v_dataset():
-    """Load train and val splits from paths defined in config.yaml."""
-    train_path = str(CFG.paths.dataset)
-    val_path   = str(CFG.paths.val_dataset)
-
-    dataset = load_dataset(
-        "json",
-        data_files={
-            "train": train_path,
-            "val":   val_path,
-        }
-    )
-    return dataset
+def _read_jsonl(path) -> list:
+    with open(path, "r", encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
 
 
-def format_example(example: dict) -> dict:
-    """
-    Format a single sample into the Phi-2 Instruct prompt template.
-    Uses prompt_builder so the format stays consistent between
-    training and inference.
-    """
-    from inference.engine.prompt_builder import build_training_prompt
-    return {"text": build_training_prompt(example["instruction"], example["output"])}
+def encode_example(tokenizer, record: dict, max_length: int):
+    """Token ids + labels for one record, or None if it is too long."""
+    mode   = record.get("metadata", {}).get("task", "generate")
+    prompt = tokenizer(build_training_prompt(mode, record["instruction"]))["input_ids"]
+    answer = tokenizer(record["output"])["input_ids"] + [tokenizer.eos_token_id]
+
+    if len(prompt) + len(answer) > max_length:
+        return None
+    return {
+        "input_ids":      prompt + answer,
+        "attention_mask": [1] * (len(prompt) + len(answer)),
+        "labels":         [IGNORE_INDEX] * len(prompt) + answer,
+    }
 
 
-def get_formatted_dataset():
-    """Load dataset and apply prompt formatting. Ready for tokenization."""
-    dataset = load_py_v_dataset()
-    dataset = dataset.map(
-        format_example,
-        remove_columns=dataset["train"].column_names,
-    )
-    return dataset
+def get_tokenized_dataset(tokenizer) -> DatasetDict:
+    """Train and val splits from the paths in config.yaml, ready for the Trainer."""
+    max_length = CFG.training.max_seq_length
+    splits     = {}
+
+    for split, path in (("train", CFG.paths.dataset), ("val", CFG.paths.val_dataset)):
+        records = _read_jsonl(path)
+        encoded = [e for e in (encode_example(tokenizer, r, max_length) for r in records) if e]
+        print(f"  {split}: {len(encoded)} examples from {path} "
+              f"({len(records) - len(encoded)} longer than {max_length} tokens dropped)")
+        splits[split] = Dataset.from_list(encoded)
+
+    return DatasetDict(splits)
