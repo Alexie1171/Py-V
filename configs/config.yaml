@@ -1,5 +1,8 @@
 model:
-  name: "microsoft/phi-2"
+  # V's brain. First brain upgrade 2026-09-26: Phi-2 → IBM Granite 3B (see
+  # PROJECT_STATUS.md). Plain version for now; the chat version
+  # (ibm-granite/granite-4.2-3b, same layers) is being tested (Colab Job H).
+  name: "ibm-granite/granite-4.1-3b-base"
   max_tokens: 512
 
 generation:
@@ -31,6 +34,9 @@ training:
   lora_r: 8
   lora_alpha: 32
   lora_dropout: 0.05
+  # Layers LoRA trains — names depend on the brain (Granite: attention + MLP;
+  # Phi-2 was q/k/v_proj, dense, fc1, fc2). Change together with model.name.
+  lora_target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
   max_seq_length: 768      # prompt template + answer + end token; longer records are dropped, not cut
 
 paths:

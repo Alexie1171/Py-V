@@ -1,10 +1,11 @@
 """
 train_lora_t4.py — PY-V (model/training/)
 LoRA training on a Google Colab T4, run from the Colab runner notebook.
-Starts fresh from plain Phi-2 (4-bit). Data, prompt format, end-of-text
+Starts fresh from the plain base model in config (4-bit). Data, prompt format, end-of-text
 token and answer-only loss come from dataset_loader.py; hyperparameters
-from the `training` section of configs/config.yaml. Batch settings are
-T4-specific and kept here.
+from the `training` section of configs/config.yaml. Batch size and gradient
+checkpointing are measured on the GPU at start (pick_batch_setup): the
+fastest setup whose worst-case batch fits, effective batch always 16.
 
 Checkpoints go to --output-dir every save_steps; a rerun resumes from the
 newest one there (point it at Drive so a Colab disconnect loses little).
@@ -108,12 +109,54 @@ def apply_lora(model):
     config = LoraConfig(
         r=t.lora_r,
         lora_alpha=t.lora_alpha,
-        target_modules=["q_proj", "k_proj", "v_proj", "dense", "fc1", "fc2"],
+        target_modules=t.lora_target_modules,
         lora_dropout=t.lora_dropout,
         bias="none",
         task_type="CAUSAL_LM",
     )
     return get_peft_model(model, config)
+
+
+# =========================
+# GPU SETUP — use as much of the T4 as fits
+# =========================
+EFFECTIVE_BATCH = 16     # examples per optimizer step — kept whatever fits on the GPU at once
+GPU_BUDGET      = 0.85   # a worst-case batch may use at most 85% of GPU memory (rest: fragmentation, eval)
+
+
+def _probe(model, batch_size: int, seq_len: int) -> bool:
+    """Does a worst-case batch (every example at max length) fit in the GPU budget?"""
+    ids  = torch.randint(1000, 5000, (batch_size, seq_len), device=model.device)
+    fits = False
+    try:
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        with torch.autocast("cuda", dtype=torch.float16):
+            loss = model(input_ids=ids, labels=ids).loss
+        loss.backward()
+        total = torch.cuda.get_device_properties(0).total_memory
+        fits  = torch.cuda.max_memory_allocated() < GPU_BUDGET * total
+    except torch.cuda.OutOfMemoryError:
+        pass
+    model.zero_grad(set_to_none=True)
+    del ids
+    torch.cuda.empty_cache()
+    return fits
+
+
+def pick_batch_setup(model, seq_len: int) -> tuple:
+    """Fastest setup that fits: gradient checkpointing off if possible (~30%
+    less compute per step), then the biggest batch per forward pass.
+    Returns (batch_size, gradient_checkpointing)."""
+    for checkpointing in (False, True):
+        if checkpointing:
+            model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        else:
+            model.gradient_checkpointing_disable()
+        for batch_size in (16, 8, 4, 2, 1):
+            if _probe(model, batch_size, seq_len):
+                return batch_size, checkpointing
+    raise RuntimeError("Not even one max-length example fits on this GPU")
 
 
 # =========================
@@ -138,8 +181,15 @@ def train(output_dir: str):
 
     tokenized = get_tokenized_dataset(tokenizer)
 
+    batch_size, checkpointing = pick_batch_setup(model, t.max_seq_length)
+    accumulation = max(1, EFFECTIVE_BATCH // batch_size)
+    total_gb     = torch.cuda.get_device_properties(0).total_memory / 2**30
+    print(f"GPU setup ({torch.cuda.get_device_name(0)}, {total_gb:.0f} GB): batch {batch_size} x "
+          f"accumulation {accumulation} = {batch_size * accumulation} examples per step, "
+          f"gradient checkpointing {'on' if checkpointing else 'off'}", flush=True)
+
     # Pads input_ids with the pad token and labels with IGNORE_INDEX, so padding
-    # never hides the end-of-text token even though pad == eos for Phi-2
+    # never hides the end-of-text token even when pad == eos (Phi-2, Granite)
     data_collator = DataCollatorForSeq2Seq(
         tokenizer=tokenizer,
         padding=True,
@@ -150,10 +200,12 @@ def train(output_dir: str):
     training_args = TrainingArguments(
         output_dir=output_dir,
 
-        # ⚡ SPEED OPTIMIZED FOR T4 (effective batch 16)
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        gradient_accumulation_steps=4,
+        # Measured by pick_batch_setup() — as much of the GPU as fits, effective batch 16
+        per_device_train_batch_size=batch_size,
+        per_device_eval_batch_size=batch_size,
+        gradient_accumulation_steps=accumulation,
+        gradient_checkpointing=checkpointing,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
 
         learning_rate=t.learning_rate,
         num_train_epochs=t.epochs,
@@ -190,7 +242,7 @@ def train(output_dir: str):
     )
 
     checkpoint = get_last_checkpoint(output_dir) if os.path.isdir(output_dir) else None
-    print(f"Resuming from {checkpoint}" if checkpoint else "No checkpoint - starting fresh from plain Phi-2")
+    print(f"Resuming from {checkpoint}" if checkpoint else f"No checkpoint - starting fresh from plain {CFG.model.name}")
 
     trainer.train(resume_from_checkpoint=checkpoint)
 

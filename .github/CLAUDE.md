@@ -27,7 +27,7 @@ It ensures:
 | Phase | Description | Status |
 |-------|-------------|--------|
 | Phase 1 | Project structure & architecture | Complete |
-| Phase 2 | Phi-2 model setup & 4-bit inference | Complete |
+| Phase 2 | Base model setup & 4-bit inference (Phi-2; brain upgraded to IBM Granite 3B on 2026-09-26) | Complete |
 | Phase 3 | Full data pipeline (scrape → clean → dedupe → format) | Complete |
 | Phase 4 | LoRA fine-tuning on Python dataset | Complete |
 | Phase 5 | FastAPI inference server | Complete |
@@ -81,12 +81,13 @@ All generated code must be optimized for:
 ## Model Constraints
 
 All work is based on:
-- Phi-2 (Microsoft, ~2.7B parameters)
-- Fine-tuned LoRA adapter saved at `model/lora/` — this is the adapter inference loads
-- Current adapter: Google Colab T4 run (`train_lora_t4.py`), 1377 steps, resumed from the 115-step epoch-1 checkpoint, train loss ~0.95 → ~0.77, no eval loss recorded
-- Epoch 1 (local GTX 1650): 115 steps, eval loss 1.015 → 0.993
-- Long training runs go to Colab T4 (output `model_t4/lora/`, then copied into `model/lora/`) — local GPU is too slow
-- Next adapter (v2, dataset plan step 7): trained fresh from plain Phi-2 on dataset v2 by `train_lora_t4.py` → Drive `MyDrive/PY-V/model_v2/lora`; replaces `model/lora/` only if it beats the old adapter on the MBPP scoring test (old 51/100, plain Phi-2 48/100)
+- **Brain: IBM Granite 3B** — `ibm-granite/granite-4.1-3b-base` (config `model.name`), Apache 2.0, 128K context. First brain upgrade on 2026-09-26, replacing Phi-2 (2.7B, 2,048-token limit) — see `PROJECT_STATUS.md`. The chat version `ibm-granite/granite-4.2-3b` (same layers, own chat format, optional thinking mode) is under test (Colab Job H) and may become the starting point
+- Brains live only in the Hugging Face cache (`HF_HOME`, `E:\huggingface Assets`), never in the repo
+- Fine-tuned LoRA adapter at `model/lora/` — the adapter inference loads. **None exists for Granite yet**: until Job F trains one, the app runs the plain brain (`load_lora_model()` falls back and says so)
+- An adapter only fits the brain it was trained on — `load_lora_model()` refuses an adapter whose `base_model_name_or_path` differs from `model.name`
+- LoRA layer names depend on the brain: config `training.lora_target_modules` (Granite: q/k/v/o_proj, gate/up/down_proj) — change it together with `model.name`
+- Training runs on Colab T4 (Job F) into a Drive folder named after the brain (`MyDrive/PY-V/model_<brain>/lora`); download the finished adapter into `model/lora/`
+- Phi-2 history (retired 2026-09-26, all local files deleted): v2 adapter scored 66/100 MBPP on the laptop (plain Phi-2 62), 1/10 long questions; adapters remain on Drive (`MyDrive/PY-V/model_v2/lora`, `MyDrive/Py-V/Py-V/model_t4/lora`)
 
 Rules:
 - No training from scratch
@@ -96,7 +97,7 @@ Rules:
 - Always resume from checkpoint when one exists (`resolve_checkpoint()` on the laptop, `get_last_checkpoint(output_dir)` on Colab)
 - Every training example = the inference prompt for its mode (`build_training_prompt()`) + answer + end-of-text token; loss on the answer only (prompt labels -100)
 - Examples longer than `max_seq_length` are dropped, never truncated — a cut answer has no end token and teaches the model not to stop
-- Labels are built in `dataset_loader.py` and padded with -100 (`DataCollatorForSeq2Seq`). Never use `DataCollatorForLanguageModeling`: pad == eos for Phi-2, so it masks the end token (the v1 adapters never learned to stop because of this)
+- Labels are built in `dataset_loader.py` and padded with -100 (`DataCollatorForSeq2Seq`). Never use `DataCollatorForLanguageModeling`: pad == eos (Phi-2, Granite), so it masks the end token (the Phi-2 v1 adapters never learned to stop because of this)
 - Pass `label_names=["labels"]` to `TrainingArguments` — PeftModel hides the labels argument and no eval loss is computed without it
 
 ---
@@ -132,11 +133,12 @@ Rules:
 ---
 
 ### `inference/engine/prompt_builder.py`
-- Central prompt formatting for Phi-2
+- Central prompt formatting for the brain (`### Instruction:` / `### Answer:` templates — work for base models; chat versions can use `to_native_chat()`)
 - Used by BOTH training (`dataset_loader.py`) and inference (`generator.py`)
 - Prompt format: the per-mode templates in `prompt_templates.py` (`### Instruction:\n...\n\n### Answer:\n`)
 - `build_training_prompt(mode, instruction)` = `build_prompt(mode, instruction, {})` — training sees exactly what inference sends (no history, no RAG); `build_inference_prompt()` = the generate template, for the stateless `/generate` endpoint
 - Any template change means retraining — the adapter learns the exact wording
+- `to_native_chat(prompt, tokenizer)` re-wraps a template prompt in the model's own chat format (`apply_chat_template`, `enable_thinking=False`) for chat-tuned brains; unchanged for models without a chat template. Used by the scoring scripts' `--native-chat`; not used by the app yet
 - Never define prompt format in any other file
 - Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `format_context()`, `format_retrieved_context()`
 - For `explain` and `chat` modes, context history is NOT injected to prevent code pattern bias
@@ -244,9 +246,36 @@ Rules:
 - Scoring test: model writes a function per MBPP problem, the problem's asserts are run against it, score = problems passed
 - Same prompt + generation path as chat (`generate` mode), greedy decoding (repeatable)
 - Settings from `CFG.evaluation.*`; results to `experiments/outputs/mbpp_{base | adapter folder name}.jsonl`
-- `--base` scores Phi-2 without the LoRA adapter for comparison; `--adapter DIR` scores another adapter (default `CFG.paths.model_output`); `--base --model NAME` scores another base model (tag `base_<name>`)
+- Result names always include the brain: `base_<brain>` or `<brain>_<adapter folder>` (files from before 2026-09-26 named `base` / `lora` / `lora_v2` are Phi-2)
+- `--base` scores the brain without the LoRA adapter for comparison; `--adapter DIR` scores another adapter (default `CFG.paths.model_output`); `--base --model NAME` scores another base model (tag `base_<name>`)
 - Every run also writes `mbpp_{tag}_summary.json`: score + every setting that can change it (base model, adapter md5, decoding settings, benchmark, GPU, library versions). Only compare runs whose settings match
-- The laptop (GTX 1650) is the standard scoring machine since 2026-09-25 — always available, no Colab quota, and it is where V runs. Adapters trained on Colab are downloaded and scored here
+- **Big training and tests run on the Colab T4** (owner rule, 2026-09-26) — the laptop took hours per test. Scores compare only within one machine (the summary records the GPU): the 2026-09-25 laptop scores are a laptop-only baseline, so any model compared on Colab gets its own Colab run with the same settings
+- The laptop is only for short checks (e.g. "does this fit in 4 GB / how much RAM"), and only after telling the owner. If Colab's GPU quota is used up: wait for the reset, or ask the owner before using the laptop
+
+---
+
+### `experiments/eval_long_context.py`
+- Long-question test: "find the bug in this long file" at ~500 / 1,000 / 1,500 / 3,000 / 6,000 tokens (counted with Phi-2's tokenizer when the kept set was built; 2 questions each), debug mode, same generation path as the app, 320-token answer budget
+- Modules built from MBPP **full** train/validation/prompt solutions (never the test split `eval_mbpp.py` scores on); one bug planted with `data/scripts/sources/mutations.py`; graded by running the target function's tests with the answer loaded on top of the buggy module
+- Questions built once and kept in git as `experiments/longctx_tasks.json` — every model, on the laptop and on Colab, gets the same ones; delete the file only to deliberately make a new question set
+- Records prompt tokens, pass/fail and peak GPU memory per question; skips questions longer than the model's context window; catches out-of-memory and skips bigger sizes
+- Same flags as `eval_mbpp.py` (`--adapter`, `--base`, `--model`, `--native-chat`); results `longctx_{tag}.jsonl` + `_summary.json`
+
+---
+
+### `experiments/eval_chat.py`
+- Short chat test, 8 questions, one skill each: explain a concept, answer from memory notes, admit what it doesn't know, answer from search results, follow up on an earlier turn, ask for a search (`SEARCH: …` line) when it lacks information, follow a format, keep it simple
+- Chat mode, same generation path as the app, greedy; keyword checks are a rough signal — every answer is printed in full for a person to judge
+- Notes / search results / earlier turns are put into the question text (the app's context slot is off until Phase 11)
+- Results `chat_{tag}.jsonl` + `_summary.json`
+
+---
+
+### `experiments/eval_common.py`
+- Shared by the three scoring scripts: `add_model_args()` (`--base`, `--adapter`, `--model`, `--native-chat`), `result_tag()`, `load_for_eval()` → (model, tokenizer, tag, wrap)
+- `--native-chat` wraps each prompt with `prompt_builder.to_native_chat()` — the model's own chat format, thinking off — for chat-tuned brains (Granite 4.2); tag gets `_native`
+- Runs on Colab like every big test. On the T4 (15 GB) it measures ability; how much fits on the laptop (4 GB) is a separate short laptop check
+- On Windows the GPU driver spills into system RAM instead of failing when GPU memory is full ("shared GPU memory") — watch system RAM during long questions on the laptop; Qwen3-4B took it to 15.1 of 15.4 GB
 - MBPP / HumanEval are for scoring only — never add them to training data
 
 ---
@@ -264,7 +293,8 @@ Rules:
 - Results go to Drive `MyDrive/PY-V/results/` (`data_v2/`, `dataset_v2/`, `eval/`); the trained adapter is COPIED from `MyDrive/PY-V/model/lora`, never linked, so jobs can't overwrite it
 - New training (Job F) writes only to `MyDrive/PY-V/model_v2/lora` — never to an existing adapter folder; Job G copies it to `model/lora_v2` and scores it
 - The assistant writes/updates this notebook; the owner runs it and saves it, and the printed results are read back from the file
-- Heavy jobs (full dataset fetch, scoring test, training) go here, not on the laptop
+- Heavy jobs (full dataset fetch, training, MBPP scoring, long-question test, brain checks) go here, not on the laptop (owner rule, 2026-09-26)
+- Colab's free GPU time runs out after roughly 4 hours of T4 use in a day and resets within ~12–24 h — plan jobs to fit, and put the most important job first
 
 ---
 
@@ -308,7 +338,7 @@ Rules:
 - Checkpoint saving and resumption logic
 - No inference or API code
 - `dataset_loader.py` — `get_tokenized_dataset(tokenizer)`: reads `CFG.paths.dataset` / `val_dataset`, builds input_ids + labels per record (mode = `metadata.task`), drops over-long records and prints how many; shared by both trainers
-- `train_lora_t4.py` — Colab trainer: fresh from plain Phi-2, hyperparameters from `CFG.training`, T4 batch settings (4 × 4) in the script, `--output-dir` (Drive) with automatic resume, eval loss every `eval_steps`. Colab has transformers **5.x**, the laptop 4.57 — the script must run on both (e.g. `_length_grouping()`: v5 replaced `group_by_length=True` with `train_sampling_strategy="group_by_length"`)
+- `train_lora_t4.py` — Colab trainer: fresh from the plain brain in config, LoRA layers from `CFG.training.lora_target_modules`, hyperparameters from `CFG.training`, batch size + gradient checkpointing measured on the GPU at start (`pick_batch_setup()`: checkpointing off if it fits, then the biggest batch whose worst case — every example at `max_seq_length` — stays under 85% of GPU memory; effective batch always 16, so results don't depend on the GPU), `--output-dir` (Drive) with automatic resume, eval loss every `eval_steps`. Colab has transformers **5.x**, the laptop 4.57 — the script must run on both (e.g. `_length_grouping()`: v5 replaced `group_by_length=True` with `train_sampling_strategy="group_by_length"`)
 - `train_lora.py` — laptop trainer (GTX 1650), all settings from `CFG.training`; 768-token examples may not fit in 4 GB — train on Colab
 
 ---
@@ -356,7 +386,7 @@ Rules:
 Phase 9 adds per-language LoRA adapters. All rules below apply when implementing Phase 9.
 
 - One LoRA adapter per language, saved at `model/lora/{language}/`
-- Base model (Phi-2, 4-bit) is shared — only adapter weights change between languages
+- Base model (the brain, 4-bit) is shared — only adapter weights change between languages
 - `model/adapters/adapter_registry.py` maps language identifiers to adapter paths
 - `model/adapters/adapter_router.py` selects and loads the correct adapter at runtime
 - `inference/engine/language_detector.py` detects language from file extension or VS Code `languageId`
@@ -423,11 +453,11 @@ Rules:
 
 - Memory reuses `retrieval/embedder.py` — never add a second embedding model or loader
 - All memory settings come from `CFG.memory.*` — never hardcode the DB path, top_k or token budget
-- Memory gets a small, fixed prompt budget (a few short items) — the Phi-2 context is only ~2,048 tokens and RAG already uses part of it
+- Memory gets a small, fixed prompt budget (a few short items) — Granite can read 128K tokens, but on the 4 GB laptop GPU prompts over ~1,500 tokens spill into system RAM and slow down (long-question test); RAG shares the same budget
 - `explain` and `chat` modes receive facts only — never code snippets from memory (same code-bias reason as the RAG rule)
 - Facts are short tagged statements, not raw past messages — the existing ban on injecting context history into `explain` / `chat` prompts still applies
 - Facts carry a timestamp and a key; a newer fact with the same key replaces the older one (older one marked inactive, not silently lost)
-- Fact extraction is rule-based first — Phi-2 is not reliable enough to judge what is important
+- Fact extraction is rule-based first — a 3B brain is not reliable enough to judge what is important (revisit with Granite's chat version)
 - If the database is missing or broken, chat continues without memory — no crash (same as RAG)
 - Memory runs on CPU / disk only — it must not use VRAM
 - The memory database holds private conversations — it must be gitignored and never committed
@@ -545,16 +575,19 @@ python -m retrieval.indexer
 # RAG retrieval test
 python -m retrieval.test_rag
 
-# Fine-tuned model output
-python -m experiments.test_phi2
+# Brain answers — short chat test (big tests go to Colab)
+python -m experiments.eval_chat --adapter model/lora
 
 # Chat system (terminal — Phase 7/8)
 python test_chat.py
 
-# Scoring test (loads the model, ~30–50 min for 100 problems — close other heavy apps first)
+# Scoring test (big test — run it on Colab via the runner notebook; ~15–25 min on the T4, 30–110 min on the laptop)
 python -m experiments.eval_mbpp
 python -m experiments.eval_mbpp --base
 python -m experiments.eval_mbpp --adapter model/lora_v2
+
+# Long-question test (big test — run it on Colab; on the laptop ~10–40 min per model, watch system RAM)
+python -m experiments.eval_long_context --adapter model/lora_v2
 
 # API boot
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000

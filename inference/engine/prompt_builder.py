@@ -56,6 +56,25 @@ def build_training_prompt(mode: str, instruction: str) -> str:
     return build_prompt(mode, instruction, {})
 
 
+def to_native_chat(prompt: str, tokenizer) -> str:
+    """
+    Re-wrap a template prompt in the model's own chat format, for chat-tuned
+    brains (e.g. Granite 4.2) — thinking mode off. The "### Instruction:" /
+    "### Answer:" markers are dropped and the instruction text becomes the
+    user message. Base models have no chat template: the prompt is returned
+    unchanged.
+    """
+    if not getattr(tokenizer, "chat_template", None):
+        return prompt
+    body = prompt.removeprefix("### Instruction:\n").rsplit("### Answer:", 1)[0].strip()
+    return tokenizer.apply_chat_template(
+        [{"role": "user", "content": body}],
+        tokenize              = False,
+        add_generation_prompt = True,
+        enable_thinking       = False,
+    )
+
+
 def build_inference_prompt(instruction: str) -> str:
     """Prompt for the stateless /generate endpoint — the generate template, as in training."""
     return build_prompt("generate", instruction, {})

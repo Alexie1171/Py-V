@@ -130,14 +130,7 @@ def apply_lora(model):
     config = LoraConfig(
         r=t.lora_r,
         lora_alpha=t.lora_alpha,
-        target_modules=[
-            "q_proj",
-            "k_proj",
-            "v_proj",
-            "dense",
-            "fc1",
-            "fc2",
-        ],
+        target_modules=t.lora_target_modules,
         lora_dropout=t.lora_dropout,
         bias="none",
         task_type="CAUSAL_LM",
@@ -190,7 +183,7 @@ def train():
     tokenized = get_tokenized_dataset(tokenizer)
 
     # Labels padded with IGNORE_INDEX, so padding never hides the end-of-text
-    # token even though pad == eos for Phi-2
+    # token even when pad == eos (Phi-2, Granite)
     data_collator = DataCollatorForSeq2Seq(
         tokenizer=tokenizer,
         padding=True,

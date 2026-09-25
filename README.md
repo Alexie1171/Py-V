@@ -4,7 +4,7 @@
 
 PY-V is a lightweight, locally running AI code assistant designed for Python development and expanding into multi-language support. It replicates core features of tools like GitHub Copilot — code completion, function generation, debugging, and chat-based assistance — while being fully optimized for low-resource environments (GTX 1650, 4GB VRAM).
 
-The system is built around a complete local ML pipeline: a custom dataset scraped from GitHub and StackOverflow, LoRA fine-tuning on Phi-2, a FastAPI inference server, a VS Code extension, a context-aware chat system, and a RAG pipeline backed by a FAISS vector store.
+The system is built around a complete local ML pipeline: a custom dataset scraped from GitHub and StackOverflow, LoRA fine-tuning on IBM Granite 3B (upgraded from Phi-2 on 2026-09-26), a FastAPI inference server, a VS Code extension, a context-aware chat system, and a RAG pipeline backed by a FAISS vector store.
 
 ---
 
@@ -13,7 +13,7 @@ The system is built around a complete local ML pipeline: a custom dataset scrape
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 1 | Project structure & architecture | Complete |
-| 2 | Phi-2 model setup, 4-bit quantization, modular engine | Complete |
+| 2 | Base model setup, 4-bit quantization, modular engine (Phi-2 → IBM Granite 3B on 2026-09-26) | Complete |
 | 3 | Full data pipeline (scrape → clean → dedupe → format) | Complete |
 | 4 | LoRA fine-tuning on Python dataset | Complete |
 | 5 | FastAPI inference server | Complete |
@@ -129,7 +129,7 @@ All configuration is centralized in `configs/config.yaml`. No paths or hyperpara
 
 ## Model
 
-- Base model: Microsoft Phi-2 (~2.7B parameters)
+- Base model: IBM Granite 3B — `ibm-granite/granite-4.1-3b-base` (Apache 2.0, 128K context); replaced Microsoft Phi-2 on 2026-09-26
 - Quantization: 4-bit NF4 (BitsAndBytes)
 - Fine-tuning: LoRA (r=8, alpha=32)
 - Training result: loss 1.087 → 0.872 over 115 steps (1 epoch, GTX 1650)
@@ -286,7 +286,7 @@ Generate with language-specific adapter
 ### Training plan
 
 - One LoRA adapter per language, each fine-tuned on a language-specific dataset
-- Base model (Phi-2, 4-bit) shared across all adapters — only the adapter weights swap
+- Base model (Granite, 4-bit) shared across all adapters — only the adapter weights swap
 - Adapter switching happens at inference time with no model reload
 - Python adapter continues to be the primary, highest-quality adapter
 
@@ -307,7 +307,7 @@ panel.ts — manages WebviewPanel lifecycle, message passing
     ↓
 api.ts — POST /api/v1/chat (existing endpoint, unchanged)
     ↓
-FastAPI → ChatEngine → RAG → Phi-2 → response
+FastAPI → ChatEngine → RAG → Granite → response
     ↓
 Streamed back to panel via VS Code message passing
 ```
@@ -386,8 +386,8 @@ python -m retrieval.indexer
 # RAG retrieval test
 python -m retrieval.test_rag
 
-# Fine-tuned model output
-python -m experiments.test_phi2
+# Brain answers — short chat test
+python -m experiments.eval_chat --adapter model/lora
 
 # Chat system (terminal)
 python test_chat.py

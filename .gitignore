@@ -23,13 +23,9 @@ Thumbs.db
 experiments/logs/
 experiments/outputs/
 
-# Model weights
-model/base/
-model/lora/
-model/lora_epoch1_backup/
-model/lora_epoch1_backup_v2/
-model/lora_new_dataset_checkpoint50/
-model/lora_v2/
+# Model weights — LoRA adapters (model/lora, model/lora_*) and downloads.
+# Brains themselves live in the Hugging Face cache, never in the repo.
+model/lora*/
 model_t4/
 Drive downloads/
 Google Colab/

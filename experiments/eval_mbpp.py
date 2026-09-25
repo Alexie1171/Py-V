@@ -8,13 +8,15 @@ with greedy decoding so a score can be repeated. Settings come from the
 `evaluation` section of configs/config.yaml. Never train on this dataset.
 
 Usage (from repo root):
-    python -m experiments.eval_mbpp          # fine-tuned model (base + LoRA)
-    python -m experiments.eval_mbpp --base   # base Phi-2 only, for comparison
+    python -m experiments.eval_mbpp          # the app's brain + its LoRA adapter
+    python -m experiments.eval_mbpp --base   # base model only (no adapter), for comparison
     python -m experiments.eval_mbpp --adapter model/lora_v2   # another adapter
     python -m experiments.eval_mbpp --base --model Qwen/Qwen3-4B-Base   # another base model
+    python -m experiments.eval_mbpp --base --model ibm-granite/granite-4.2-3b --native-chat
 Results go to {output_dir}/mbpp_{tag}.jsonl (one line per problem) and
 mbpp_{tag}_summary.json (score + every setting that can change it), where tag
-is "base", "base_<model>" or the adapter folder name.
+is "base_<brain>" or "<brain>_<adapter folder>" (+ "_native" with
+--native-chat) — see eval_common.py.
 """
 
 import argparse
@@ -33,10 +35,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from datasets import load_dataset
 
 from model.training.config_loader import CFG
-from inference.engine.model_loader import load_model, load_lora_model
 from inference.engine.prompt_builder import build_prompt
 from inference.engine.generator import generate_from_prompt
 from experiments.code_runner import run_python
+from experiments.eval_common import add_model_args, load_for_eval
 
 
 def load_problems() -> list:
@@ -81,25 +83,12 @@ def build_program(problem: dict, code: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base", action="store_true",
-                        help="score base Phi-2 without the LoRA adapter")
-    parser.add_argument("--adapter", default=str(CFG.paths.model_output),
-                        help="LoRA adapter folder to score (default: the app's adapter)")
-    parser.add_argument("--model", default=CFG.model.name,
-                        help="base model to load (default: config model.name)")
+    add_model_args(parser)
     args = parser.parse_args()
 
-    default_model  = CFG.model.name
-    CFG.model.name = args.model
-    if args.base:
-        tag = "base" if args.model == default_model else f"base_{args.model.split('/')[-1]}"
-    else:
-        tag = Path(args.adapter).name
-    ev  = CFG.evaluation
-
+    ev       = CFG.evaluation
     problems = load_problems()
-    model, tokenizer = load_model() if args.base else load_lora_model(args.adapter)
-    model.eval()
+    model, tokenizer, tag, wrap = load_for_eval(args)
 
     ev.output_dir.mkdir(parents=True, exist_ok=True)
     out_path = ev.output_dir / f"mbpp_{tag}.jsonl"
@@ -111,7 +100,7 @@ def main():
         for i, problem in enumerate(problems, 1):
             t = time.perf_counter()
 
-            prompt    = build_prompt("generate", build_task(problem), {}, [])
+            prompt    = wrap(build_prompt("generate", build_task(problem), {}, []))
             response  = generate_from_prompt(model, tokenizer, prompt,
                                              mode="generate", temperature=0.0)
             code      = extract_code(response)
@@ -158,6 +147,7 @@ def write_summary(path: Path, args, passed: int, total: int, minutes: float):
         "adapter":      adapter,
         "benchmark":    dataclasses.asdict(CFG.evaluation) | {"output_dir": str(CFG.evaluation.output_dir)},
         "prompt_mode":  "generate",
+        "prompt_format": "native chat" if args.native_chat else "template",
         "decoding":     {"temperature": 0.0, "max_new_tokens": CFG.model.max_tokens,
                          **dataclasses.asdict(CFG.generation.for_mode("generate"))},
         "device":       torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",

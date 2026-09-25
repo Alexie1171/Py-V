@@ -56,6 +56,7 @@ class TrainingConfig:
     lora_r:                 int
     lora_alpha:             int
     lora_dropout:           float
+    lora_target_modules:    list    # layer names LoRA trains — depend on the brain
     max_seq_length:         int
 
 
@@ -141,6 +142,7 @@ def load_config() -> AppConfig:
         lora_r                = t.get("lora_r",                8),
         lora_alpha            = t.get("lora_alpha",            32),
         lora_dropout          = t.get("lora_dropout",          0.05),
+        lora_target_modules   = t["lora_target_modules"],
         max_seq_length        = t.get("max_seq_length",        384),
     )
 

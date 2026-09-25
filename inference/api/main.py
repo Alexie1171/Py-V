@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title       = "PY-V Inference API",
-    description = "Local Python code generation using Phi-2 + LoRA + RAG.",
+    description = "V — local coding assistant (IBM Granite brain + LoRA).",
     version     = "1.1.0",
     lifespan    = lifespan,
 )

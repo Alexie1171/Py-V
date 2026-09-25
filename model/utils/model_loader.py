@@ -13,7 +13,7 @@ from model.training.config_loader import CFG
 
 def load_model():
     """
-    Load Phi-2 (or any model defined in config.yaml) with 4-bit
+    Load the brain defined in config.yaml (model.name) with 4-bit
     quantization. Safe for GTX 1650 4GB VRAM.
 
     Returns:
