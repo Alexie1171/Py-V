@@ -35,12 +35,12 @@ It ensures:
 | Phase 7 | Chat system (context-aware assistant + controller) | Complete |
 | Phase 8 | RAG (Retrieval Augmented Generation) | Complete — turned off since 2026-09-25 (see `PROJECT_STATUS.md`) |
 | Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
-| Phase 10 | VS Code chat panel (full UI, no terminal) | In progress — 10.1 chat in the sidebar built 2026-09-26 (streaming, stop, code buttons, new chat) |
+| Phase 10 | VS Code chat panel (full UI, no terminal) | In progress — 10.1 chat in the sidebar (streaming, stop, code buttons, new chat) and 10.2 file reading (the open file / selection go into the prompt when the message is about them) built 2026-09-26 |
 | Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Built 2026-09-26 (`memory/`, on by default) — smoke test passes; tried with the trained Granite chat on the laptop (2026-09-26): unrelated facts derailed an answer → recall now needs real relevance |
 | Phase 12 | Machine awareness (V knows the computer and how busy it is, takes on less when busy) | Built 2026-09-26 (`inference/engine/machine.py`, config `machine:`) — busy lines are first guesses, to tune after the owner's first try |
 | Phase 13 | Learning (web lookup after asking, learning from chats, study sessions on a topic) | Planned 2026-09-26 — design in `PROJECT_STATUS.md` section 6 |
 
-Build order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating (applied only on the owner's click), memory view and project-file search (RAG over the user's files) + the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language; speed work not placed yet (numbering kept stable on purpose). Current phase: **Phase 12** — commits "Phase 12: …", then 12.1, 12.1.1, …
+Build order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating (applied only on the owner's click), memory view and project-file search (RAG over the user's files) + the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language; speed work not placed yet (numbering kept stable on purpose). Current phase: **Phase 10** (chat panel) — commits "Phase 10.2: …", then 10.2.1, 10.3, …
 
 Live status, open issues and next steps: see `PROJECT_STATUS.md` in the repo root.
 
@@ -116,7 +116,7 @@ Rules:
 ---
 
 ### `model/training/config_loader.py`
-- Parses `config.yaml` into typed dataclasses (`ModelConfig`, `GenerationConfig`, `TrainingConfig`, `PathsConfig`, `RAGConfig`, `DatasetV2Config`, `EvaluationConfig`)
+- Parses `config.yaml` into typed dataclasses (`ModelConfig`, `GenerationConfig`, `TrainingConfig`, `PathsConfig`, `RAGConfig`, `MemoryConfig`, `MachineConfig` + `WorkLimits`, `FilesConfig`, `IntentConfig`, `DatasetV2Config`, `EvaluationConfig`)
 - Exports a module-level `CFG` singleton
 - All other modules import `CFG` from here — never re-parse yaml elsewhere
 
@@ -153,7 +153,8 @@ Rules:
 - Never define prompt format in any other file
 - Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `to_native_chat()`, `format_for_model()`, `uses_chat_format()`, `build_chat_prompt()`, `chat_history()`, `format_machine()`, `format_context()`, `format_retrieved_context()`
 - **Chat mode on a chat brain (since 2026-09-26)** — `build_chat_prompt(user_input, context, memories, tokenizer)`, used when `uses_chat_format(model, tokenizer)` (`native_chat` + a chat template): a real conversation instead of the chat template — system message = `V_PERSONA` (+ remembered facts), then `chat_history()`, then the user's message exactly as written. Returns the prompt already in the brain's format → `generate_from_prompt(..., formatted=True)`. The template wrapper ("Answer the following question using only plain English...") made V answer like homework, with no name. Brains without a chat format keep `build_prompt("chat", ...)`
-- `build_chat_prompt(..., history_turns=None, machine="")` — fewer turns when the machine is busy; `machine` = `format_machine(specs, snap)` (what V knows about the computer), placed before the remembered facts
+- `build_chat_prompt(..., history_turns=None, machine="", editor="")` — fewer turns when the machine is busy; `machine` = `format_machine(specs, snap)` (what V knows about the computer), `editor` = `file_context.describe()` (which file is open in the panel's editor — name only, no code), both placed before the remembered facts
+- `build_prompt(..., file_note="")` — `file_context.note()` ("The user is working in src/app.py.") ahead of the memory block in the `{context}` slot, code modes only, when none of the file went in. The file's code itself arrives inside `user_input` (appended by `chat.py`), like pasted code — the templates are unchanged
 - `chat_history(context, turns=None)` — the last `turns` (None = `CFG.memory.history_turns`) messages of the current chat (6 = 3 exchanges), chat mode only. No code goes in (same reason as memory/RAG): code-mode turns keep the request's first line and a short note instead of V's code; code blocks elsewhere become "(code left out)"; each message cut to `HISTORY_CHARS` (400). Persona alone ~264 prompt tokens, with 3 exchanges + a fact ~470
 - History stays OFF for every other mode (since 2026-09-25) — the old brain copied previous answers and answered previous questions instead of the new one; code modes keep the prompts their adapters were trained on. `format_context()` (last two user questions only) is kept but unused
 - RAG context is only injected for `generate`, `debug`, `refactor` modes
@@ -196,9 +197,23 @@ Rules:
 
 ---
 
+### `inference/engine/file_context.py` (Phase 10.2, built 2026-09-26)
+- The file open in the editor, sent by the chat panel with every message (`OpenFile`: name, VS Code `languageId`, text, selection + its first line, cursor line; a huge file as a window around the cursor, `first_line`). Decides what of it goes into the prompt — never in chat mode (there `describe()` gives her system message one line: which file, which lines selected):
+  - **the selection** — selecting code is how the user points at it. In explain mode only when the message is about it ("this" / "it", a word or name from it, or too short to have its own subject: "explain", "hmm?"): "what is a decorator?" with code still selected is a general question, and unrelated context derails the 3B brain (the memory lesson). Not when the message brings its own code and doesn't point at the file
+  - **no selection: the file** when the message points at it (`_ABOUT_FILE`: "this function", "the code", "fix it", its file name, or a code name that is in the file — `parse_config`, `add()`, `` `total` ``), or when fix / improve has no code of its own (it must come from somewhere)
+  - otherwise nothing; code modes get `note()` with the file's name
+- **Long files in pieces** (`split_pieces`, `pick_pieces`): a block starts after a blank line at the outermost indent (a closing `}` doesn't count), a block over `files.piece_lines` splits one indent deeper (a class into its methods, a Java class body too), then hard cuts; a tiny block (class header, divider comment) joins the next one. Scored: the piece at the cursor (10), pieces defining (4) / using (1) a word of the message, the top of the file (2), the cursor's neighbours up to 2 away; best first until the budget — `WorkLimits.file_chars` (config `files.max_prompt_chars` 3000, busy 1600, tight 800). Left-out lines: `... (lines 41-80 left out)`. Side-by-side pieces show as one span ("lines 1-12, 238-278")
+- **Improve** rewrites everything it gets: only the piece at the cursor and pieces the message names, at most `model.max_tokens × 3` characters (what fits in one answer). **Fix** also gets the neighbours and imports — the bug can sit nearby, and the trained habit is to answer with only the fixed function
+- The code goes after the message: `Selected code from src/app.py (lines 10-24):` / `Here is the whole file src/app.py:` (the long-file fix examples' wording) / `Parts of the file ...`, then a fenced block with the file's tag
+- `language_of(file, attached, mode)`: the answer's language when the message names none (and doesn't say Python): the file's, when its text went in; a programming language (not a format like YAML / Markdown / JSON) also for code requests with the file open ("write a function that ..." in a .ts file → TypeScript)
+- Test (no brain): `python -m experiments.eval_file_context` — 19 messages with an open file (mode, language, what goes in) + 10 piece checks (Python and Java files) — 29/29
+
+---
+
 ### `inference/engine/chat.py`
 - An empty answer after cleanup never reaches the user: chat / explain say they couldn't put it into words (and how to ask for code), code modes ask for more detail (`_EMPTY_WORDS`, `_EMPTY_CODE`; tests call the generator directly, so their raw answers are unchanged)
-- `ChatEngine.chat()` = `_prepare()` (mode, language, machine check, memory, prompt → `_Turn`) → `generate_from_prompt` → `_finish()` (save the turn, result dict); `chat_stream()` (Phase 10.1) = the same steps with `stream_from_prompt`, yielding `start` / `piece` / `done` for `/chat/stream`
+- `ChatEngine.chat()` = `_prepare()` (mode, machine check, open file, language, memory, prompt → `_Turn`) → `generate_from_prompt` → `_finish()` (save the turn, result dict); `chat_stream()` (Phase 10.1) = the same steps with `stream_from_prompt`, yielding `start` / `piece` / `done` for `/chat/stream`
+- `chat(session_id, user_input, open_file=None)` / `chat_stream(..., stop=None, open_file=None)` (Phase 10.2): `open_file` = the panel's open file as a dict (`file_context.OpenFile` fields). Selected code with a message no rule places ("hmm?") → explain, like pasted code. The file's code is appended to the message for the prompt only: mode detection, memory search and RAG use the message as typed, and the saved turn is the typed message. The result's `file` = what of the file she read ("app.py, lines 10-24"), None = nothing
 
 ---
 
@@ -207,7 +222,7 @@ Rules:
 - Test: `experiments/language_cases.json` (113 messages, incl. traps like "in plain english", "I want to go home", "unity of the team") + `python -m experiments.eval_language` — 113/113 (written with the rules; unseen probes found the framework gap — add real misses)
 - The mode rules count a recognised language as technical (`controller.TECH` or `detect_language`)
 - Owner, 2026-09-26: until Phase 9 a request for another language is answered in it — `OTHER_LANGUAGE_TEMPLATES` (generate / debug / refactor / explain), code in a fenced block tagged with the language, memory facts only (earlier code is Python), no RAG, adapter off (`generate_from_prompt(..., adapter=False)` — it was trained on Python only). Chat mode ignores it (she talks about any language). The language isn't remembered between messages
-- File reading (10.2) adds file extensions / VS Code's `languageId`
+- `file_language(language_id)` (Phase 10.2) — the open file's language from VS Code's `languageId` (`FILE_LANGUAGES` ~150 ids → name; `FILE_FORMATS` json / yaml / markdown / html / css / … marked `format`; ids not listed count as formats — `pip-requirements` must not turn a code request into its language); `None` = Python or plain text. `names_python(message)` — the message says Python (or one of its libraries), which beats the file's language
 
 ---
 
@@ -256,7 +271,7 @@ Rules:
 ### `inference/engine/chat.py`
 - Top-level chat orchestrator
 - Wires together: controller (+ brain for unclear messages when on) → retriever → memory → prompt builder → generator → context manager
-- Single public method: `chat(session_id, user_input)`
+- Public methods: `chat(session_id, user_input, open_file=None)` and `chat_stream(session_id, user_input, stop=None, open_file=None)`
 - Instantiates `Retriever` at startup if RAG is enabled in config
 - Gracefully disables RAG if index is missing
 
@@ -455,7 +470,8 @@ Rules:
 - No heavy logic inside endpoints
 - Must call inference engine only
 - Model loaded once at startup via lifespan, stored in app state
-- Endpoints: `GET /health`, `POST /generate`, `POST /chat`
+- Endpoints: `GET /health`, `POST /generate`, `POST /chat`, `POST /chat/stream` (the panel), `GET /memory`, `DELETE /memory/{fact_id}`
+- `/chat` and `/chat/stream` take an optional `file` (`schemas.OpenFile`, Phase 10.2 — the open file; text and selection up to 400,000 characters each) and answer with `file` (what of it V read)
 
 ---
 
@@ -465,10 +481,11 @@ Rules:
 - `src/extension.ts` — command registration, status bar
 - `src/api.ts` — HTTP client for the FastAPI server
 - `src/provider.ts` — editor insertion and instruction extraction
+- `src/file_context.ts` — (Phase 10.2) reads the open file for the panel: `describeEditor()` (name + selected lines, for the chip), `readOpenFile()` (what goes to the server: name relative to the workspace, `languageId`, text — a file over 300,000 characters as a window around the cursor — selection, cursor line). Only real documents: files, unsaved "Untitled" files, notebook cells — not the Output panel, git views or settings
 - Shortcuts in Python files: Ctrl+Shift+G = generate from selection / comment; Ctrl+Alt+G = generate from a typed prompt (was Ctrl+Shift+P, which hid VS Code's Command Palette once the extension was installed in the normal window)
 - `src/panel.ts` — (Phase 10) `ChatViewProvider`: the sidebar chat view (`pyv.chatView`, a `WebviewView` in V's own activity-bar container) — creates the page, passes messages between the page and `api.ts`, does the editor work the page asks for (insert / copy code)
 - `src/chat_view.ts` — (Phase 10) the page's HTML skeleton and security policy (nonce, no inline styles or scripts), linking `media/chat.css` and `media/chat.js`
-- `media/chat.js` — (Phase 10) everything that runs inside the page: rendering messages (text from V always via `textContent`, never HTML), input, scrolling, the live answer while V writes, page state (`vscode.setState`: messages + session id survive hiding the panel and reloads)
+- `media/chat.js` — (Phase 10) everything that runs inside the page: rendering messages (text from V always via `textContent`, never HTML), input, scrolling, the live answer while V writes, the open-file chip, page state (`vscode.setState`: messages, session id and the chip's on/off survive hiding the panel and reloads)
 - `media/chat.css` — (Phase 10) panel styling, colors from the VS Code theme
 - `media/v.svg` — V's activity-bar icon
 - `src/server.ts` — (Phase 10) `ServerManager`: V's server follows the chat panel (owner, 2026-09-26). Panel opens → starts `python -m uvicorn inference.api.main:app --host 127.0.0.1 --port <from pyv.serverUrl>` in the Py-V folder (dot: yellow while the brain loads, ~1 min; green when `/health` answers). Panel closed for `pyv.stopServerAfterSeconds` (default 120 — owner chose 2 minutes so quick trips to Explorer don't reload the brain) → stops it (`taskkill /T /F` on Windows), freeing RAM and the GPU; closing VS Code stops it too. A server started elsewhere (a terminal) is used and never stopped. Starts only from a trusted workspace folder with `inference/api/main.py` or `pyv.projectPath`. Settings: `pyv.manageServer`, `pyv.stopServerAfterSeconds`, `pyv.pythonPath`, `pyv.projectPath`. Server output: Output → "V Server". Chat commands (owner): `/stop-server` stops her server now and keeps it stopped (no automatic start when the panel reopens) until `/start-server`; `/help` lists them — handled by the extension, never sent to the brain, not saved. A server started in a terminal can't be stopped from the panel (she says so). The chat view keeps its page alive while hidden (`retainContextWhenHidden`), so an answer being written isn't lost
@@ -513,7 +530,7 @@ Phase 9 adds per-language LoRA adapters. All rules below apply when implementing
 
 Phase 10 replaces terminal interaction with a Copilot-style chat panel inside VS Code. All rules below apply when implementing Phase 10.
 
-Steps (owner: built one by one, each tried before the next): **10.1 chat in the sidebar (built)** → 10.2 file reading → 10.3 file updating → 10.4 memory view → 10.5 search over the user's project files.
+Steps (owner: built one by one, each tried before the next): **10.1 chat in the sidebar (built)** → **10.2 file reading (built)** → 10.3 file updating → 10.4 memory view → 10.5 search over the user's project files.
 
 - The chat panel is a sidebar `WebviewView` (`pyv.chatView`) in V's own activity-bar container — a view, not an editor-tab `WebviewPanel`
 - `extension/src/panel.ts` owns the view's lifecycle — creation, disposal, message passing
@@ -523,7 +540,7 @@ Steps (owner: built one by one, each tried before the next): **10.1 chat in the 
 - The panel talks to the server through `POST /api/v1/chat/stream` — the same chat engine as `/chat` and the terminal chat
 - Session ID is generated once per panel and reused for the conversation; the page keeps it (with its messages) across hiding and reloads
 - Every answer shows a mode badge (write code / fix / improve / explain / chat), the `rag_chunks` count, the memory count, the laptop load when not free, and V's heads-up note
-- Active file context (language, file name, selected text) must be automatically injected into generate/debug prompts (10.2)
+- Active file context (language, file name, selected text) is automatically injected (10.2, built): the panel follows the file the user was last in (typing in the panel takes the focus away from it) and shows it as a chip above the input ("app.py · lines 10-24"); × stops sending it (remembered with the page), clicking again turns it back on. Every message carries the file (`file_context.ts`); the server decides what goes into the prompt (`inference/engine/file_context.py` — selection, the file when the message is about it, long files in pieces, fewer when busy). Every answer that read it shows "read app.py, lines 10-24". Code modes without the file's text get its name. The file's language decides the answer's language when the message names none
 - The streaming endpoint `POST /api/v1/chat/stream` (SSE: `start` → `piece`… → `done` / `error`) lives in `inference/api/routes.py` — no new files for routes. `done` carries the cleaned answer, which replaces the streamed pieces (they can hold a stop word or code the cleanup removes)
 - Stop button: closing the connection makes the server stop the brain after its current word (`generator.stream_from_prompt`, stop event); a stopped answer isn't saved to memory
 - Every code block has Copy and "Insert at cursor" buttons (copy-to-editor); in the code modes, code-looking paragraphs of a bare-code answer become code blocks
@@ -535,7 +552,7 @@ Steps (owner: built one by one, each tried before the next): **10.1 chat in the 
 - No Python logic in any extension file — all backend calls go through `api.ts`
 - Added to the plan 2026-09-26 (owner): file reading, file updating, a memory view (list / forget facts) and search over the user's project files (RAG over their own code, built here — the Kaggle test of RAG over training examples runs separately)
 - File updating: V shows the change (a diff) and writes the file only when the user clicks apply — never on her own
-- Machine awareness applies to file reading: a long file goes in pieces, fewer when the machine is busy (Phase 12)
+- Machine awareness applies to file reading: a long file goes in pieces, fewer when the machine is busy (Phase 12) — `machine.busy_work` / `tight_work` `file_chars`
 
 ---
 
@@ -737,6 +754,9 @@ python -m inference.engine.machine
 
 # Language detection test (instant, no brain)
 python -m experiments.eval_language
+
+# File reading test for the chat panel (instant, no brain): what of the open file goes into the prompt
+python -m experiments.eval_file_context
 
 # Mode detection test: word rules (instant, no brain) / with the brain for unclear messages (loads it)
 python -m experiments.eval_intent

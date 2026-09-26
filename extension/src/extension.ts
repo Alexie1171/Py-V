@@ -4,7 +4,7 @@
  *
  * Commands:
  *   pyv.generate          — generate from selected text or comment (Ctrl+Shift+G)
- *   pyv.generateFromInput — generate from a typed prompt (Ctrl+Shift+P)
+ *   pyv.generateFromInput — generate from a typed prompt (Ctrl+Alt+G)
  *   pyv.checkServer       — ping the inference server
  *   pyv.openChat          — open the chat panel (sidebar, Phase 10 — panel.ts)
  */
@@ -105,9 +105,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // closing VS Code stops a server the extension started
   const server = new ServerManager();
 
+  const chatProvider = new ChatViewProvider(context.extensionUri, server);
   const chatView = vscode.window.registerWebviewViewProvider(
     ChatViewProvider.viewId,
-    new ChatViewProvider(context.extensionUri, server),
+    chatProvider,
     // Keep the page alive while hidden, so an answer still being written isn't lost
     { webviewOptions: { retainContextWhenHidden: true } }
   );
@@ -116,7 +117,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`)
   );
 
-  context.subscriptions.push(generateCmd, generateFromInputCmd, checkServerCmd, chatView, openChatCmd, server);
+  context.subscriptions.push(generateCmd, generateFromInputCmd, checkServerCmd, chatView, openChatCmd, server,
+                             chatProvider.trackEditor());
 }
 
 // ─── Deactivation ─────────────────────────────────────────────────────────────

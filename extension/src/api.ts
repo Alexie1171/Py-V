@@ -6,6 +6,7 @@
 
 import * as vscode from "vscode";
 import * as http from "http";
+import { OpenFilePayload } from "./file_context";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -141,19 +142,22 @@ export interface ChatDone {
   confidence: number;
   rag_chunks: number;
   memories: number;
+  language: string | null;
   load: string | null;
   note: string | null;
+  file: string | null; // what of the open file V read ("app.py, lines 10-24")
 }
 
 export type ChatEvent =
-  | { kind: "start"; mode: string; confidence: number; load: string | null }
+  | { kind: "start"; mode: string; confidence: number; load: string | null; language: string | null; file: string | null }
   | { kind: "piece"; text: string }
   | { kind: "done"; result: ChatDone }
   | { kind: "error"; detail: string };
 
 /**
  * Send a chat message and receive V's answer as it is written
- * (POST /api/v1/chat/stream, server-sent events). onEvent gets start →
+ * (POST /api/v1/chat/stream, server-sent events). file = the open file
+ * (file_context.ts), undefined = none / not shared. onEvent gets start →
  * piece… → done, or error. Returns a function that stops the answer —
  * closing the connection makes the server stop the brain.
  *
@@ -164,6 +168,7 @@ export type ChatEvent =
 export function chatStream(
   sessionId: string,
   message: string,
+  file: OpenFilePayload | undefined,
   onEvent: (event: ChatEvent) => void
 ): () => void {
   const { serverUrl } = getConfig();
@@ -195,7 +200,7 @@ export function chatStream(
       res = await fetch(`${serverUrl}/api/v1/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, message }),
+        body: JSON.stringify({ session_id: sessionId, message, file }),
         signal: controller.signal,
       });
     } catch (err) {
@@ -289,7 +294,14 @@ function parseSse(block: string): ChatEvent | null {
   }
   switch (name) {
     case "start":
-      return { kind: "start", mode: body.mode, confidence: body.confidence, load: body.load ?? null };
+      return {
+        kind: "start",
+        mode: body.mode,
+        confidence: body.confidence,
+        load: body.load ?? null,
+        language: body.language ?? null,
+        file: body.file ?? null,
+      };
     case "piece":
       return { kind: "piece", text: body.text ?? "" };
     case "done":

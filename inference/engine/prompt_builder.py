@@ -19,6 +19,7 @@ def build_prompt(
     retrieved_chunks:   list = None,
     memories:           dict = None,
     language:           dict = None,
+    file_note:          str  = "",
 ) -> str:
     """
     Build the final prompt string for the model.
@@ -34,13 +35,17 @@ def build_prompt(
     language is language_detector.detect_language() output: another language
     than Python gets OTHER_LANGUAGE_TEMPLATES — memory facts only (earlier
     code is Python), no RAG (the index is Python).
+
+    file_note = file_context.note() — which file the user works in (chat
+    panel, Phase 10.2), ahead of the memory block in the {context} slot. The
+    file's code itself, when it goes in, is already in user_input.
     """
     if language and mode in OTHER_LANGUAGE_TEMPLATES:
         return OTHER_LANGUAGE_TEMPLATES[mode].format(
             language   = language["name"],
             tag        = language["tag"],
             user_input = user_input,
-            context    = format_memories(memories, "explain") if memories else "",
+            context    = file_note + (format_memories(memories, "explain") if memories else ""),
         )
 
     template = TEMPLATES.get(mode, TEMPLATES["chat"])
@@ -48,7 +53,7 @@ def build_prompt(
     # Raw chat history stays off (the model answered the previous question
     # instead of the new one); the context slot carries short memory facts,
     # plus earlier code in code modes (Phase 11).
-    formatted_context = format_memories(memories, mode) if memories else ""
+    formatted_context = file_note + (format_memories(memories, mode) if memories else "")
 
     # RAG context — only injected for relevant modes
     if mode in _RAG_MODES and retrieved_chunks:
@@ -162,7 +167,7 @@ def format_for_model(prompt: str, model, tokenizer) -> str:
 
 
 def build_chat_prompt(user_input: str, context: dict, memories: dict, tokenizer,
-                      history_turns: int = None, machine: str = "") -> str:
+                      history_turns: int = None, machine: str = "", editor: str = "") -> str:
     """
     Chat mode for brains with their own chat format, as a real conversation:
     V's persona (+ what she knows about the computer, + remembered facts) as
@@ -171,11 +176,12 @@ def build_chat_prompt(user_input: str, context: dict, memories: dict, tokenizer,
     only plain English..." made V answer like homework. Returned in the brain's
     format — generate_from_prompt(..., formatted=True). Brains without a chat
     format use build_prompt("chat", ...). history_turns None = config;
-    machine = format_machine() output.
+    machine = format_machine() output; editor = file_context.describe() (the
+    file open in the chat panel's editor — its name only, no code).
     """
     system = V_PERSONA
     facts  = format_memories(memories, "chat") if memories else ""
-    for block in (machine, facts):
+    for block in (machine, editor, facts):
         if block:
             system += "\n\n" + block.strip()
 

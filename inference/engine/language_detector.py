@@ -1,7 +1,8 @@
 """
 language_detector.py — PY-V (inference/engine/)
 Which programming language a message asks about, from its words (Phase 9
-starts here; file extensions / VS Code's languageId come with file reading).
+starts here), and the open file's language from VS Code's languageId (chat
+panel file reading, Phase 10.2 — file_language()).
 None = Python, V's own language — her tested templates and adapter.
 
 Owner, 2026-09-26: any language at all, "from assembly to the latest" — so
@@ -19,7 +20,7 @@ layers, broad on purpose:
      "written in foo", "the foo language", "a language called foo"
 The prompts (prompt_templates.OTHER_LANGUAGE_TEMPLATES) take any name, so a
 language only has to be recognised here, not known. Words can't catch a
-language shown only by pasted code — file reading brings the file's type.
+language shown only by pasted code — the open file's type covers the panel.
 
 Several languages in one message: a target after "to" / "into" wins
 ("convert this python to typescript"), then Python if named — or one of its
@@ -195,3 +196,72 @@ def detect_language(message: str) -> Optional[dict]:
         return None
     name = found[0][1]
     return {"name": name, "tag": _tag(name)}
+
+
+# ─── The open file's language (chat panel file reading, Phase 10.2) ──────────
+
+# VS Code languageId → display name. Python ("python") and plain text aren't
+# listed: they keep V's default. FILE_FORMATS count only when the file's text
+# goes into the prompt ("fix this" in config.yaml → YAML; "write a function
+# that ..." with README.md open stays Python). Ids not listed are treated as
+# formats too ("pip-requirements" must not turn a request into its language).
+FILE_LANGUAGES = {
+    "javascript": "JavaScript", "javascriptreact": "JavaScript", "typescript": "TypeScript",
+    "typescriptreact": "TypeScript", "c": "C", "cpp": "C++", "cuda-cpp": "CUDA", "cuda": "CUDA", "arduino": "C++",
+    "csharp": "C#", "java": "Java", "go": "Go", "rust": "Rust", "php": "PHP", "ruby": "Ruby", "shellscript": "Bash",
+    "powershell": "PowerShell", "bat": "Batch", "sql": "SQL", "lua": "Lua", "perl": "Perl", "perl6": "Raku",
+    "raku": "Raku", "r": "R", "swift": "Swift", "kotlin": "Kotlin", "dart": "Dart", "haskell": "Haskell",
+    "elixir": "Elixir", "erlang": "Erlang", "fsharp": "F#", "clojure": "Clojure", "scala": "Scala",
+    "groovy": "Groovy", "vb": "Visual Basic", "objective-c": "Objective-C", "objective-cpp": "Objective-C++",
+    "julia": "Julia", "matlab": "MATLAB", "ocaml": "OCaml", "coffeescript": "CoffeeScript", "zig": "Zig",
+    "nim": "Nim", "solidity": "Solidity", "vyper": "Vyper", "verilog": "Verilog", "systemverilog": "SystemVerilog",
+    "vhdl": "VHDL", "glsl": "GLSL", "hlsl": "HLSL", "wgsl": "WGSL", "opencl": "OpenCL", "terraform": "Terraform",
+    "hcl": "Terraform", "dockerfile": "Dockerfile", "makefile": "Makefile", "cmake": "CMake", "vue": "Vue",
+    "svelte": "Svelte", "asm": "Assembly", "nasm": "Assembly", "masm": "Assembly", "gas": "Assembly",
+    "arm": "Assembly", "arm64": "Assembly", "riscv": "Assembly", "mips": "Assembly",
+    "asm-intel-x86-generic": "Assembly", "asm-collection": "Assembly", "fortran": "Fortran",
+    "fortran-modern": "Fortran", "fortranfreeform": "Fortran", "fortranfixedform": "Fortran", "cobol": "COBOL",
+    "pascal": "Pascal", "objectpascal": "Delphi", "ada": "Ada", "prolog": "Prolog", "lisp": "Lisp",
+    "commonlisp": "Lisp", "scheme": "Scheme", "racket": "Racket", "elm": "Elm", "purescript": "PureScript",
+    "reason": "Reason", "rescript": "ReScript", "crystal": "Crystal", "d": "D", "v": "Vlang", "gdscript": "GDScript",
+    "graphql": "GraphQL", "proto": "Protocol Buffers", "proto3": "Protocol Buffers", "nix": "Nix", "apex": "Apex",
+    "abap": "ABAP", "sas": "SAS", "stata": "Stata", "wolfram": "Wolfram Language", "tcl": "Tcl", "awk": "AWK",
+    "ahk": "AutoHotkey", "autohotkey": "AutoHotkey", "applescript": "AppleScript", "haxe": "Haxe", "mojo": "Mojo",
+    "gleam": "Gleam", "odin": "Odin", "cython": "Cython", "move": "Move", "cairo": "Cairo", "lean": "Lean",
+    "lean4": "Lean", "coq": "Coq", "idris": "Idris", "agda": "Agda", "smalltalk": "Smalltalk", "apl": "APL",
+    "forth": "Forth", "pony": "Pony", "chapel": "Chapel", "hare": "Hare", "carbon": "Carbon", "gdshader": "GLSL",
+    "shaderlab": "ShaderLab", "powerquery": "Power Query M", "dax": "DAX", "kusto": "KQL", "bicep": "Bicep",
+    "puppet": "Puppet", "razor": "Razor", "aspnetcorerazor": "Razor", "vbscript": "Visual Basic",
+}
+FILE_FORMATS = {
+    "json": "JSON", "jsonc": "JSON", "jsonl": "JSON Lines", "json5": "JSON5", "yaml": "YAML",
+    "dockercompose": "YAML", "ansible": "YAML", "helm": "YAML", "github-actions-workflow": "YAML", "xml": "XML",
+    "xsl": "XSLT", "toml": "TOML", "markdown": "Markdown", "html": "HTML", "django-html": "HTML",
+    "jinja": "Jinja", "handlebars": "Handlebars", "pug": "Pug", "css": "CSS", "scss": "SCSS", "sass": "Sass",
+    "less": "Less", "latex": "LaTeX", "tex": "LaTeX", "bibtex": "BibTeX", "restructuredtext": "reStructuredText",
+    "csv": "CSV", "tsv": "TSV", "ini": "INI", "properties": "Properties", "dotenv": "dotenv",
+    "pip-requirements": "pip requirements",
+}
+_PLAIN_FILES = {"", "python", "plaintext", "log", "ignore", "diff", "git-commit", "git-rebase", "search-result",
+                "code-text-binary", "snippets", "jupyter", "code-workspace"}
+
+
+def file_language(language_id: str) -> Optional[dict]:
+    """
+    {"name", "tag", "format"} for the open file's VS Code languageId; None for
+    Python and plain text (V's default). format True = counts only when the
+    file's text goes into the prompt.
+    """
+    key = (language_id or "").strip().lower()
+    if key in _PLAIN_FILES:
+        return None
+    if key in FILE_LANGUAGES:
+        name = FILE_LANGUAGES[key]
+        return {"name": name, "tag": _tag(name), "format": False}
+    name = FILE_FORMATS.get(key) or key.replace("-", " ").title()
+    return {"name": name, "tag": key if key in FILE_FORMATS else _tag(name), "format": True}
+
+
+def names_python(message: str) -> bool:
+    """The message names Python or one of its libraries ("do it in python", "with pandas")."""
+    return bool(PYTHON.search(message))

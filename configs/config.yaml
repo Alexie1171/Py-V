@@ -110,10 +110,22 @@ machine:
   tight: {ram_free_gb: 1.0, gpu_free_gb: 0.3, cpu_percent: 97}   # any one → tight (freezing territory)
   # The most V takes on at each level; a free machine uses the normal settings
   # (memory.history_turns / top_k / code_top_k, model.max_tokens). Prose = chat + explain.
-  busy_work:  {history_turns: 4, memory_facts: 3, memory_code: 1, prose_max_tokens: 384}
-  tight_work: {history_turns: 2, memory_facts: 1, memory_code: 0, prose_max_tokens: 256}
+  # file_chars = how much of the open file goes into the prompt (files: below).
+  busy_work:  {history_turns: 4, memory_facts: 3, memory_code: 1, prose_max_tokens: 384, file_chars: 1600}
+  tight_work: {history_turns: 2, memory_facts: 1, memory_code: 0, prose_max_tokens: 256, file_chars: 800}
   gentle: true               # lower priority + half the CPU threads while busy / tight
   heads_up_minutes: 10       # a casual heads-up at most this often at the same level (sooner when it gets worse)
+
+files:
+  # Chat panel file reading (Phase 10.2, inference/engine/file_context.py): the
+  # file open in the editor goes into the prompt when the message is about it,
+  # a selection always. Budget in characters (~3.5 per token): 3000 ≈ 850
+  # tokens, so with the template and memory a prompt stays near the ~1,500
+  # tokens where the 4 GB laptop GPU starts to slow down. A longer file goes in
+  # pieces (functions / classes / blocks), the ones at the cursor and the ones
+  # the message names first; less when the computer is busy (machine: file_chars).
+  max_prompt_chars: 3000
+  piece_lines: 40
 
 rag:
   # Off since 2026-09-25: weak matches were copied into answers instead of

@@ -1,6 +1,7 @@
 // chat.js — PY-V chat panel (runs inside the panel's page, Phase 10)
-// Rendering messages, input, scrolling, the live answer while V writes, and
-// the bridge to the extension (panel.ts). Text from V is always put in with
+// Rendering messages, input, scrolling, the live answer while V writes, the
+// open-file chip (which file V can read — click x to stop sharing it), and the
+// bridge to the extension (panel.ts). Text from V is always put in with
 // textContent — never as HTML.
 
 (function () {
@@ -15,9 +16,12 @@
   const sendEl = document.getElementById("send");
   const newChatEl = document.getElementById("newChat");
   const statusEl = document.getElementById("status");
+  const fileChipEl = document.getElementById("fileChip");
 
-  // Saved with the page: survives hiding the panel and reloading VS Code
-  let state = vscode.getState() || { sessionId: null, messages: [] };
+  // Saved with the page: survives hiding the panel and reloading VS Code.
+  // useFile: send the open file with messages (the chip's x turns it off)
+  let state = Object.assign({ sessionId: null, messages: [], useFile: true }, vscode.getState() || {});
+  let editor = { name: null, where: null };   // the open file, from panel.ts
   let live = null;        // the answer being written: { el, textEl, metaEl, text, mode, load }
   let server = { state: null, detail: null };   // online / starting / offline (server.ts starts her server with the panel)
 
@@ -100,7 +104,33 @@
     if (m.memories) meta.appendChild(el("span", "info", `memory ${m.memories}`));
     if (m.rag_chunks !== undefined && m.rag_chunks !== null) meta.appendChild(el("span", "info", `rag ${m.rag_chunks}`));
     if (m.load && m.load !== "free") meta.appendChild(el("span", "info load", `laptop ${m.load}`));
+    if (m.file) meta.appendChild(el("span", "info", `read ${m.file}`));
     return meta;
+  }
+
+  // ─── The open file ─────────────────────────────────────────────────────────
+
+  // Which file V can read with the next message: its name (+ the selected
+  // lines). V reads it only when the message is about it (a selection always);
+  // x stops sending it, clicking the chip again turns it back on.
+  function renderFileChip() {
+    fileChipEl.textContent = "";
+    fileChipEl.hidden = !editor.name;
+    if (!editor.name) return;
+    fileChipEl.classList.toggle("off", !state.useFile);
+    const label = el("span", "file-name", editor.name + (editor.where ? ` · ${editor.where}` : ""));
+    fileChipEl.appendChild(label);
+    const toggle = el("button", "link file-toggle", state.useFile ? "\u00d7" : "share");
+    toggle.title = state.useFile
+      ? "V reads this file when your message is about it (a selection always). Click to stop sharing it."
+      : "Not shared with V. Click to share it again.";
+    toggle.addEventListener("click", () => {
+      state.useFile = !state.useFile;
+      save();
+      renderFileChip();
+    });
+    fileChipEl.title = state.useFile ? "Shared with V" : "Not shared with V";
+    fileChipEl.appendChild(toggle);
   }
 
   // An answer: code blocks (with Copy / Insert) and text. Fenced ``` blocks are
@@ -245,7 +275,7 @@
     messagesEl.appendChild(renderMessage({ role: "user", text }));
     startLive();
     setBusy(true);
-    vscode.postMessage({ type: "send", text });
+    vscode.postMessage({ type: "send", text, useFile: state.useFile });
   }
 
   function autoGrow() {
@@ -287,12 +317,18 @@
         break;
       }
 
+      case "editor":
+        editor = { name: msg.name || null, where: msg.where || null };
+        renderFileChip();
+        break;
+
       case "start":
         if (!live) return;
         live.mode = msg.mode;
         live.load = msg.load;
         live.language = msg.language;
-        live.metaEl.replaceWith((live.metaEl = renderMeta({ mode: msg.mode, load: msg.load, language: msg.language })));
+        live.file = msg.file;
+        live.metaEl.replaceWith((live.metaEl = renderMeta({ mode: msg.mode, load: msg.load, language: msg.language, file: msg.file })));
         break;
 
       case "piece":
@@ -305,12 +341,12 @@
       case "done":
         finishLive({
           role: "v", text: msg.response, mode: msg.mode, memories: msg.memories,
-          rag_chunks: msg.rag_chunks, load: msg.load, note: msg.note, language: msg.language,
+          rag_chunks: msg.rag_chunks, load: msg.load, note: msg.note, language: msg.language, file: msg.file,
         });
         break;
 
       case "stopped":
-        if (live) finishLive({ role: "v", text: live.text.trim(), mode: live.mode, load: live.load, language: live.language, stopped: true });
+        if (live) finishLive({ role: "v", text: live.text.trim(), mode: live.mode, load: live.load, language: live.language, file: live.file, stopped: true });
         break;
 
       case "error":
@@ -344,5 +380,6 @@
   });
 
   renderAll();
+  renderFileChip();
   vscode.postMessage({ type: "ready", sessionId: state.sessionId });
 })();

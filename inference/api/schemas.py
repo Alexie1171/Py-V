@@ -36,6 +36,17 @@ class GenerateResponse(BaseModel):
     tokens_used: int = Field(..., description="Approximate number of tokens in the output.")
 
 
+class OpenFile(BaseModel):
+    """The file open in the editor, sent by the chat panel (Phase 10.2) — see inference/engine/file_context.py."""
+    name:           str = Field(..., min_length=1, description="Path relative to the workspace, e.g. src/app.py.")
+    language_id:    str = Field("", description="VS Code's languageId (python, typescript, ...).")
+    content:        str = Field("", max_length=400_000, description="The file's text (a window around the cursor for a huge file).")
+    first_line:     int = Field(1, ge=1, description="Line number of the first line of content.")
+    selection:      str = Field("", max_length=400_000, description="Selected text, empty when nothing is selected.")
+    selection_line: int = Field(0, ge=0, description="First selected line (1-based); 0 = nothing selected.")
+    cursor_line:    int = Field(0, ge=0, description="Cursor line (1-based); 0 = unknown.")
+
+
 class ChatRequest(BaseModel):
     session_id: str = Field(
         ...,
@@ -49,6 +60,10 @@ class ChatRequest(BaseModel):
         description = "The user's message or instruction.",
         example     = "Write a quicksort implementation.",
     )
+    file: Optional[OpenFile] = Field(
+        None,
+        description = "The file open in the editor (chat panel). Its code goes into the prompt when the message is about it.",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -61,6 +76,7 @@ class ChatResponse(BaseModel):
     language:    Optional[str] = Field(None, description="Programming language of the answer when not Python (e.g. TypeScript).")
     load:        Optional[str] = Field(None, description="How busy the computer was: free / busy / tight (V takes on less when busy).")
     note:        Optional[str] = Field(None, description="V's casual heads-up about the computer, when she has one.")
+    file:        Optional[str] = Field(None, description="What of the open file V read, e.g. 'app.py, lines 10-24'; None = nothing.")
 
 
 class MemoryFact(BaseModel):

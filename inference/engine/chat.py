@@ -1,8 +1,10 @@
-from inference.engine.controller import Controller, IntentResult
+from inference.engine import file_context
+from inference.engine.controller import CODE, Controller, IntentResult
 from inference.engine.context_manager import ContextManager
 from inference.engine.context_schema import SessionContext
+from inference.engine.file_context import OpenFile
 from inference.engine.intent_classifier import classify_with_brain
-from inference.engine.language_detector import detect_language
+from inference.engine.language_detector import detect_language, file_language, names_python
 from inference.engine.prompt_builder import build_prompt, build_chat_prompt, uses_chat_format, format_machine
 from inference.engine.model_loader import load_lora_model
 from inference.engine.generator import generate_from_prompt, stream_from_prompt
@@ -16,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # Modes that benefit from RAG context — must match prompt_templates.py slots
 _RAG_MODES = set(CFG.rag.active_modes)
+_CODE_MODES = {"generate", "debug", "refactor"}
 
 # When cleanup leaves nothing (in chat / explain usually: she started writing
 # code, which is cut there), she says so instead of an empty answer
@@ -142,23 +145,26 @@ class ChatEngine:
             return intent
         return IntentResult(mode=picked, confidence=intent.confidence, flags=intent.flags + [f"brain_{picked}"])
 
-    def chat(self, session_id: str, user_input: str):
-        turn     = self._prepare(session_id, user_input)
+    def chat(self, session_id: str, user_input: str, open_file: dict = None):
+        """open_file: the file open in the chat panel's editor (file_context.OpenFile
+        fields as a dict) — its code goes in when the message is about it."""
+        turn     = self._prepare(session_id, user_input, open_file)
         response = generate_from_prompt(self.model, self.tokenizer, turn.prompt, **turn.generation)
         return self._finish(turn, response)
 
-    def chat_stream(self, session_id: str, user_input: str, stop: threading.Event = None):
+    def chat_stream(self, session_id: str, user_input: str, stop: threading.Event = None, open_file: dict = None):
         """
         chat(), streamed for the chat panel: yields ("start", {mode, confidence,
-        load}) once the mode is known, ("piece", {"text"}) as V writes, then
-        ("done", the chat() result) with the cleaned answer, which replaces the
-        streamed text. stop: set it (Stop button, the user left) and she stops
-        after her current word; what she wrote so far is kept.
+        load, language, file}) once the mode is known, ("piece", {"text"}) as V
+        writes, then ("done", the chat() result) with the cleaned answer, which
+        replaces the streamed text. stop: set it (Stop button, the user left)
+        and she stops after her current word; what she wrote so far is kept.
         """
-        turn = self._prepare(session_id, user_input)
+        turn = self._prepare(session_id, user_input, open_file)
         yield "start", {"mode": turn.intent.mode, "confidence": turn.intent.confidence,
                         "load": turn.snap.level if turn.snap else None,
-                        "language": turn.language["name"] if turn.language else None}
+                        "language": turn.language["name"] if turn.language else None,
+                        "file": turn.file_label}
         response = ""
         for kind, text in stream_from_prompt(self.model, self.tokenizer, turn.prompt, stop=stop, **turn.generation):
             if kind == "piece":
@@ -167,21 +173,44 @@ class ChatEngine:
                 response = text
         yield "done", self._finish(turn, response)
 
-    def _prepare(self, session_id: str, user_input: str) -> "_Turn":
-        """Everything before the brain writes: mode, machine check, memory, prompt."""
+    def _prepare(self, session_id: str, user_input: str, open_file: dict = None) -> "_Turn":
+        """Everything before the brain writes: mode, machine check, memory, open file, prompt."""
         context = self.context_manager.load(session_id)
+        file    = OpenFile.from_dict(open_file)
 
         intent = self._detect_mode(user_input)
-
-        # Another language than Python named → her answer in that language
-        # (own templates, adapter off); chat mode talks about any language
-        language = detect_language(user_input) if intent.mode != "chat" else None
+        if file and file.selection.strip() and "fallback" in intent.flags:
+            # Selected code and a message no rule places ("hmm?", "this") — same as pasted code
+            intent = IntentResult(mode="explain", confidence=0.3, flags=["unclear", "selection_without_request"])
 
         # How busy the computer is decides how much V takes on for this answer
         snap = self._check_machine()
         work = self.machine.work(snap) if snap else None
 
+        # The open file (chat panel): its code goes in when the message is
+        # about it; long files in pieces, fewer when the computer is busy
+        attached = file_context.attach(
+            file, user_input, intent.mode,
+            own_code      = bool(CODE.search(user_input)),
+            budget        = work.file_chars if work else CFG.files.max_prompt_chars,
+            piece_lines   = CFG.files.piece_lines,
+            answer_tokens = CFG.model.max_tokens,
+            tag           = _file_tag(file),
+        )
+
+        # Another language than Python named → her answer in that language
+        # (own templates, adapter off); chat mode talks about any language.
+        # None named: the open file's language (its code is in the prompt, or a
+        # code request with a .ts file open), unless the message says Python.
+        language = None
+        if intent.mode != "chat":
+            language = detect_language(user_input)
+            if language is None and not names_python(user_input):
+                language = file_context.language_of(file, attached is not None, intent.mode)
+        prompt_input = user_input + ("\n\n" + attached.block if attached else "")
+
         # Retrieve relevant context and memories before building the prompt
+        # (by the message as typed — the file's code would drown it)
         retrieved_chunks = self._retrieve(intent.mode, user_input) if not language else []
         memories         = self._recall(intent.mode, user_input, work)
 
@@ -194,15 +223,17 @@ class ChatEngine:
                 user_input, context.to_dict(), memories, self.tokenizer,
                 history_turns = work.history_turns if work else None,
                 machine       = format_machine(self.machine.specs, snap) if snap else "",
+                editor        = file_context.describe(file),
             )
         else:
             prompt = build_prompt(
                 mode             = intent.mode,
-                user_input       = user_input,
+                user_input       = prompt_input,
                 context          = context.to_dict(),
                 retrieved_chunks = retrieved_chunks,
                 memories         = memories,
                 language         = language,
+                file_note        = file_context.note(file) if not attached and intent.mode in _CODE_MODES else "",
             )
 
         generation = {
@@ -211,7 +242,8 @@ class ChatEngine:
             "max_tokens": work.prose_max_tokens if work and intent.mode in ("chat", "explain") else None,
             "adapter":    language is None,
         }
-        return _Turn(user_input, context, intent, snap, retrieved_chunks, memories, prompt, generation, language)
+        return _Turn(user_input, context, intent, snap, retrieved_chunks, memories, prompt, generation, language,
+                     attached.label if attached else None)
 
     def _finish(self, turn: "_Turn", response: str) -> dict:
         """After the brain wrote: save the turn to memory (and tag facts from the
@@ -231,7 +263,18 @@ class ChatEngine:
             "language":      turn.language["name"] if turn.language else None,     # None = Python
             "load":          turn.snap.level if turn.snap else None,               # free / busy / tight
             "note":          self.machine.heads_up(turn.snap) if turn.snap else None,   # V's casual heads-up, if any
+            "file":          turn.file_label,                                        # what of the open file she read
         }
+
+
+def _file_tag(file) -> str:
+    """Code-block tag for the open file's code: python for Python files, else its language's."""
+    if file is None:
+        return ""
+    if file.language_id == "python":
+        return "python"
+    lang = file_language(file.language_id)
+    return lang["tag"] if lang else ""
 
 
 @dataclass
@@ -246,3 +289,4 @@ class _Turn:
     prompt:           str
     generation:       dict            # mode / formatted / max_tokens / adapter for the generator
     language:         dict = None     # language_detector result (None = Python)
+    file_label:       str  = None     # what of the open file went in ("app.py, lines 10-24"); None = nothing

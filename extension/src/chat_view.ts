@@ -28,6 +28,7 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
     <button id="newChat" class="link" title="Start a new chat (V still remembers facts from old chats)">New chat</button>
   </header>
   <main id="messages" class="messages" aria-live="polite"></main>
+  <div id="fileChip" class="file-chip" hidden></div>
   <footer class="composer">
     <textarea id="input" rows="1" placeholder="Message V (Enter to send, Shift+Enter for a new line)"></textarea>
     <button id="send" class="send">Send</button>

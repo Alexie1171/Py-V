@@ -75,6 +75,7 @@ def chat(request: ChatRequest):
         result = engine.chat(
             session_id = request.session_id,
             user_input = request.message,
+            open_file  = request.file.model_dump() if request.file else None,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Chat failed: {e}")
@@ -89,6 +90,7 @@ def chat(request: ChatRequest):
         language    = result.get("language"),
         load        = result.get("load"),
         note        = result.get("note"),
+        file        = result.get("file"),
     )
 
 
@@ -96,14 +98,15 @@ def chat(request: ChatRequest):
 async def chat_stream(request: ChatRequest):
     """
     /chat for the chat panel, as server-sent events: `start` (mode, confidence,
-    load) → `piece` (text as V writes it) → `done` (same fields as /chat — its
-    `response` is the cleaned answer and replaces the pieces), or `error`.
-    When the client disconnects (Stop button, panel closed) V stops writing.
+    load, language, file) → `piece` (text as V writes it) → `done` (same fields
+    as /chat — its `response` is the cleaned answer and replaces the pieces),
+    or `error`. When the client disconnects (Stop button, panel closed) V stops writing.
     """
     from inference.api.main import get_chat_engine
 
     stop   = threading.Event()
-    events = get_chat_engine().chat_stream(request.session_id, request.message, stop)
+    events = get_chat_engine().chat_stream(request.session_id, request.message, stop,
+                                           open_file=request.file.model_dump() if request.file else None)
 
     async def sse():
         try:
