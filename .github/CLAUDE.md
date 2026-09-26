@@ -34,13 +34,14 @@ It ensures:
 | Phase 6 | VS Code extension | Complete |
 | Phase 7 | Chat system (context-aware assistant + controller) | Complete |
 | Phase 8 | RAG (Retrieval Augmented Generation) | Complete — turned off since 2026-09-25 (see `PROJECT_STATUS.md`); prep for its Kaggle on/off test built 2026-09-26 (index over dataset v3, `rag.min_score`, CPU embedder) |
-| Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
+| Phase 9 | Multi-language support | Planned — decided 2026-09-27: checked data only (no crawlers), measure each language first, one shared adapter; first new stack: React |
 | Phase 10 | VS Code chat panel (full UI, no terminal) | Code built 2026-09-26 (10.1 chat, 10.2 file reading, 10.3 file updating, 10.4 memory view, 10.5 project search) — not yet tried with the brain |
 | Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Built 2026-09-26 (`memory/`, on by default) — smoke test passes; tried with the trained Granite chat on the laptop (2026-09-26): unrelated facts derailed an answer → recall now needs real relevance |
 | Phase 12 | Machine awareness (V knows the computer and how busy it is, takes on less when busy) | Built 2026-09-26 (`inference/engine/machine.py`, config `machine:`) — busy lines are first guesses, to tune after the owner's first try |
 | Phase 13 | Learning (web lookup after asking, learning from chats, study sessions on a topic) | Code built 2026-09-26 (`learning/`) — not yet tried with the brain |
+| Phase 14 | Self-evolution (practice checked by running → train → frozen tests → kept only if better and approved) | Planned 2026-09-27 |
 
-Build order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating (applied only on the owner's click), memory view and project-file search (RAG over the user's files) + the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language; speed work not placed yet (numbering kept stable on purpose). Code through Phase 13 built 2026-09-26; **nothing after commit 4a31ad1 has been tried with the brain** — the test list is in `PROJECT_STATUS.md` section 2 ("Needs testing"), then the big Kaggle run (pipeline stages 11-15). Commits: "Phase 10.3: …", "Phase 13: …", fixes found in testing as 10.x.y / 13.x
+Build order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating (applied only on the owner's click), memory view and project-file search (RAG over the user's files) + the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language; speed work not placed yet (numbering kept stable on purpose). Code through Phase 13 built 2026-09-26; **nothing after commit 4a31ad1 has been tried with the brain** — the test list is in `PROJECT_STATUS.md` section 2 ("Needs testing"), then the big Kaggle run (pipeline stages 11-15). Commits: "Phase 10.3: …", "Phase 13: …", fixes found in testing as 10.x.y / 13.x. Then (owner, 2026-09-27): Phase 9's data plan + Phase 14's pieces → the React Kaggle run (6-hour React study, then she updates herself) → the owner tests V on React locally
 
 Live status, open issues and next steps: see `PROJECT_STATUS.md` in the repo root.
 
@@ -497,7 +498,7 @@ Rules:
 ---
 
 ### `data/scripts/`
-- Scraping only (GitHub, StackOverflow)
+- Scrapers (GitHub, StackOverflow) — made the old data only; no new crawled training data (2026-09-27)
 - Data cleaning & preprocessing
 - Output must be structured JSON/JSONL
 - No model logic allowed
@@ -566,20 +567,38 @@ Rules:
 
 ---
 
-## Phase 9 Rules — Multi-LoRA Adapters (Planned)
+## Phase 9 Rules — Multi-Language (Planned; data plan decided 2026-09-27)
 
-Phase 9 adds per-language LoRA adapters. All rules below apply when implementing Phase 9.
+Phase 9 teaches V other languages. All rules below apply when implementing Phase 9. Plan and source table: `PROJECT_STATUS.md` section 6.
 
-- One LoRA adapter per language, saved at `model/lora/{language}/`
-- Base model (the brain, 4-bit) is shared — only adapter weights change between languages
-- `model/adapters/adapter_registry.py` maps language identifiers to adapter paths
-- `model/adapters/adapter_router.py` selects and loads the correct adapter at runtime
-- `inference/engine/language_detector.py` detects language from file extension or VS Code `languageId`
-- `configs/adapters.yaml` holds per-language adapter config — never hardcode adapter paths
-- Adapter switching must not reload the base model — only swap the PEFT adapter
+- **Measure first:** `experiments/eval_languages.py` (Kaggle stage 14) gives the untrained baseline per language; a language gets training data only where the tests show a gap
+- **One shared adapter** teaches fix / improve in every language (`model/lora/`, `use_in_modes` in its note). A separate adapter at `model/lora/{language}/` only if the shared one can't close a gap without lowering another language's tests — then:
+  - `model/adapters/adapter_registry.py` maps language identifiers to adapter paths, `model/adapters/adapter_router.py` selects it at runtime, `configs/adapters.yaml` holds the config — never hardcode adapter paths
+  - switching must not reload the base model — only swap the PEFT adapter
+- Base model (the brain, 4-bit) is shared and never changes
+- `inference/engine/language_detector.py` detects language from file extension or VS Code `languageId` (`javascriptreact` / `typescriptreact` → JavaScript / TypeScript)
+- **Training data: checked sources only, no crawlers** (see Data Pipeline Rules). Every code example compiles / runs and passes its tests in its language (runners as in `experiments/eval_languages.RUNNERS`); licenses allow training (a translation model's license must allow training on its outputs); English instructions; deduped; decontaminated against every test set
+- Sources: break-and-fix generator per language; checked Python examples + tests translated, kept only when the translated tests pass; `bigcode/commitpackft` per-language splits (improve / fix); `code_search_net` (explain)
+- Test only, never trained on: MBPP, HumanEval, MultiPL-E, the React test set
 - Training data for non-Python languages lives in `data/datasets/{language}/`
-- JavaScript/TypeScript scraper lives at `data/scripts/js_scraper.py`
-- Python adapter remains the primary adapter — all existing behavior unchanged
+- Python behaviour unchanged — no Python test may drop
+- **React first** (owner, 2026-09-27): React test set (tasks + tests written before the run, run with node + React on Kaggle), React runner for practice, then the React Kaggle run: baseline → 6-hour study session "React" on one GPU + practice on the other → notes to memory, passing practice + checked JS / React data train the shared adapter → React + all Python tests → report → owner approves → owner tests on the laptop
+
+---
+
+## Phase 14 Rules — Self-Evolution (Planned 2026-09-27)
+
+V improves herself in rounds. All rules below apply when implementing Phase 14. Plan: `PROJECT_STATUS.md` section 6.
+
+- Nothing changes her weights without passing the frozen tests **and** the owner's approval; the owner starts every round (Kaggle / Colab — never trains on the laptop)
+- She never edits her own source code by herself — she may propose a change as a diff (Apply to file) that the owner applies
+- A round: laptop signals (Good answer, corrections, code that failed after Apply, study notes) + practice + fixed checked data → train a candidate adapter → frozen tests → report
+- Practice: she writes a problem + tests, solves it, runs it; kept only when several independent solutions agree on the tests **and** a deliberately broken version fails them
+- Fixed checked data in every round; self-made data capped (config value, first guess: at most half of the round's data)
+- Promotion only when no frozen test is lower than the current adapter's; otherwise the candidate is thrown away and its weak spots become the next practice / study topics
+- Every promoted adapter kept with its report (adapter history); rollback = swap back; the base brain never changes
+- Frozen tests are never trained on (`decontaminate.py` covers them all)
+- Settings tuning (RAG strength, busy lines, answer length) goes through the same tests, and changes go into `configs/config.yaml` only after the owner approves them
 
 ---
 
@@ -699,6 +718,7 @@ Scraping → Cleaning → Deduplication → Formatting → Dataset → RAG Index
 - `formatter.py` — instruction/output format, 90/10 train/val split
 - `pipeline.py` — orchestrates all stages with checkpoint support
 - After pipeline runs, always rebuild RAG index: `python -m retrieval.indexer`
+- **No new crawled training data (owner, 2026-09-27).** The scrapers above made the old GitHub / StackOverflow set (only its best-scored part is still used). New training data — any language — comes only from checked sources: `fetch_sources.py` / `build_dataset_v2.py` sources, the break-and-fix generator, test-checked translations, approved `learned_*.jsonl`, Phase 14 practice. Every code example compiles / runs and passes its tests; web text never goes into training directly
 
 ---
 

@@ -35,13 +35,14 @@ Work paused on **2026-05-04** and resumed on **2026-09-25**.
 | 6 | VS Code extension | Done |
 | 7 | Chat system (intent routing + session context) | Done |
 | 8 | RAG | Done, but **turned off** since 2026-09-25 — see section 5. Ready to test (2026-09-26): index over dataset v3, strong matches only, embedder on the CPU; the big Kaggle run scores it on vs off (stages 11-13) |
-| 9 | Multi-language adapters (JS/TS etc.) | Planned — nothing started |
+| 9 | Multi-language (JS/TS etc.) | Planned — nothing started. Decided 2026-09-27: checked data only (no crawlers), measure each language first, one shared adapter. **First new stack: React** (owner, 2026-09-27) |
 | 10 | VS Code chat panel | **Code built 2026-09-26 (10.1–10.5), not yet tried with the brain** — 10.1 chat in the sidebar (streaming, Stop, badges, code buttons, New chat); 10.2 file reading (open file / selection when the message is about them, long files in pieces, the file's language); 10.3 file updating ("Apply to file" → diff → the file changes only on Apply); 10.4 memory view (facts with Forget, studied topics, project search status); 10.5 search over your project files |
 | 11 | Long-term memory | **Built 2026-09-26** (`memory/`, on by default; smoke test passes) — tried with the trained Granite chat on the laptop: an unrelated fact derailed an answer, fixed (recall needs real relevance) |
 | 12 | Machine awareness | **Built 2026-09-26** (`inference/engine/machine.py`, on by default) — V knows the laptop and how busy it is, takes on less when busy, says so casually; busy lines are first guesses |
 | 13 | Learning (web lookup after asking, learning from chats, study sessions) | **Code built 2026-09-26, not yet tried with the brain** (`learning/`) — web lookup only after a yes, study sessions with saved progress that later sessions pick up, "Good answer" → training examples, topic training only when approved |
+| 14 | Self-evolution (V improves herself in rounds: practice she checks by running, train, test, keep only if better) | Planned 2026-09-27 (owner's goal) — nothing started |
 
-**Build order (owner, 2026-09-26):** Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating, memory view and search over your project files, plus the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language. Speed work not placed yet. **The code through Phase 13 is built (2026-09-26) — next is testing, see "Needs testing" right below**, then the big Kaggle run.
+**Build order (owner, 2026-09-26):** Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating, memory view and search over your project files, plus the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language. Speed work not placed yet. **The code through Phase 13 is built (2026-09-26) — next is testing, see "Needs testing" right below**, then the big Kaggle run. **After that (owner, 2026-09-27):** Phase 9's data plan + Phase 14's pieces → the React Kaggle run (6 hours of study, then she updates herself) → the owner tests V on React apps and code on the laptop (section 6).
 
 ### ⚠ Needs testing — nothing after commit 4a31ad1 has been tried with the real brain
 
@@ -56,7 +57,7 @@ Owner, 2026-09-26: "we havent tested after 4a31ad1 commit" — Phase 12.1 (commi
 7. **Web lookup (13)** — "what is the newest Zig release?" → she should offer to look it up → "yeah" (sources under the answer) / "nah". "look up the latest pandas version" → looks it up at once.
 8. **Study session (13)** — "learn about asyncio for 10 minutes": the study bar, she pauses while you chat, "stop studying" / `/stop-study`; later "what have you studied?"; Memory view → Studied topics → "Use for training".
 9. **Good answer (13)** — on a fix answer → "Saved for training"; `python -m learning.export` writes `data/learned/`.
-10. **Big Kaggle run** — push, then the Kaggle notebook's RUN EVERYTHING (internet on): stages 11-15 (RAG on vs off, V's setup with the new chat path, other languages, the 2-hour study session). Afterwards import the notes: `python -m learning.study --import "<downloads>/results/study/python_code.jsonl"`.
+10. **Big Kaggle run** — push, then the Kaggle notebook's RUN EVERYTHING (internet on): stages 11-15 (RAG on vs off, V's setup with the new chat path, other languages, the 2-hour study session). Runs in the cloud, so it can go before steps 1-9 while the laptop's RAM is low. Afterwards import the notes: `python -m learning.study --import "<downloads>/results/study/python_code.jsonl"`.
 
 **Now (2026-09-26): Granite retrain done — V's brain is the Granite chat version with its adapter per mode.** Both Granite versions were tested, trained and tested on Kaggle (run 1: 3.7 h — untrained tests, trainings failed; run 2: 6.2 h — fixes, both trained; ~10 of 30 weekly GPU hours; results in `Kaggle downloads/run1/`, `run2/`). Then built on the laptop: adapter on/off per mode, better mode-detection word rules, memory relevance fix — laptop check passed (fits: 2.5 GB after loading, ~3.5 GB peak; 21–41 s per answer). Owner's first try in the terminal (`python test_chat.py`): good answers, but V had no name ("I am a language model…"), "what is your name?" went to explain mode, and chat felt robotic → chat mode rebuilt as a real conversation: V's persona (name V, a girl — she/her, made by Ador "Alexie" Haq aka Alexie, friendly and casual), the message as written, the last 3 exchanges, livelier settings; questions about V → chat. V is a girl (she/her). Then **Phase 12 machine awareness** built: she reads the laptop (GTX 1650 4 GB, 15.4 GB usable RAM, Ryzen 7 3750H) and its load before every answer; when busy she uses less history / memory / answer length, runs at lower priority, and gives a casual heads-up. Checked without the brain (readings, heads-ups, chat wiring with a stand-in); not tried with the brain yet — next: the owner chats with V (`python test_chat.py` shows `laptop=free/busy/tight`) and we tune the busy lines.
 
@@ -219,7 +220,7 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 
 ## 6. Where we are going
 
-Order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel (+ file reading, file updating, memory view, project-file search) → Phase 13 learning → Phase 9 multi-language. Speed work not placed yet.
+Order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel (+ file reading, file updating, memory view, project-file search) → Phase 13 learning → Phase 9 multi-language. Speed work not placed yet. Then (owner, 2026-09-27): testing + the big Kaggle run → Phase 9's data plan + Phase 14's pieces → the React Kaggle run → the owner tests V on React locally.
 
 **One big Kaggle run after the code (owner, 2026-09-26):** all code through Phase 13 first — the panel steps, RAG over training examples, the learning features — then a single large Kaggle run that gives the most results at once. **The code is done; its stages are in `scripts/gpu_pipeline.py`** (stages 1-10 are done and get skipped):
 - **11** RAG index over training set v3 (GPU, ~a minute; installs faiss / sentence-transformers if Kaggle lacks them)
@@ -315,8 +316,53 @@ Licensing to-do: if Py-V or its adapter is ever shared, credit NVIDIA (OpenCodeI
 
 Rejected: Magicoder-OSS-Instruct, CodeAlpaca, CodeFeedback's Evol part (made with OpenAI models — their terms restrict training other models on outputs); HF "bug fixing" sets (tiny, unknown quality, or Java); `vikp/code_with_explanations` (notebook text, not Q&A pairs).
 
-### Phase 9 — Multi-language adapters (planned)
-One LoRA adapter per language (Python first, then JS/TS), swapped at runtime on the same base model. Rules in `.github/CLAUDE.md`.
+### Phase 9 — Multi-language (planned; data plan decided 2026-09-27)
+**No crawlers for training data any more** (owner, 2026-09-27: crawled data "isnt good and mostly dirty … will only give dirty updates to V"). The GitHub / StackOverflow scrapers were a starting point; Python already moved to checked sources (section "Next — better training data"). Every other language follows the same rule: **an example is clean only if a checker proves it** — the code compiles / runs and passes its tests in that language (runners as in `experiments/eval_languages.py`).
+- **Measure first.** Kaggle stage 14 gives an untrained baseline per language. A language gets training data only where the tests show a gap — Granite already knows many languages, and run 2 showed the adapter helps fix / improve but not writing code (MBPP 76 with it off).
+- **One shared adapter** that teaches V how to fix and improve code in every language, instead of one adapter per language (fewer trainings, no swapping on the laptop). A separate language adapter only if the shared one can't close a gap without hurting others.
+- **Where the data comes from:**
+
+| Task | Source | Why it's clean |
+|---|---|---|
+| Fix errors | Own break-and-fix generator, extended per language | Real errors from running; every row checked |
+| Write code | Checked Python examples + their tests translated to the language by an open model whose license allows training on its outputs; kept only when the translated tests pass (the MultiPL-T method) | Tests filter out bad translations |
+| Improve code | `bigcode/commitpackft` per-language splits (MIT) | Real commits; message filter + must still run |
+| Explain | `code_search_net` (Python, JS, Java, Go, PHP, Ruby) | Real functions + their docstrings |
+| **Testing only** | MultiPL-E (HumanEval / MBPP in ~18 languages), the React test set below | Never trained on (`decontaminate.py`) |
+
+- Crawling's new role: none in training. Web lookup and study notes feed V's memory; they reach training only through the owner's approval or as practice that passes its tests (Phase 14).
+
+**First new stack: React** (owner, 2026-09-27: "the next language stack that i want V to learn is React"). React code is JavaScript / TypeScript — `.jsx` / `.tsx` files already get JS / TS answers (`language_detector`). Plan:
+1. **Before the run (code):** a React test set — tasks with tests written before the run and never trained on (a component renders the right output, hooks, fix a bug in a component, improve one), run with node on Kaggle (React + a DOM stand-in installed with npm; the notebook has internet); a React runner for practice; Phase 14's practice + update pieces.
+2. **The React Kaggle run (owner starts it):** untrained React test (baseline) → **study session "React" for 6 hours** on one T4 while the other T4 practices React tasks she makes and checks by running → **she processes it and updates herself:** notes go to her memory (imported on the laptop) and seed more practice; practice that passes its tests + checked JS / React data train the shared adapter → React test + all Python tests (no drop allowed) → report. Rough time ~9-10 h (fits the 11 h stop), a third of the weekly 30 GPU hours.
+3. **Owner approves** → new adapter + notes on the laptop → **the owner tests V on React apps and code locally.**
+The 2-hour Python study session in today's run shows how studying works on Kaggle (notes per hour, whether DuckDuckGo answers from Kaggle) before 6 hours are spent on React.
+
+### Phase 14 — Self-evolution (planned 2026-09-27, owner's goal: "self evolving Ai")
+V improves herself in rounds. Nothing changes her weights without passing the tests and the owner's approval.
+
+| Level | What changes | Status |
+|---|---|---|
+| Memory | facts, study notes, web facts — instant, no training | Built (Phases 11, 13) |
+| Settings | she tries versions of her own knobs (RAG strength, busy lines, answer length) against the tests | Not built |
+| Brain (adapter) | she makes her own practice, trains, tests, keeps the new adapter only if better | Partly built |
+| Her own source code | never automatic — she can propose a change as a diff (Apply to file) and the owner applies it | Rule |
+
+**One round:**
+```
+Laptop (daily use): signals — Good answer, the owner's corrections, code that failed after Apply, study notes
+      ↓
+Kaggle round (owner starts it):
+  1. practice: V writes problems + tests, solves them, runs them → keeps only what passes
+  2. mix: practice + signals + fixed checked data (always part of the mix)
+  3. train a new adapter
+  4. frozen tests (MBPP, long files, fix / improve, languages, React)
+  5. no test lower → report → owner approves → the laptop swaps adapters
+     any test lower → thrown away, old adapter stays; weak spots → her next practice / study topics
+```
+**Guardrails:** frozen tests never trained on (`decontaminate.py`); promotion only with no test lower and the owner's OK; every promoted adapter kept with its report, going back = a file swap, the base brain never changes; fixed checked data in every round, self-made data capped (first guess: at most half) so she doesn't narrow down on her own outputs; a practice answer counts only when several of her independent solutions agree on her tests and a deliberately broken version fails them (tests that catch nothing don't count). Training stays on Kaggle / Colab (4 GB laptop GPU).
+
+**Built already:** memory, study sessions, web lookup, Good answer → dataset, break-and-fix generator, train + test pipeline, "replace the adapter only if it beats the old one". **Missing:** (1) practice generator (self-made problems + tests, run-checked), (2) failure capture in the panel ("Bad answer", "that didn't work", an error after Apply), (3) weak-spot tracking → next practice / study topics, (4) an "evolution round" stage in `gpu_pipeline.py` that compares with the current adapter, (5) adapter history + a rollback command. Needs Kaggle run 3's results first — they are the baseline every round must beat.
 
 ### Phase 10 — VS Code chat panel (in progress)
 Copilot-style chat panel inside VS Code with streaming answers (words appear as they are generated). Rules in `.github/CLAUDE.md`.
@@ -433,6 +479,10 @@ Options, all need measuring on this laptop first:
 | 2026-09-26 | **Phase 12 machine awareness**: free / busy / tight from live RAM, GPU and CPU; busy = less history, memories and answer length, lower priority, half the CPU threads; casual heads-ups in varied words, not every message; she sees the numbers in chat | Owner: she should know the hardware and its current use, "process the texts slowly without jamming everything"; when busy "do less and warn me… casual" |
 | 2026-09-26 | **RAG: both kinds** — project files (with the panel) and training examples (Kaggle-tested first) | Owner's choice |
 | 2026-09-26 | **Learning: web lookup only after asking** (yes / no in any wording), **study sessions** on a topic for a set time with saved progress that later sessions pick up, **learning from approved chats**, **topic training only when approved** | Owner's design; self-training without approval isn't safe (unchecked internet text can make her worse) and training needs the cloud GPU |
+| 2026-09-27 | **No crawlers for training data**: every language's data comes from checked sources (break-and-fix generator, test-checked translations, commitpackft, code_search_net), every code example run-checked | Owner: crawled data "isnt good and mostly dirty … it was a good starting point but now its not a viable option anymore" |
+| 2026-09-27 | **Multi-language: measure each language first (stage 14), one shared adapter for fix / improve** instead of one per language | Granite already knows many languages; run 2's adapter helped fix / improve, not writing code; fewer trainings, no swapping on the laptop |
+| 2026-09-27 | **Phase 14 self-evolution** planned: practice she checks by running → train → frozen tests → kept only if no test is lower and the owner approves; never edits her own code by herself | Owner's goal: "self evolving Ai" |
+| 2026-09-27 | **React is the next stack**: a Kaggle run with a 6-hour React study session, then she processes it and updates herself, then the owner tests her on React apps locally. Notes → memory; only practice that passes its tests (+ checked data) trains her | Owner: "give her 6 hours of gpu time to learn from the internet about react. then process and update herself"; the no-crawlers rule keeps web text out of her weights |
 | 2026-09-26 | SSD as extra GPU memory (colibri-style streaming) not used | Colibri streams only the small active part of huge mixture-of-experts models; our dense 3–4B brains read all their weights for every word, so SSD speed (~1.8 GB/s vs 128 GB/s GPU) would make answers take minutes. Windows already spills GPU → RAM → SSD, which is what made long questions take 13 min. Better: send V only the relevant parts (search), a leaner engine (llama.cpp), more RAM |
 
 ---
@@ -478,8 +528,16 @@ Options, all need measuring on this laptop first:
 
 ## 9. Open questions
 
-1. **Switch the brain from Phi-2?** — **Decided 2026-09-26: Granite** (section 7). Still open: start from the plain or the chat version (`granite-4.2-3b`: chat, tool calling, web-search agent training, 12 languages, optional "thinking" mode) — needs the same tests run on the chat version. Brain check (section 6, step 8): Qwen3-4B 74, Granite-4.1-3B 69, SmolLM3-3B 67 untrained vs our trained Phi-2 66. Long-question test (step 9): Granite 7/10, SmolLM3 5/10, Qwen3-4B 5/7 (RAM limit), Phi-2 1–2/10 (2,048-token limit). Qwen3-4B nearly exhausts the laptop's RAM. A switch means retraining on Colab with dataset v2 (LoRA target module names differ per model).
-2. **Order after Phase 11:** Phase 9, Phase 10 or speed work next?
+Answered by Kaggle run 3 (stages 11-15) and the laptop tests:
+
+1. **RAG over training examples on or off?** Stage 12 vs 13 side by side; switch on only if scores go up (section 5).
+2. **Which languages need training data?** Stage 14's untrained baseline — Phase 9 trains only where the tests show a gap.
+3. **Is studying good enough for the 6-hour React session?** From the 2-hour Python session: notes per hour on the T4, how good the notes are, whether DuckDuckGo answers from Kaggle (Wikipedia is the fallback).
+4. **Busy lines** (free / busy / tight) — from the `laptop=` levels seen in the laptop tests.
+
+Still open, no date: where speed work goes in the order (section 6, "Later — Speed work").
+
+Settled (kept for history): switch the brain from Phi-2 → **Granite chat version + its adapter for fix / improve only** (2026-09-26, section 7); order after Phase 11 → **12 → 10 → 13 → 9**, then **Phase 14 + React** (2026-09-26 / 2026-09-27, section 6).
 
 ---
 
