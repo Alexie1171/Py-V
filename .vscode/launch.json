@@ -1,0 +1,15 @@
+{
+  // F5: opens a second VS Code window with the V extension loaded (extension/).
+  // Start V's server first: uvicorn inference.api.main:app --port 8000
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run V extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}/extension"],
+      "outFiles": ["${workspaceFolder}/extension/out/**/*.js"],
+      "preLaunchTask": "compile V extension"
+    }
+  ]
+}

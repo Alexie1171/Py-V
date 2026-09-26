@@ -1,6 +1,8 @@
 import torch
 import re
+import threading
 from contextlib import nullcontext
+from transformers import StoppingCriteria, StoppingCriteriaList, TextIteratorStreamer
 from model.training.config_loader import CFG
 from inference.engine.prompt_builder import max_new_tokens, format_for_model
 from inference.engine.prompt_templates import TEMPLATES
@@ -80,6 +82,7 @@ def _strip_prompt_echo(text: str) -> str:
 def remove_code_if_not_allowed(text: str, mode: str) -> str:
     if mode not in ["chat", "explain"]:
         return text.strip()
+    original = text.strip()
 
     # Remove fenced code blocks
     text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
@@ -141,8 +144,9 @@ def remove_code_if_not_allowed(text: str, mode: str) -> str:
     if lines and lines[-1].rstrip().endswith(":"):
         result = "\n".join(lines[:-1]).strip()
 
-    # If barely anything survived, the output was entirely code
-    if len(result) < 20:
+    # If barely anything survived code removal, the output was entirely code.
+    # A short answer with nothing removed stays ("I'm V." — she answers only what is asked)
+    if len(result) < 20 and result != original:
         return ""
 
     return result
@@ -248,14 +252,36 @@ def _drop_unfinished(text: str) -> str:
     return text[:ends[-1].end()] if ends else text
 
 
-def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None, formatted=False):
+# One answer on the brain at a time: a second one at once would fill the 4 GB
+# laptop GPU (the API serves requests in parallel threads; the panel streams).
+BRAIN_LOCK = threading.Lock()
+
+
+class _StopWhenSet(StoppingCriteria):
+    """Stops the brain after its current word once the event is set (the Stop
+    button, or the user closed the panel)."""
+
+    def __init__(self, event: threading.Event):
+        self.event = event
+
+    def __call__(self, input_ids, scores, **kwargs):
+        return torch.full((input_ids.shape[0],), self.event.is_set(), dtype=torch.bool, device=input_ids.device)
+
+
+def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None, formatted=False,
+                    streamer=None, stop=None):
     if not formatted:
         prompt = format_for_model(prompt, model, tokenizer)
     inputs   = tokenizer(prompt, return_tensors="pt").to(model.device)
     settings = CFG.generation.for_mode(mode)
     limit    = max_tokens or max_new_tokens()
+    extra    = {}
+    if streamer is not None:
+        extra["streamer"] = streamer
+    if stop is not None:
+        extra["stopping_criteria"] = StoppingCriteriaList([_StopWhenSet(stop)])
 
-    with torch.inference_mode(), adapter_for_mode(model, mode):
+    with BRAIN_LOCK, torch.inference_mode(), adapter_for_mode(model, mode):
         output_ids = model.generate(
             **inputs,
             max_new_tokens       = limit,
@@ -267,6 +293,7 @@ def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None
             tokenizer            = tokenizer,
             eos_token_id         = tokenizer.eos_token_id,
             pad_token_id         = tokenizer.eos_token_id,
+            **extra,
         )
 
     new_ids = output_ids[0][inputs["input_ids"].shape[-1]:]
@@ -302,6 +329,62 @@ def generate_from_prompt(
         text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, max(temperature, 0.5), mode, formatted), mode)
 
     return text.strip()
+
+
+def stream_from_prompt(
+    model,
+    tokenizer,
+    prompt:      str,
+    mode:        str   = None,
+    max_tokens:  int   = None,
+    temperature: float = None,
+    formatted:   bool  = False,
+    stop:        threading.Event = None,
+):
+    """
+    generate_from_prompt, streamed (the chat panel): yields ("piece", text) as
+    the brain writes, then ("answer", text) — the cleaned answer, the same one
+    generate_from_prompt gives. Raw pieces can hold bits the cleanup removes
+    (a stop word, code in chat), so the caller replaces the streamed text with
+    the answer. stop: set it and the brain stops after its current word; closing
+    this generator early (the user left) stops it too.
+    """
+    if temperature is None:
+        temperature = CFG.generation.for_mode(mode).temperature
+    stop     = stop or threading.Event()
+    streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
+    result   = {}
+
+    def work():
+        try:
+            result["text"] = _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode,
+                                             formatted, streamer, stop)
+        except Exception as e:   # handed to the caller below; ends the stream so it can't hang
+            result["error"] = e
+            streamer.end()
+
+    thread   = threading.Thread(target=work, daemon=True)
+    finished = False
+    thread.start()
+    try:
+        for piece in streamer:
+            if mode in ["chat", "explain"]:
+                piece = _strip_emojis(piece)
+            if piece:
+                yield "piece", piece
+        finished = True
+    finally:
+        if not finished:
+            stop.set()
+        thread.join()
+
+    if "error" in result:
+        raise result["error"]
+    text = _clean(result["text"], mode)
+    if not text.strip() and mode in ["chat", "explain"] and not stop.is_set():
+        text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, max(temperature, 0.5), mode,
+                                      formatted, stop=stop), mode)
+    yield "answer", text.strip()
 
 
 def _clean(text: str, mode: str) -> str:

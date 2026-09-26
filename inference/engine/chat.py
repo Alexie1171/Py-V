@@ -1,12 +1,15 @@
 from inference.engine.controller import Controller, IntentResult
 from inference.engine.context_manager import ContextManager
+from inference.engine.context_schema import SessionContext
 from inference.engine.intent_classifier import classify_with_brain
 from inference.engine.prompt_builder import build_prompt, build_chat_prompt, uses_chat_format, format_machine
 from inference.engine.model_loader import load_lora_model
-from inference.engine.generator import generate_from_prompt
+from inference.engine.generator import generate_from_prompt, stream_from_prompt
 from model.training.config_loader import CFG
 
 import logging
+import threading
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +135,31 @@ class ChatEngine:
         return IntentResult(mode=picked, confidence=intent.confidence, flags=intent.flags + [f"brain_{picked}"])
 
     def chat(self, session_id: str, user_input: str):
+        turn     = self._prepare(session_id, user_input)
+        response = generate_from_prompt(self.model, self.tokenizer, turn.prompt, **turn.generation)
+        return self._finish(turn, response)
 
+    def chat_stream(self, session_id: str, user_input: str, stop: threading.Event = None):
+        """
+        chat(), streamed for the chat panel: yields ("start", {mode, confidence,
+        load}) once the mode is known, ("piece", {"text"}) as V writes, then
+        ("done", the chat() result) with the cleaned answer, which replaces the
+        streamed text. stop: set it (Stop button, the user left) and she stops
+        after her current word; what she wrote so far is kept.
+        """
+        turn = self._prepare(session_id, user_input)
+        yield "start", {"mode": turn.intent.mode, "confidence": turn.intent.confidence,
+                        "load": turn.snap.level if turn.snap else None}
+        response = ""
+        for kind, text in stream_from_prompt(self.model, self.tokenizer, turn.prompt, stop=stop, **turn.generation):
+            if kind == "piece":
+                yield "piece", {"text": text}
+            else:
+                response = text
+        yield "done", self._finish(turn, response)
+
+    def _prepare(self, session_id: str, user_input: str) -> "_Turn":
+        """Everything before the brain writes: mode, machine check, memory, prompt."""
         context = self.context_manager.load(session_id)
 
         intent = self._detect_mode(user_input)
@@ -164,26 +191,39 @@ class ChatEngine:
                 memories         = memories,
             )
 
-        response = generate_from_prompt(
-            model     = self.model,
-            tokenizer = self.tokenizer,
-            prompt    = prompt,
-            mode       = intent.mode,
-            formatted  = formatted,
-            max_tokens = work.prose_max_tokens if work and intent.mode in ("chat", "explain") else None,
-        )
+        generation = {
+            "mode":       intent.mode,
+            "formatted":  formatted,
+            "max_tokens": work.prose_max_tokens if work and intent.mode in ("chat", "explain") else None,
+        }
+        return _Turn(user_input, context, intent, snap, retrieved_chunks, memories, prompt, generation)
 
-        # Saves the turn to memory (and tags facts from the user's message)
-        self.context_manager.append_history(context, user_input, response, intent.mode)
-        self.context_manager.update(context, mode=intent.mode)
+    def _finish(self, turn: "_Turn", response: str) -> dict:
+        """After the brain wrote: save the turn to memory (and tag facts from the
+        user's message), return the result."""
+        self.context_manager.append_history(turn.context, turn.user_input, response, turn.intent.mode)
+        self.context_manager.update(turn.context, mode=turn.intent.mode)
 
         return {
             "response":      response,
-            "mode":          intent.mode,
-            "confidence":    intent.confidence,
-            "flags":         intent.flags,
-            "rag_chunks":    len(retrieved_chunks),   # useful for debugging
-            "memories":      len(memories.get("facts", [])) + len(memories.get("code", [])),
-            "load":          snap.level if snap else None,          # free / busy / tight
-            "note":          self.machine.heads_up(snap) if snap else None,   # V's casual heads-up, if any
+            "mode":          turn.intent.mode,
+            "confidence":    turn.intent.confidence,
+            "flags":         turn.intent.flags,
+            "rag_chunks":    len(turn.retrieved_chunks),   # useful for debugging
+            "memories":      len(turn.memories.get("facts", [])) + len(turn.memories.get("code", [])),
+            "load":          turn.snap.level if turn.snap else None,               # free / busy / tight
+            "note":          self.machine.heads_up(turn.snap) if turn.snap else None,   # V's casual heads-up, if any
         }
+
+
+@dataclass
+class _Turn:
+    """One message on its way through ChatEngine: what _prepare() worked out."""
+    user_input:       str
+    context:          SessionContext
+    intent:           IntentResult
+    snap:             object          # machine.Snapshot or None
+    retrieved_chunks: list
+    memories:         dict
+    prompt:           str
+    generation:       dict            # mode / formatted / max_tokens for the generator

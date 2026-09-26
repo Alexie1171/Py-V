@@ -4,7 +4,12 @@ FastAPI route definitions. Each endpoint delegates immediately to the
 inference engine — no model logic lives here.
 """
 
+import json
+import threading
+
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from inference.api.schemas import (
     GenerateRequest,
@@ -84,6 +89,35 @@ def chat(request: ChatRequest):
         load        = result.get("load"),
         note        = result.get("note"),
     )
+
+
+@router.post("/chat/stream", tags=["inference"])
+async def chat_stream(request: ChatRequest):
+    """
+    /chat for the chat panel, as server-sent events: `start` (mode, confidence,
+    load) → `piece` (text as V writes it) → `done` (same fields as /chat — its
+    `response` is the cleaned answer and replaces the pieces), or `error`.
+    When the client disconnects (Stop button, panel closed) V stops writing.
+    """
+    from inference.api.main import get_chat_engine
+
+    stop   = threading.Event()
+    events = get_chat_engine().chat_stream(request.session_id, request.message, stop)
+
+    async def sse():
+        try:
+            while True:
+                item = await run_in_threadpool(next, events, None)
+                if item is None:
+                    break
+                kind, data = item
+                yield f"event: {kind}\ndata: {json.dumps(data)}\n\n"
+        except Exception as e:
+            yield f"event: error\ndata: {json.dumps({'detail': f'Chat failed: {e}'})}\n\n"
+        finally:
+            stop.set()   # the client left early: the brain stops after its current word
+
+    return StreamingResponse(sse(), media_type="text/event-stream")
 
 
 @router.get("/memory", response_model=MemoryListResponse, tags=["memory"])

@@ -6,11 +6,14 @@
  *   pyv.generate          — generate from selected text or comment (Ctrl+Shift+G)
  *   pyv.generateFromInput — generate from a typed prompt (Ctrl+Shift+P)
  *   pyv.checkServer       — ping the inference server
+ *   pyv.openChat          — open the chat panel (sidebar, Phase 10 — panel.ts)
  */
 
 import * as vscode from "vscode";
 import { generateCode, checkHealth } from "./api";
 import { insertCode, extractInstruction } from "./provider";
+import { ChatViewProvider } from "./panel";
+import { ServerManager } from "./server";
 
 // ─── Activation ───────────────────────────────────────────────────────────────
 
@@ -96,7 +99,24 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   );
 
-  context.subscriptions.push(generateCmd, generateFromInputCmd, checkServerCmd);
+  // ── Chat panel (sidebar) ─────────────────────────────────────────────────
+
+  // Her server follows the panel (server.ts); disposed with the extension, so
+  // closing VS Code stops a server the extension started
+  const server = new ServerManager();
+
+  const chatView = vscode.window.registerWebviewViewProvider(
+    ChatViewProvider.viewId,
+    new ChatViewProvider(context.extensionUri, server),
+    // Keep the page alive while hidden, so an answer still being written isn't lost
+    { webviewOptions: { retainContextWhenHidden: true } }
+  );
+
+  const openChatCmd = vscode.commands.registerCommand("pyv.openChat", () =>
+    vscode.commands.executeCommand(`${ChatViewProvider.viewId}.focus`)
+  );
+
+  context.subscriptions.push(generateCmd, generateFromInputCmd, checkServerCmd, chatView, openChatCmd, server);
 }
 
 // ─── Deactivation ─────────────────────────────────────────────────────────────

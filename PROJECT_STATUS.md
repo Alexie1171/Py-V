@@ -36,7 +36,7 @@ Work paused on **2026-05-04** and resumed on **2026-09-25**.
 | 7 | Chat system (intent routing + session context) | Done |
 | 8 | RAG | Done, but **turned off** since 2026-09-25 — see section 5 |
 | 9 | Multi-language adapters (JS/TS etc.) | Planned — nothing started |
-| 10 | VS Code chat panel | Planned — nothing started |
+| 10 | VS Code chat panel | **In progress** — 10.1 built 2026-09-26: chat in the VS Code sidebar with live (streamed) answers, Stop, mode badge, heads-up notes, Copy / Insert-at-cursor on code, New chat. Next: 10.2 file reading → 10.3 file updating → 10.4 memory view → 10.5 project-file search |
 | 11 | Long-term memory | **Built 2026-09-26** (`memory/`, on by default; smoke test passes) — tried with the trained Granite chat on the laptop: an unrelated fact derailed an answer, fixed (recall needs real relevance) |
 | 12 | Machine awareness | **Built 2026-09-26** (`inference/engine/machine.py`, on by default) — V knows the laptop and how busy it is, takes on less when busy, says so casually; busy lines are first guesses |
 | 13 | Learning (web lookup after asking, learning from chats, study sessions) | Planned 2026-09-26 — design in section 6 |
@@ -190,14 +190,17 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 | **Long questions use far more GPU memory than their length** | 2026-09-26 | Kaggle run 1: 3,000-token question peaked at 6.2 GB, 6,000 tokens at 14.4 GB → out of memory on the 15 GB T4 for every version (laptop 4 GB: the same wall at ~5,000). Growth faster than the length points at the attention method used | Later: check which attention method the brain loads with and whether a memory-saving one fits — decides how long a file V can read on the laptop |
 | **Machine busy lines are first guesses** | 2026-09-26 | Set without the brain running: RAM 2.5 / 1.0 GB free, GPU 0.6 / 0.3 GB free for V, CPU 85 / 97 % (busy / tight) | Tune in `machine:` (config) after the owner's first chats — `test_chat.py` shows `laptop=` per answer |
 | **Gentle pace outside Windows** | 2026-09-26 | Lowering process priority can't be undone without admin rights on Linux / macOS, so there only the CPU threads are halved | If V runs on Linux / macOS: a separate worker process at low priority |
-| **Phase 13 learning** (web lookup after asking, study sessions, learning from chats, topic training) | 2026-09-26 | Machine awareness and the chat panel come first (owner's order) | After Phase 10 — design in section 6 |
+| **Phase 13 learning** (web lookup after asking, study sessions, learning from chats, topic training) | 2026-09-26 | Machine awareness and the chat panel come first (owner's order) | After Phase 10 — design in section 6; the first study session ("learn about Python code for 2 hours") runs in the big Kaggle run |
+| **Kaggle test of RAG over training examples** | 2026-09-26 | Owner chose the chat panel first; all Kaggle work goes into one big run after the code through Phase 13 | In the big Kaggle run (section 6) — the index rebuild, cut-off and CPU embedder get built before it |
 | **Kaggle P100 GPU** | 2026-09-26 | Kaggle's PyTorch dropped it (since 2026-04: "no kernel image is available") | Only if Kaggle's PyTorch supports it again — use GPU T4 x2 |
 
 ---
 
 ## 6. Where we are going
 
-Order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel (+ file reading, file updating, memory view, project-file search) and the Kaggle RAG test → Phase 13 learning → Phase 9 multi-language. Speed work not placed yet.
+Order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel (+ file reading, file updating, memory view, project-file search) → Phase 13 learning → Phase 9 multi-language. Speed work not placed yet.
+
+**One big Kaggle run after the code (owner, 2026-09-26):** all code through Phase 13 first — the panel steps, RAG over training examples, the learning features — then a single large Kaggle run that gives the most results at once: RAG on vs off (MBPP, fix / improve), the chat test with the new chat path, and V's first study session: **learn about Python code for 2 hours**. Each new piece adds its pipeline stage as it is built.
 
 ### Phase 12 — Machine awareness (**built 2026-09-26**)
 V knows the computer (parts read once, load read before every answer: free RAM, free GPU memory, CPU). Free / busy / tight by config lines (first guesses — tune after the first try). Busy: shorter chat history, fewer memories, shorter chat/explain answers (always ending on a full sentence), lower priority and half the CPU threads so other programs stay smooth, and a casual heads-up in different words, not every message (owner: "warnings must not be rigid… casual"). In chat she sees the numbers and can talk about the laptop. Rules: `.github/CLAUDE.md` → `inference/engine/machine.py`.
@@ -370,6 +373,10 @@ Options, all need measuring on this laptop first:
 | 2026-09-26 | **Mode detection: word rules; the brain only for unclear messages — then switched off** | Owner chose "word rules + brain for unclear ones"; the laptop check showed the brain adds nothing (39/41 either way) at 3.4 s each, so it is off by the owner's own plan (section 5). Rules rebuilt: 40/41 on the 41 test messages |
 | 2026-09-26 | Memory recalls only relevant items (half the question's meaningful words, or close meaning); error facts never store code | Laptop check: an unrelated fact made the brain explain the memory instead of the question |
 | 2026-09-26 | **Chat mode is a real conversation** on the chat brain: V's persona as the system message, the message as written, the current chat's last 3 exchanges (code left out), temperature 0.7 without repeat penalties; questions about V go to chat; `test_chat.py` starts a new chat each run | Owner's first try: V didn't know its name and felt robotic. Owner's choices: last 3 exchanges, friendly and casual, "Ador "Alexie" Haq AKA Alexie made me". Chat mode only — explain and the code modes keep their tested prompts (section 5) |
+| 2026-09-26 | **Chat panel 10.1**: sidebar view with streamed answers (`/chat/stream`), Stop, badges, heads-up notes, Copy / Insert on code, New chat; built step by step (owner) | Owner: chat panel first, "on my own, step by step"; each step tried before the next |
+| 2026-09-26 | **V's server follows the chat panel**: opening the panel starts it, 2 minutes closed stops it (frees ~3 GB RAM + the GPU), closing VS Code stops it; a server started in a terminal is never stopped | Owner: "everytime i click the left pannel V it should run the server and when i close it it should close the server"; owner chose a 2-minute wait so quick trips to other views don't reload the brain (~1 min) |
+| 2026-09-26 | **V's extension is installed into the normal VS Code** (`npm run install-local` + Reload Window), not run with F5 | F5's second window closed at once (the Nightly JavaScript debugger couldn't connect); installing needs no second window (less RAM) and no debugger — owner's choice |
+| 2026-09-26 | **All code through Phase 13 first, then one big Kaggle run** (RAG test, chat test, V studies Python code for 2 hours) | Owner: "we will update as much as we can on the code side so kaggle run gives us the most outputs" |
 | 2026-09-26 | **V is a girl (she/her)** — in her persona | Owner: "yes V is a girl. dont ask me why" |
 | 2026-09-26 | **V answers only what is asked; no emojis**; her maker, gender and "AI language model on Granite" only when asked — "who / what are you" = V, an AI assistant, and what she can do | Owner's second try: she volunteered her maker and gender and used an emoji |
 | 2026-09-26 | **Build order: machine awareness → chat panel (file reading, file updating, memory view, project-file search) + Kaggle RAG test → learning → multi-language** | Owner's plan; machine awareness first because every later feature adds load on the laptop |

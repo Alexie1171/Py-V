@@ -35,7 +35,7 @@ It ensures:
 | Phase 7 | Chat system (context-aware assistant + controller) | Complete |
 | Phase 8 | RAG (Retrieval Augmented Generation) | Complete — turned off since 2026-09-25 (see `PROJECT_STATUS.md`) |
 | Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
-| Phase 10 | VS Code chat panel (full UI, no terminal) | Planned |
+| Phase 10 | VS Code chat panel (full UI, no terminal) | In progress — 10.1 chat in the sidebar built 2026-09-26 (streaming, stop, code buttons, new chat) |
 | Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Built 2026-09-26 (`memory/`, on by default) — smoke test passes; tried with the trained Granite chat on the laptop (2026-09-26): unrelated facts derailed an answer → recall now needs real relevance |
 | Phase 12 | Machine awareness (V knows the computer and how busy it is, takes on less when busy) | Built 2026-09-26 (`inference/engine/machine.py`, config `machine:`) — busy lines are first guesses, to tune after the owner's first try |
 | Phase 13 | Learning (web lookup after asking, learning from chats, study sessions on a topic) | Planned 2026-09-26 — design in `PROJECT_STATUS.md` section 6 |
@@ -186,9 +186,17 @@ Rules:
 - Retry logic: a second attempt at temperature ≥ 0.5 when a chat/explain answer comes out empty
 - No emojis in chat/explain answers (`_strip_emojis()`, owner's rule — the persona says so too, this catches the rest); code answers are left alone. All answer cleanup runs in `_clean()`
 - A chat/explain answer cut off by its token limit ends after its last full sentence (`_drop_unfinished()`), so a shorter limit on a busy machine never ends mid-word
+- `stream_from_prompt(...)` (Phase 10.1) — `generate_from_prompt` streamed: yields `("piece", text)` while the brain writes (the generation runs in a thread with a `TextIteratorStreamer`), then `("answer", cleaned text)`. `stop` event / closing the generator stops the brain after its current word (`_StopWhenSet` stopping criterion); an error in the brain reaches the caller instead of hanging the stream
+- `BRAIN_LOCK` — one generation on the brain at a time (API threads, streaming)
+- `remove_code_if_not_allowed()` drops an answer under 20 characters only when code was removed from it — a short answer like "I'm V." stays
 - `generate_from_prompt(..., temperature=None, formatted=False)`: temperature None = the mode's config `generation.<mode>.temperature` (default 0.2, chat 0.7); tests pass 0.0. `formatted=True` = the prompt is already in the brain's chat format (`build_chat_prompt`), not re-wrapped
 - `adapter_for_mode(model, mode)` — the context every generation runs in: the LoRA adapter switched off (`model.disable_adapter()`, no reload) when the mode is not in the adapter's `use_in_modes`. Checked on the laptop (2026-09-26): chat / generate / explain answered with it off, debug / refactor with it on
 - Repeat settings come from `CFG.generation.for_mode(mode)` (config `generation:` section, `default` for unlisted modes) — never hard-code them here. Code modes (generate/debug/refactor): `repetition_penalty` 1.0 and `no_repeat_ngram_size` 0 — code must copy names and the user's code from the prompt (1.1 renamed `find_Volume` → `find_volume`, 13 of 49 MBPP failures). Explain: 1.1 and 4, against loops. Chat (2026-09-26): 1.0 and 0, temperature 0.7 — the penalties also punished every word of the persona and the earlier turns in the prompt; turn them back on if the chat brain starts repeating itself
+
+---
+
+### `inference/engine/chat.py`
+- `ChatEngine.chat()` = `_prepare()` (mode, machine check, memory, prompt → `_Turn`) → `generate_from_prompt` → `_finish()` (save the turn, result dict); `chat_stream()` (Phase 10.1) = the same steps with `stream_from_prompt`, yielding `start` / `piece` / `done` for `/chat/stream`
 
 ---
 
@@ -445,11 +453,15 @@ Rules:
 - `src/extension.ts` — command registration, status bar
 - `src/api.ts` — HTTP client for the FastAPI server
 - `src/provider.ts` — editor insertion and instruction extraction
-- `src/panel.ts` — (Phase 10) WebviewPanel lifecycle and VS Code ↔ webview bridge
-- `src/chat_view.ts` — (Phase 10) chat UI logic inside the webview
-- `media/chat.css` — (Phase 10) panel styling
-- `media/chat.js` — (Phase 10) webview-side event handlers and VS Code API bridge
-- Communicates with backend via `POST /api/v1/generate` and `POST /api/v1/chat`
+- Shortcuts in Python files: Ctrl+Shift+G = generate from selection / comment; Ctrl+Alt+G = generate from a typed prompt (was Ctrl+Shift+P, which hid VS Code's Command Palette once the extension was installed in the normal window)
+- `src/panel.ts` — (Phase 10) `ChatViewProvider`: the sidebar chat view (`pyv.chatView`, a `WebviewView` in V's own activity-bar container) — creates the page, passes messages between the page and `api.ts`, does the editor work the page asks for (insert / copy code)
+- `src/chat_view.ts` — (Phase 10) the page's HTML skeleton and security policy (nonce, no inline styles or scripts), linking `media/chat.css` and `media/chat.js`
+- `media/chat.js` — (Phase 10) everything that runs inside the page: rendering messages (text from V always via `textContent`, never HTML), input, scrolling, the live answer while V writes, page state (`vscode.setState`: messages + session id survive hiding the panel and reloads)
+- `media/chat.css` — (Phase 10) panel styling, colors from the VS Code theme
+- `media/v.svg` — V's activity-bar icon
+- `src/server.ts` — (Phase 10) `ServerManager`: V's server follows the chat panel (owner, 2026-09-26). Panel opens → starts `python -m uvicorn inference.api.main:app --host 127.0.0.1 --port <from pyv.serverUrl>` in the Py-V folder (dot: yellow while the brain loads, ~1 min; green when `/health` answers). Panel closed for `pyv.stopServerAfterSeconds` (default 120 — owner chose 2 minutes so quick trips to Explorer don't reload the brain) → stops it (`taskkill /T /F` on Windows), freeing RAM and the GPU; closing VS Code stops it too. A server started elsewhere (a terminal) is used and never stopped. Starts only from a trusted workspace folder with `inference/api/main.py` or `pyv.projectPath`. Settings: `pyv.manageServer`, `pyv.stopServerAfterSeconds`, `pyv.pythonPath`, `pyv.projectPath`. Server output: Output → "V Server". The chat view keeps its page alive while hidden (`retainContextWhenHidden`), so an answer being written isn't lost
+- Communicates with backend via `POST /api/v1/generate`, `POST /api/v1/chat` and `POST /api/v1/chat/stream` (the panel — `chatStream()` in `api.ts` reads the server-sent events with `fetch`: with Node's `http` module the event handling ran inside the HTTP parser and failed in VS Code's extension host with "Parse Error: JS Exception"; a server that can't be reached shows as offline — "fetch failed, ECONNREFUSED" — with the start command, and the panel rechecks every 5 s while offline)
+- Run it (owner's choice, 2026-09-26): **installed into the normal VS Code window** — `cd extension && npm run install-local` (compiles, packages `v.vsix` with `@vscode/vsce`, installs it), then "Developer: Reload Window". No second window (less RAM), no debugger. The package holds only `out/`, `media/`, `package.json`, README (`.vscodeignore`; the code needs no npm packages at run time). F5 ("Run V extension", `.vscode/launch.json`) is kept but failed on this laptop: the "JavaScript Debugger (Nightly)" extension kept connecting to `::1:<port>` (ECONNREFUSED) and VS Code closed the new window
 - Handles ECONNREFUSED and timeout errors gracefully
 
 ---
@@ -485,23 +497,27 @@ Phase 9 adds per-language LoRA adapters. All rules below apply when implementing
 
 ---
 
-## Phase 10 Rules — VS Code Chat Panel (Planned)
+## Phase 10 Rules — VS Code Chat Panel (in progress — 10.1 built 2026-09-26)
 
 Phase 10 replaces terminal interaction with a Copilot-style chat panel inside VS Code. All rules below apply when implementing Phase 10.
 
-- The chat panel is a VS Code `WebviewPanel` registered as a sidebar view
-- `extension/src/panel.ts` owns the WebviewPanel lifecycle — creation, disposal, message passing
-- `extension/src/chat_view.ts` owns the chat UI logic — rendering messages, handling input, scrolling
+Steps (owner: built one by one, each tried before the next): **10.1 chat in the sidebar (built)** → 10.2 file reading → 10.3 file updating → 10.4 memory view → 10.5 search over the user's project files.
+
+- The chat panel is a sidebar `WebviewView` (`pyv.chatView`) in V's own activity-bar container — a view, not an editor-tab `WebviewPanel`
+- `extension/src/panel.ts` owns the view's lifecycle — creation, disposal, message passing
+- `extension/src/chat_view.ts` owns the page's HTML skeleton; the chat UI logic — rendering messages, handling input, scrolling — runs inside the page in `extension/media/chat.js` (the page can't load compiled TypeScript modules without a bundler)
 - `extension/media/chat.css` owns all panel styling — no inline styles in TypeScript or HTML
 - `extension/media/chat.js` owns webview-side event handling and the VS Code API bridge
-- The panel communicates with the FastAPI server via `POST /api/v1/chat` — same endpoint as terminal chat
-- Session ID is generated once per panel instance and reused for the conversation lifetime
-- Mode badge and `rag_chunks` count must be displayed on each response
-- Active file context (language, file name, selected text) must be automatically injected into generate/debug prompts
-- A streaming endpoint `POST /api/v1/chat/stream` (SSE) is required for progressive token display
-- The streaming endpoint lives in `inference/api/routes.py` — no new files for routes
-- Copy-to-editor button must be present on all code responses
-- Clear session button must reset both the panel UI and the server-side session file
+- The panel talks to the server through `POST /api/v1/chat/stream` — the same chat engine as `/chat` and the terminal chat
+- Session ID is generated once per panel and reused for the conversation; the page keeps it (with its messages) across hiding and reloads
+- Every answer shows a mode badge (write code / fix / improve / explain / chat), the `rag_chunks` count, the memory count, the laptop load when not free, and V's heads-up note
+- Active file context (language, file name, selected text) must be automatically injected into generate/debug prompts (10.2)
+- The streaming endpoint `POST /api/v1/chat/stream` (SSE: `start` → `piece`… → `done` / `error`) lives in `inference/api/routes.py` — no new files for routes. `done` carries the cleaned answer, which replaces the streamed pieces (they can hold a stop word or code the cleanup removes)
+- Stop button: closing the connection makes the server stop the brain after its current word (`generator.stream_from_prompt`, stop event); a stopped answer isn't saved to memory
+- Every code block has Copy and "Insert at cursor" buttons (copy-to-editor); in the code modes, code-looking paragraphs of a bare-code answer become code blocks
+- "New chat" starts a new session (the panel clears; long-term memory keeps the old chat's facts). Replaces the planned "clear session file" button — sessions live in memory's SQLite since Phase 11
+- One answer on the brain at a time (`generator.BRAIN_LOCK`) — a second one at once would fill the 4 GB GPU
+- The server follows the panel (`src/server.ts`): opening it starts the server, 2 minutes closed stops it; the page shows "waking up" while the brain loads, a Start V button when it stopped, and doesn't send before V is ready
 - The existing `pyv.generate` and `pyv.generateFromInput` commands remain unchanged
 - The panel is activated by a new command: `pyv.openChat`
 - No Python logic in any extension file — all backend calls go through `api.ts`
@@ -627,7 +643,7 @@ Scraping → Cleaning → Deduplication → Formatting → Dataset → RAG Index
 - FastAPI app entry point: `inference/api/main.py`
 - Run with: `uvicorn inference.api.main:app --host 0.0.0.0 --port 8000`
 - Routes: `GET /api/v1/health`, `POST /api/v1/generate`, `POST /api/v1/chat`
-- Phase 10 adds: `POST /api/v1/chat/stream` (SSE streaming)
+- `POST /api/v1/chat/stream` (SSE streaming, Phase 10.1): `start` / `piece` / `done` / `error` events; the client leaving stops the brain
 - `/chat` replies carry `load` (free / busy / tight) and `note` (V's casual heads-up about the computer, or null) — Phase 12
 - Model loads once at startup via lifespan — never per request
 - LoRA adapter applied on top of base model via `load_lora_model()` before serving
@@ -729,7 +745,8 @@ uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 
 # VS Code extension
 cd extension && npm install && npm run compile
-# Press F5 in VS Code to launch dev instance
+# Install / update V's extension in this VS Code (then "Developer: Reload Window"); start the server first
+cd extension && npm run install-local
 ```
 
 ---

@@ -1,7 +1,7 @@
 {
   "name": "py-v",
-  "displayName": "PY-V — Python AI Assistant",
-  "description": "Local AI-powered Python code generation using your fine-tuned Phi-2 model.",
+  "displayName": "V — local coding assistant",
+  "description": "Chat with V, your local AI assistant (IBM Granite + LoRA), inside VS Code. Needs the Py-V server running.",
   "version": "0.1.0",
   "publisher": "Alexie1171",
   "engines": {
@@ -20,7 +20,8 @@
     "local"
   ],
   "activationEvents": [
-    "onLanguage:python"
+    "onLanguage:python",
+    "onView:pyv.chatView"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -36,6 +37,10 @@
       {
         "command": "pyv.checkServer",
         "title": "PY-V: Check Server Status"
+      },
+      {
+        "command": "pyv.openChat",
+        "title": "V: Open Chat"
       }
     ],
     "keybindings": [
@@ -47,8 +52,8 @@
       },
       {
         "command": "pyv.generateFromInput",
-        "key": "ctrl+shift+p",
-        "mac": "cmd+shift+p",
+        "key": "ctrl+alt+g",
+        "mac": "cmd+alt+g",
         "when": "editorTextFocus && editorLangId == python"
       }
     ],
@@ -73,15 +78,55 @@
           "minimum": 0.0,
           "maximum": 1.0,
           "description": "Sampling temperature. Lower = more deterministic."
+        },
+        "pyv.manageServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Start V's server when the V panel opens, and stop it after the panel has been closed for a while (pyv.stopServerAfterSeconds). A server you started yourself is never stopped."
+        },
+        "pyv.stopServerAfterSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 0,
+          "description": "How long the V panel must stay closed before V's server stops (frees RAM and the GPU). 0 = right away."
+        },
+        "pyv.pythonPath": {
+          "type": "string",
+          "default": "python",
+          "description": "Python that runs V's server (python -m uvicorn inference.api.main:app)."
+        },
+        "pyv.projectPath": {
+          "type": "string",
+          "default": "",
+          "description": "The Py-V folder (the one with inference/api/main.py). Empty = the open workspace folder that has it."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "pyv",
+          "title": "V",
+          "icon": "media/v.svg"
+        }
+      ]
+    },
+    "views": {
+      "pyv": [
+        {
+          "type": "webview",
+          "id": "pyv.chatView",
+          "name": "Chat"
+        }
+      ]
     }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "lint": "eslint src --ext ts"
+    "lint": "eslint src --ext ts",
+    "install-local": "npx --yes @vscode/vsce package --allow-missing-repository --skip-license --out v.vsix && code --install-extension v.vsix --force"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
