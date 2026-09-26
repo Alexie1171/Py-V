@@ -210,7 +210,8 @@ def run(model, tokenizer, tag: str, args):
                   f"{row['seconds']:.0f}s", flush=True)
 
     summary = {"tag": tag, "base_model": CFG.model.name, "adapter": None if args.base else args.adapter,
-               "prompt_format": model.v_prompt_format}
+               "prompt_format": model.v_prompt_format,
+               "split_rules": getattr(model, "v_split_rules", None)}
     for kind in ("fix", "improve"):
         rows = [r for r in results if r["kind"] == kind]
         summary[kind] = {"passed": sum(r["passed"] for r in rows), "questions": len(rows),

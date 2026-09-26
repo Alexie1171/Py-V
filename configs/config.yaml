@@ -1,7 +1,7 @@
 model:
   # V's brain. First brain upgrade 2026-09-26: Phi-2 → IBM Granite 3B (see
   # PROJECT_STATUS.md). Plain version for now; the chat version
-  # (ibm-granite/granite-4.2-3b, same layers) is being tested (Colab Job H).
+  # (ibm-granite/granite-4.2-3b, same layers) is being tested (GPU pipeline).
   name: "ibm-granite/granite-4.1-3b-base"
   max_tokens: 512
   # How prompts reach the brain: "template" = V's "### Instruction / ### Answer"
@@ -9,6 +9,12 @@ model:
   # thinking off (chat versions, e.g. granite-4.2-3b). A trained adapter's own
   # setting (v_adapter.json) wins over this — the format it was trained with.
   prompt_format: "template"
+  # Whose tokenizer.json gives the text-splitting rules (model_loader.load_tokenizer).
+  # null = the brain's own file. Set it to a brain with the same merges when the
+  # brain's own file carries a wrong rule (granite-4.2-3b's has GPT-2's rule;
+  # "ibm-granite/granite-4.1-3b-base" has the Granite family's). A trained
+  # adapter's own setting (v_adapter.json) wins over this.
+  split_rules_from: null
 
 generation:
   # Answer settings per mode (inference/engine/generator.py); `default` covers

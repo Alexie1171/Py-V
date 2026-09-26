@@ -22,24 +22,33 @@ def add_model_args(parser):
                         help="base model to load (default: config model.name)")
     parser.add_argument("--native-chat", action="store_true",
                         help="wrap prompts in the model's own chat format (chat-tuned brains), thinking off")
+    parser.add_argument("--split-rules-from", default=None,
+                        help="base model: take the text-splitting rules from this brain's tokenizer.json "
+                             "(default: config model.split_rules_from, else the brain's own)")
 
 
 def result_tag(args) -> str:
-    """"base_<brain>" or "<brain>_<adapter folder>", + "_native" for the chat format.
+    """"base_<brain>" or "<brain>_<adapter folder>", + "_native" for the chat format,
+    + "_split-<brain>" when a base brain gets another brain's splitting rules.
     The brain is always in the name, so results of different brains never mix
     (files from before 2026-09-26 are named "base", "lora", "lora_v2", "base_<model>" — all Phi-2 unless named)."""
     brain = args.model.split("/")[-1]
     tag   = f"base_{brain}" if args.base else f"{brain}_{Path(args.adapter).name}"
-    return tag + ("_native" if args.native_chat else "")
+    split = getattr(args, "split_rules_from", None)
+    return (tag + ("_native" if args.native_chat else "")
+            + (f"_split-{split.split('/')[-1]}" if args.base and split and split != args.model else ""))
 
 
 def load_for_eval(args):
     """Load the chosen model. Returns (model, tokenizer, tag).
     The prompt format travels with the model (model.v_prompt_format: config, or
     the adapter's v_adapter.json; --native-chat forces the brain's own chat
-    format) and the generator applies it — the scripts pass template prompts."""
+    format) and the generator applies it — the scripts pass template prompts.
+    Splitting rules: --split-rules-from for a base brain; an adapter uses its own."""
     tag            = result_tag(args)
     CFG.model.name = args.model
+    if args.base and getattr(args, "split_rules_from", None):
+        CFG.model.split_rules_from = args.split_rules_from
     model, tokenizer = load_model() if args.base else load_lora_model(args.adapter, require_adapter=True)
     model.eval()
     if args.native_chat:

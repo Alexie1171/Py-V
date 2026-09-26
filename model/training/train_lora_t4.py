@@ -49,7 +49,7 @@ from peft import (
 )
 
 from model.training.config_loader import CFG
-from model.utils.model_loader import ADAPTER_META, load_model
+from model.utils.model_loader import ADAPTER_META, load_model, split_rules_source
 from model.training.dataset_loader import IGNORE_INDEX, get_tokenized_dataset
 
 torch.backends.cuda.matmul.allow_tf32 = True
@@ -137,37 +137,47 @@ EFFECTIVE_BATCH = 16     # examples per optimizer step — kept whatever fits on
 GPU_BUDGET      = 0.85   # a worst-case batch may use at most 85% of GPU memory (rest: fragmentation, eval)
 
 
-def _probe(model, batch_size: int, seq_len: int) -> bool:
-    """Does a worst-case batch (every example at max length) fit in the GPU budget?"""
+def _probe(model, batch_size: int, seq_len: int):
+    """Peak GPU memory (GB) of a worst-case batch (every example at max length):
+    forward + backward. None if it ran out of memory."""
     ids  = torch.randint(1000, 5000, (batch_size, seq_len), device=model.device)
-    fits = False
+    peak = None
     try:
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
         with torch.autocast("cuda", dtype=torch.float16):
             loss = model(input_ids=ids, labels=ids).loss
         loss.backward()
-        total = torch.cuda.get_device_properties(0).total_memory
-        fits  = torch.cuda.max_memory_allocated() < GPU_BUDGET * total
+        peak = torch.cuda.max_memory_allocated() / 2**30
     except torch.cuda.OutOfMemoryError:
         pass
     model.zero_grad(set_to_none=True)
     del ids
     torch.cuda.empty_cache()
-    return fits
+    return peak
 
 
 def pick_batch_setup(model, seq_len: int) -> tuple:
     """Fastest setup that fits: gradient checkpointing off if possible (~30%
     less compute per step), then the biggest batch per forward pass.
     Returns (batch_size, gradient_checkpointing)."""
+    # Hugging Face only checkpoints in training mode, and a freshly loaded model
+    # is in eval mode: measured that way, checkpointing never saved anything
+    # (Kaggle run 1: "not even one fits" on a 15 GB T4)
+    model.train()
+    budget = GPU_BUDGET * torch.cuda.get_device_properties(0).total_memory / 2**30
     for checkpointing in (False, True):
         if checkpointing:
             model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
         else:
             model.gradient_checkpointing_disable()
         for batch_size in (16, 8, 4, 2, 1):
-            if _probe(model, batch_size, seq_len):
+            peak = _probe(model, batch_size, seq_len)
+            fits = peak is not None and peak < budget
+            print(f"  try batch {batch_size:>2}, gradient checkpointing {'on ' if checkpointing else 'off'}: "
+                  f"{f'peak {peak:.1f} GB' if peak is not None else 'out of memory'} "
+                  f"(limit {budget:.1f} GB) -> {'fits' if fits else 'too big'}", flush=True)
+            if fits:
                 return batch_size, checkpointing
     raise RuntimeError("Not even one max-length example fits on this GPU")
 
@@ -267,6 +277,7 @@ def train(output_dir: str):
     meta = {
         "base_model":     CFG.model.name,
         "prompt_format":  CFG.model.prompt_format,
+        "split_rules_from": split_rules_source(),   # the inference loader uses the same rules
         "dataset":        str(CFG.paths.dataset),
         "train_examples": len(tokenized["train"]),
         "val_examples":   len(tokenized["val"]),
@@ -295,7 +306,11 @@ if __name__ == "__main__":
                         help="brain to train (default: config model.name)")
     parser.add_argument("--prompt-format", choices=["template", "native_chat"], default=CFG.model.prompt_format,
                         help="prompt format to train with (default: config model.prompt_format)")
+    parser.add_argument("--split-rules-from", default=CFG.model.split_rules_from,
+                        help="take the text-splitting rules from this brain's tokenizer.json "
+                             "(default: config model.split_rules_from, else the brain's own)")
     args = parser.parse_args()
-    CFG.model.name          = args.model
-    CFG.model.prompt_format = args.prompt_format
+    CFG.model.name             = args.model
+    CFG.model.prompt_format    = args.prompt_format
+    CFG.model.split_rules_from = args.split_rules_from
     train(args.output_dir)

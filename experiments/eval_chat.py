@@ -133,6 +133,7 @@ def run(model, tokenizer, tag: str, args):
     summary = {"tag": tag, "base_model": CFG.model.name,
                "adapter": None if args.base else args.adapter,
                "prompt_format": model.v_prompt_format,
+               "split_rules":   getattr(model, "v_split_rules", None),
                "passed": sum(r["passed"] for r in results), "questions": len(results),
                "by_skill": {r["id"]: r["passed"] for r in results}}
     with open(out_dir / f"chat_{tag}_summary.json", "w", encoding="utf-8") as f:

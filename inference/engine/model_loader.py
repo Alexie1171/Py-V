@@ -21,8 +21,9 @@ def load_lora_model(lora_path: str = None, require_adapter: bool = False):
     LoRA adapter saved at lora_path (default: CFG.paths.model_output).
 
     An adapter only fits the brain it was trained on: one made for another
-    base model is refused. It is used with the prompt format it was trained
-    with (its v_adapter.json), whatever config says. When no adapter exists
+    base model is refused. It is used with the prompt format and the
+    text-splitting rules it was trained with (its v_adapter.json), whatever
+    config says. When no adapter exists
     yet (e.g. right after a brain upgrade) the plain brain is returned —
     unless require_adapter is set, so scoring a specific adapter never
     silently scores the plain brain.
@@ -44,8 +45,10 @@ def load_lora_model(lora_path: str = None, require_adapter: bool = False):
     elif require_adapter:
         raise FileNotFoundError(f"No LoRA adapter at {lora_path}")
 
+    meta = json.loads(meta_file.read_text(encoding="utf-8")) if config_file.exists() and meta_file.exists() else {}
+
     print(f"Loading base model: {CFG.model.name} ...")
-    model, tokenizer = load_model()
+    model, tokenizer = load_model(split_rules_from=meta.get("split_rules_from"))
 
     if not config_file.exists():
         print(f"No LoRA adapter at {lora_path} yet - running the plain {CFG.model.name}.")
@@ -55,10 +58,7 @@ def load_lora_model(lora_path: str = None, require_adapter: bool = False):
     print(f"Applying LoRA adapter from: {lora_path} ...")
     model = PeftModel.from_pretrained(model, str(lora_path))
     model.eval()
-    if meta_file.exists():
-        model.v_prompt_format = json.loads(meta_file.read_text(encoding="utf-8"))["prompt_format"]
-    else:
-        model.v_prompt_format = CFG.model.prompt_format
+    model.v_prompt_format = meta.get("prompt_format", CFG.model.prompt_format)
 
     print(f"LoRA model ready (prompt format: {model.v_prompt_format}).")
     return model, tokenizer

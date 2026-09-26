@@ -152,6 +152,7 @@ def write_summary(path: Path, args, model, passed: int, total: int, minutes: flo
         "benchmark":    dataclasses.asdict(CFG.evaluation) | {"output_dir": str(CFG.evaluation.output_dir)},
         "prompt_mode":  "generate",
         "prompt_format": model.v_prompt_format,
+        "split_rules":   getattr(model, "v_split_rules", None),
         "decoding":     {"temperature": 0.0, "max_new_tokens": CFG.model.max_tokens,
                          **dataclasses.asdict(CFG.generation.for_mode("generate"))},
         "device":       torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu",

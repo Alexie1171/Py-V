@@ -5,10 +5,13 @@ the RUN EVERYTHING cell of Kaggle/py_v_kaggle.ipynb (background run on
 GPU T4 x2) or of Google Colab/py_v_runner.ipynb (one T4, results on Drive).
 
   1-2  test both untrained Granite versions (chat in its own format, plain)
+  10   test the chat version with the Granite family's text-splitting rule
+       (its own tokenizer.json has GPT-2's rule — see CHAT_SPLIT_FIX)
   3    training data: every source file (uploaded, from an earlier run, or
        re-made if missing) + the long-file fix examples
   4    rebuild the training set (dataset v3 = v2 + long-file examples)
-  5-6  train the chat version (own chat format), then test it
+  5-6  train the chat version (own chat format, with the splitting rule of
+       1 or 10 that passed more test questions), then test it
   7-8  train the plain version (V's template), then test it
   9    extra: the chat version with V's template (untrained)
 
@@ -16,9 +19,11 @@ Every test = MBPP (write code) + long-file bug fixes + chat + fix/improve.
 
 Lanes run at the same time, each job seeing only its own GPU (CUDA_VISIBLE_DEVICES):
   data lane, CPU:     3 → 4 (the trainings wait for it)
-  two GPUs (Kaggle):  chat lane on GPU 0: 1 → 5 → 6   plain lane on GPU 1: 2 → 7 → 8
-  one GPU (Colab):    1 → 2 → 5 → 6 → 7 → 8
+  two GPUs (Kaggle):  chat lane on GPU 0: 1 → 10 → 5 → 6   plain lane on GPU 1: 2 → 7 → 8
+  one GPU (Colab):    1 → 2 → 10 → 5 → 6 → 7 → 8
 Stage 9 is done by whichever GPU lane is free first (also while one waits for the data).
+scripts/pipeline_redo.json (in git) lists stages to run once more because their
+saved results are wrong; each entry is applied once per --root.
 
 Everything is saved under --root: results/ (report, log, data, test answers)
 and model_<brain>/lora/ (adapters + checkpoints); the project's output folders
@@ -60,18 +65,32 @@ BRAINS = {
     "chat":  {"model": "ibm-granite/granite-4.2-3b",      "format": "native_chat"},
     "plain": {"model": "ibm-granite/granite-4.1-3b-base", "format": "template"},
 }
+# The chat version's own tokenizer.json splits text with GPT-2's rule (probably
+# saved with the transformers 5.0 bug); same merges as the plain version, whose
+# file has the Granite family's rule. Stage 10 tests the chat version with that
+# rule; stage 5 trains it with whichever rule passed more test questions.
+CHAT_SPLIT_FIX = BRAINS["plain"]["model"]
 TESTS = [("mbpp", "eval_mbpp"), ("longctx", "eval_long_context"), ("chat", "eval_chat"), ("fix", "eval_fix")]
 STAGES = {
-    1: "Test Granite chat (untrained, own chat format)",
-    2: "Test Granite plain (untrained)",
-    3: "Training data (missing sources + long-file fix examples)",
-    4: "Build training set v3",
-    5: "Train Granite chat (own chat format)",
-    6: "Test trained Granite chat",
-    7: "Train Granite plain (V's template)",
-    8: "Test trained Granite plain",
-    9: "Extra: test Granite chat with V's template (untrained)",
+    1:  "Test Granite chat (untrained, own chat format)",
+    2:  "Test Granite plain (untrained)",
+    3:  "Training data (missing sources + long-file fix examples)",
+    4:  "Build training set v3",
+    5:  "Train Granite chat (own chat format, better splitting rule of 1 / 10)",
+    6:  "Test trained Granite chat",
+    7:  "Train Granite plain (V's template)",
+    8:  "Test trained Granite plain",
+    9:  "Extra: test Granite chat with V's template (untrained)",
+    10: "Test Granite chat with Granite's splitting rule (untrained, own chat format)",
 }
+TEST_STAGES = {   # stage → (brain, trained, native chat format, splitting rules from)
+    1: ("chat", False, True, None),  2: ("plain", False, False, None), 6: ("chat", True, True, None),
+    8: ("plain", True, False, None), 9: ("chat", False, False, None),  10: ("chat", False, True, CHAT_SPLIT_FIX),
+}
+TRAIN_STAGES = {5: "chat", 7: "plain"}
+# One-time re-runs (in git): stages whose saved results are wrong. Removed once per
+# root, then they run like never done; done ids are kept in results/redo_done.json
+REDO_FILE = Path(__file__).with_name("pipeline_redo.json")
 OUTPUTS  = CFG.evaluation.output_dir
 DATA_DIR = CFG.dataset_v2.output_dir
 LINKS    = {DATA_DIR: "results/data_v2",                             # project folder → saved folder under root
@@ -232,42 +251,41 @@ class Pipeline:
 
     def _jobs(self) -> dict:
         """stage → (done, work(lane), needs)"""
-        return {
-            1: (self.tests_done("chat", False, True),   self.run_tests("chat", False, True),   None),
-            2: (self.tests_done("plain", False, False), self.run_tests("plain", False, False), None),
+        chat_tested = self.tests_done(*TEST_STAGES[1])
+        jobs = {n: (self.tests_done(*spec), self.run_tests(*spec),
+                    self.trained(spec[0]) if spec[1] else None) for n, spec in TEST_STAGES.items()}
+        jobs.update({
             3: (self.data_done, self.make_data, None),
             4: (self.dataset_done, lambda lane: self.run(lane, ["data.scripts.build_dataset_v2"], timeout_h=1),
                 self.data_done),
-            5: (self.trained("chat"), self.train("chat"), self.dataset_done),
-            6: (self.tests_done("chat", True, True), self.run_tests("chat", True, True), self.trained("chat")),
+            5: (self.trained("chat"), self.train("chat"), lambda: self.dataset_done() and chat_tested()),
             7: (self.trained("plain"), self.train("plain"), self.dataset_done),
-            8: (self.tests_done("plain", True, False), self.run_tests("plain", True, False), self.trained("plain")),
-            9: (self.tests_done("chat", False, False), self.run_tests("chat", False, False), None),
-        }
+        })
+        return jobs
 
     def adapter_dir(self, brain: str) -> Path:
         return self.root / f"model_{BRAINS[brain]['model'].split('/')[-1]}" / "lora"
 
-    def test_args(self, brain: str, trained: bool, native: bool) -> list:
+    def test_args(self, brain: str, trained: bool, native: bool, split: str = None) -> list:
         args = ["--model", BRAINS[brain]["model"]]
         if trained:
             args += ["--adapter", str(self.adapter_dir(brain))]
         else:
-            args += ["--base"] + (["--native-chat"] if native else [])
+            args += ["--base"] + (["--native-chat"] if native else []) + (["--split-rules-from", split] if split else [])
         return args
 
-    def test_tag(self, brain: str, trained: bool, native: bool) -> str:
-        args = argparse.Namespace(base=not trained, model=BRAINS[brain]["model"],
-                                  adapter=str(self.adapter_dir(brain)), native_chat=native and not trained)
+    def test_tag(self, brain: str, trained: bool, native: bool, split: str = None) -> str:
+        args = argparse.Namespace(base=not trained, model=BRAINS[brain]["model"], adapter=str(self.adapter_dir(brain)),
+                                  native_chat=native and not trained, split_rules_from=split)
         return result_tag(args)
 
-    def tests_done(self, brain, trained, native):
-        tag = self.test_tag(brain, trained, native)
+    def tests_done(self, brain, trained, native, split=None):
+        tag = self.test_tag(brain, trained, native, split)
         return lambda: all((OUTPUTS / f"{prefix}_{tag}_summary.json").exists() for prefix, _ in TESTS)
 
-    def run_tests(self, brain, trained, native):
+    def run_tests(self, brain, trained, native, split=None):
         """All four tests with one model load (eval_all), skipping tests already saved."""
-        return lambda lane: self.run(lane, ["experiments.eval_all", *self.test_args(brain, trained, native),
+        return lambda lane: self.run(lane, ["experiments.eval_all", *self.test_args(brain, trained, native, split),
                                             "--skip-done"], timeout_h=4)
 
     def trained(self, brain):
@@ -276,9 +294,40 @@ class Pipeline:
 
     def train(self, brain):
         b = BRAINS[brain]
-        return lambda lane: self.run(lane, ["model.training.train_lora_t4", "--model", b["model"],
-                                            "--prompt-format", b["format"],
-                                            "--output-dir", str(self.adapter_dir(brain))], timeout_h=8)
+
+        def work(lane):
+            split = self.chat_split_rules(lane) if brain == "chat" else None
+            return self.run(lane, ["model.training.train_lora_t4", "--model", b["model"], "--prompt-format", b["format"],
+                                   *(["--split-rules-from", split] if split else []),
+                                   "--output-dir", str(self.adapter_dir(brain))], timeout_h=8)
+        return work
+
+    def chat_split_rules(self, lane: Lane):
+        """Splitting rules for training the chat version: Granite's rule (stage 10)
+        only if it passed more test questions than its own file (stage 1)."""
+        own   = self.total_passed(self.test_tag(*TEST_STAGES[1]))
+        fixed = self.total_passed(self.test_tag(*TEST_STAGES[10]))
+        use   = CHAT_SPLIT_FIX if fixed is not None and own is not None and fixed > own else None
+        self.say(f"Chat splitting rule: own file {own} vs Granite's rule {fixed} test questions passed -> "
+                 f"training with {'Granite' if use else 'its own'}'s rule", lane)
+        return use
+
+    def summaries(self, tag: str) -> dict:
+        """The saved test summaries of one setup: test prefix → summary."""
+        got = {}
+        for prefix, _ in TESTS:
+            path = OUTPUTS / f"{prefix}_{tag}_summary.json"
+            if path.exists():
+                got[prefix] = json.load(open(path, encoding="utf-8"))
+        return got
+
+    def total_passed(self, tag: str):
+        """Questions passed across all four tests (MBPP + long-file + chat + fix + improve), None if any is missing."""
+        got = self.summaries(tag)
+        if len(got) < len(TESTS):
+            return None
+        return (got["mbpp"]["score"] + got["longctx"]["passed"] + got["chat"]["passed"]
+                + got["fix"]["fix"]["passed"] + got["fix"]["improve"]["passed"])
 
     def _missing_sources(self) -> list:
         """Sources the training set mixes whose file is not there yet
@@ -352,6 +401,43 @@ class Pipeline:
             notes.append(f"Earlier run found in {earlier}: {copied} files copied into {self.root}")
         return notes
 
+    def apply_redo(self):
+        """One-time re-runs listed in scripts/pipeline_redo.json: the saved results
+        of those stages are removed (a trained adapter is moved aside), once per root."""
+        if not REDO_FILE.exists():
+            return
+        done_file = self.results / "redo_done.json"
+        done      = json.load(open(done_file, encoding="utf-8")) if done_file.exists() else []
+        for redo_id, entry in json.load(open(REDO_FILE, encoding="utf-8")).items():
+            if redo_id in done:
+                continue
+            for n in entry["stages"]:
+                self.say(f"redo {redo_id}: stage {n} - {self.clear_stage(n, redo_id)} ({entry['why']})")
+            done.append(redo_id)
+            with open(done_file, "w", encoding="utf-8") as f:
+                json.dump(done, f, indent=1)
+
+    def clear_stage(self, n: int, redo_id: str) -> str:
+        if n in TEST_STAGES:
+            tag   = self.test_tag(*TEST_STAGES[n])
+            files = [OUTPUTS / f"{prefix}_{tag}{end}" for prefix, _ in TESTS for end in (".jsonl", "_summary.json")]
+        elif n in TRAIN_STAGES:
+            folder = self.adapter_dir(TRAIN_STAGES[n])
+            if not folder.exists():
+                return "nothing saved yet"
+            folder.rename(folder.with_name(f"lora_before_{redo_id}"))
+            return f"adapter moved to {folder.with_name(f'lora_before_{redo_id}')}"
+        elif n == 3:
+            files = [DATA_DIR / "long_file_fix.jsonl"]
+        elif n == 4:
+            files = [CFG.dataset_v2.build["output_dir"] / name for name in ("build_report.json", "train.jsonl", "val.jsonl")]
+        else:
+            raise ValueError(f"stage {n} cannot be redone")
+        removed = [path for path in files if path.exists()]
+        for path in removed:
+            path.unlink()
+        return f"{len(removed)} saved files removed"
+
     def link_outputs(self):
         """Point the project's output folders into root, so everything the jobs
         write is saved there (Drive on Colab, the run's output on Kaggle)."""
@@ -378,25 +464,21 @@ class Pipeline:
             self._write_report()
 
     def _write_report(self):
-        rows = [("Granite chat — untrained, own chat format", "chat", False, True),
-                ("Granite plain — untrained",                 "plain", False, False),
-                ("Granite chat — untrained, V's template",    "chat", False, False),
-                ("Granite chat — trained (own chat format)",  "chat", True, True),
-                ("Granite plain — trained (V's template)",    "plain", True, False)]
+        rows = [("Granite chat — untrained, own chat format",                   1),
+                ("Granite chat — untrained, own chat format, Granite's splitting rule", 10),
+                ("Granite plain — untrained",                                   2),
+                ("Granite chat — untrained, V's template",                      9),
+                ("Granite chat — trained (own chat format)",                    6),
+                ("Granite plain — trained (V's template)",                      8)]
         scores = {}
         lines  = [f"# PY-V pipeline report", f"_Updated {datetime.datetime.now():%Y-%m-%d %H:%M}_", "",
                   "## Stages", "| Stage | Status | Where | Minutes |", "|---|---|---|---|"]
         lines += [f"| {n}. {STAGES[n]} | {s} | {w} | {m} |" for n, (s, w, m) in sorted(self.status.items())]
         lines += ["", "## Scores", "| Brain | MBPP /100 | Long-file /10 | Chat /8 | Fix /40 | Improve /40 |",
                   "|---|---|---|---|---|---|"]
-        for label, brain, trained, native in rows:
-            tag = self.test_tag(brain, trained, native)
-            got = {}
-            for prefix, _ in TESTS:
-                path = OUTPUTS / f"{prefix}_{tag}_summary.json"
-                if path.exists():
-                    got[prefix] = json.load(open(path, encoding="utf-8"))
-            scores[tag] = got
+        for label, stage in rows:
+            tag = self.test_tag(*TEST_STAGES[stage])
+            got = scores[tag] = self.summaries(tag)
             cell = lambda p, key="score": str(got[p].get(key, "")) if p in got else "—"
             fix  = got.get("fix", {})
             lines.append(f"| {label} | {cell('mbpp')} | {cell('longctx', 'passed')} | {cell('chat', 'passed')} | "
@@ -408,7 +490,8 @@ class Pipeline:
             if meta.exists():
                 m = json.load(open(meta, encoding="utf-8"))
                 training[brain] = m
-                lines.append(f"- **{brain}** ({m['base_model']}, {m['prompt_format']}): {m['steps']} steps, "
+                lines.append(f"- **{brain}** ({m['base_model']}, {m['prompt_format']}, splitting rules of "
+                             f"{m.get('split_rules_from', m['base_model'])}): {m['steps']} steps, "
                              f"{m['minutes']} min, train loss {m['train_loss']}, check-set loss {m['eval_loss']}, "
                              f"GPU: {m['gpu']}")
             else:
@@ -435,14 +518,15 @@ class Pipeline:
         for note in notes:
             self.say(note)
         self.link_outputs()
+        self.apply_redo()
         self.write_report()
 
         data_ready = threading.Event()
         data = Lane("data", "")
         if self.gpus >= 2:
-            gpu_lanes = [(Lane("chat", "0"), (1,), (5, 6)), (Lane("plain", "1"), (2,), (7, 8))]
+            gpu_lanes = [(Lane("chat", "0"), (1, 10), (5, 6)), (Lane("plain", "1"), (2,), (7, 8))]
         else:
-            gpu_lanes = [(Lane("gpu", "0"), (1, 2), (5, 6, 7, 8))]
+            gpu_lanes = [(Lane("gpu", "0"), (1, 2, 10), (5, 6, 7, 8))]
 
         def data_lane():
             try:

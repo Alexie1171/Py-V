@@ -9,6 +9,7 @@ import os
 import yaml
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 # ─── Config Root ──────────────────────────────────────────────────────────────
 
@@ -26,9 +27,10 @@ def _load_raw() -> dict:
 
 @dataclass
 class ModelConfig:
-    name:          str
-    max_tokens:    int
-    prompt_format: str   # "template" or "native_chat"
+    name:             str
+    max_tokens:       int
+    prompt_format:    str             # "template" or "native_chat"
+    split_rules_from: Optional[str]   # whose tokenizer.json splits the text (None = the brain's own)
 
 
 @dataclass
@@ -133,6 +135,7 @@ def load_config() -> AppConfig:
         name          = raw["model"]["name"],
         max_tokens    = raw["model"]["max_tokens"],
         prompt_format = raw["model"].get("prompt_format", "template"),
+        split_rules_from = raw["model"].get("split_rules_from"),
     )
     if model_cfg.prompt_format not in ("template", "native_chat"):
         raise ValueError(f"model.prompt_format must be 'template' or 'native_chat', not {model_cfg.prompt_format!r}")

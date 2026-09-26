@@ -41,7 +41,18 @@ Work paused on **2026-05-04** and resumed on **2026-09-25**.
 
 **Build order:** better training data + GPU retrain (8.1.x commits — the Granite retrain now runs in the one-button GPU pipeline) and **Phase 11 memory (built 2026-09-26) — current phase, commits numbered 11.x** → then Phases 9, 10 and speed work (order of those three not decided yet).
 
-**Now (2026-09-26):** the Granite retrain moves to **Kaggle** — Colab's GPU time is used up until about noon 2026-09-27. The owner uploads the training source files as a private Kaggle dataset and starts `Kaggle/py_v_kaggle.ipynb` as a background run (2× T4, ~5 h: both Granite versions tested, trained, tested). The assistant then reads the results with the Kaggle CLI.
+**Now (2026-09-26):** the Granite retrain moved to **Kaggle** (Colab's GPU time used up until about noon 2026-09-27). **Kaggle run 1** (3.7 h, results in `Kaggle downloads/run1/`): untrained tests done, both trainings failed after 1 min (training size check measured in eval mode), plain version's tests broken by Kaggle's transformers 5.0.0 tokenizer bug. Fixes built and checked on the laptop CPU. **Next: Kaggle run 2** with run 1's output attached — plain test redone, chat version tested with the Granite splitting rule, both trained and tested.
+
+**Kaggle run 1 scores (untrained, Kaggle T4, transformers 5.0.0):**
+
+| Test | Chat, own chat format | Chat, V's template | Plain (broken tokenizer — not a real score) | Plain on the laptop (for comparison) |
+|---|---|---|---|---|
+| Write code (MBPP /100) | **76** | 58 | 17 | 69 |
+| Long-file bug fix (/10) | 5 | **8** | 4 | 7 |
+| Chat (/8) | 4 | 5 | 5 | — |
+| Fix / improve (/40 each) | **29 / 29** | 27 / 28 | 25 / 24 | — |
+
+Chat version in its own format: short clean answers, fails mostly on logic; on long files it "thinks out loud" and runs out of answer space before the fixed code (what the long-file training examples teach). With V's template it doesn't stop (62 of 100 answers over 1,500 characters). All versions ran out of GPU memory on the 6,000-token questions even on the T4 (section 5).
 
 **Things switched off or put off for later** are listed in section 5 — check it before starting new work.
 
@@ -172,6 +183,10 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 | **Removing `TRANSFORMERS_CACHE`** | 2026-09-25 | Needs admin rights | Owner removes it (steps in section 4, item 8) |
 | **Colab as the main GPU runner** | 2026-09-26 | Colab's free GPU time ran out (back ~noon 2026-09-27); Kaggle gives 30 GPU h/week, 12 h background runs and 2× T4 | Colab notebook still works (same pipeline, one T4) — use it when Kaggle's weekly hours are used up. Results stay where a job started (Drive vs Kaggle output) |
 | **Kaggle's VS Code connection** (Run ▸ Kaggle Jupyter Server) | 2026-09-26 | Big runs go as background runs instead: the VS Code session needs the laptop connected for hours and loses `/kaggle/working` when it ends | For short interactive checks on Kaggle's GPUs, if wanted |
+| **Tokenizer fix + plain Granite redo on Kaggle** | 2026-09-26 | Kaggle's transformers 5.x rebuilds the plain Granite 4.1 tokenizer with GPT-2's default splitting instead of the model's `tokenizer.json` (same text: 558 → 683 tokens); plain MBPP fell 69 → 17 in Kaggle run 1, and its training there uses wrongly split text. Chat version unaffected. Checked on the laptop without the AI: transformers 5.0.0 wrong, 5.17.0 and 4.57 right; fix tested — take normalizer / pre-tokenizer / decoder from the model's `tokenizer.json` → identical ids in 4.57, 5.0, 5.17 | **Built 2026-09-26** after run 1: `load_tokenizer()` in the shared loader (+ dataset build, long-question builder); redo list `scripts/pipeline_redo.json` re-runs stage 2 (plain test) and 4 (training set) once. Kaggle confirmed 5.0.0 (run 1 summaries). Remove this row once Kaggle run 2 shows the plain version back near 69 |
+| **Granite training (both versions) — Kaggle run 1 trained nothing** | 2026-09-26 | `pick_batch_setup()` probes before the model is in training mode, so gradient checkpointing is ignored (Hugging Face only uses it when `model.training`); without it not even one 1,024-token example fits under 85% of the T4 → "Not even one max-length example fits on this GPU" for both versions after 1 min. Only ever tried with a tiny model before | **Built 2026-09-26** after run 1: `model.train()` before probing, every try printed with its peak memory. Checked on the laptop CPU (tiny Granite, 4.57 and 5.0.0): eval mode → checkpointing not used, train mode → used. Remove this row once Kaggle run 2 has trained both |
+| **Granite chat with the plain version's splitting rules** | 2026-09-26 | The chat version's own `tokenizer.json` has GPT-2's rule (probably saved by IBM with the transformers 5.0 bug): same 100,000 merges and words as 4.1, only the rule differs (1650 → `16` `50` instead of `165` `0`); it wrote "GTX 1 650" in the chat test and still scored 76/100 MBPP | Owner chose (after run 1): test first, train the better one — **in Kaggle run 2** as stage 10; stage 5 trains the chat version with whichever rule passed more questions. Remove this row once run 2 has decided |
+| **Long questions use far more GPU memory than their length** | 2026-09-26 | Kaggle run 1: 3,000-token question peaked at 6.2 GB, 6,000 tokens at 14.4 GB → out of memory on the 15 GB T4 for every version (laptop 4 GB: the same wall at ~5,000). Growth faster than the length points at the attention method used | Later: check which attention method the brain loads with and whether a memory-saving one fits — decides how long a file V can read on the laptop |
 | **Kaggle P100 GPU** | 2026-09-26 | Kaggle's PyTorch dropped it (since 2026-04: "no kernel image is available") | Only if Kaggle's PyTorch supports it again — use GPU T4 x2 |
 
 ---
@@ -329,6 +344,9 @@ Options, all need measuring on this laptop first:
 | 2026-09-26 | **Kaggle key on the laptop** (`~/.kaggle/kaggle.json`, never in the repo): the assistant checks runs and downloads results with the Kaggle CLI into `Kaggle downloads/` (gitignored) | Kaggle results are not in a local notebook file like Colab's |
 | 2026-09-26 | One GPU per job: `load_model()` uses `device_map={"": 0}`, `train_lora_t4.py` defaults `CUDA_VISIBLE_DEVICES=0` | On 2× T4, `"auto"` split the model across both GPUs (slower, batch probe measured only GPU 0) and the Trainer would wrap the 4-bit model in DataParallel |
 | 2026-09-26 | Code-running data sources allowed on Kaggle too (`require_cloud()`, was Colab only) | Kaggle is a throwaway cloud machine like Colab; without it the long-file examples would be refused there |
+| 2026-09-26 | **Tokenizers always take their splitting rules from a `tokenizer.json`** (`load_tokenizer()`, the only way to load a brain's tokenizer) | Kaggle's transformers 5.0.0 rebuilt the plain Granite's tokenizer with GPT-2's rule (MBPP 69 → 17). Same ids in every version now — results and adapters never depend on the library version |
+| 2026-09-26 | Chat version: **test Granite's splitting rule first, train with the better one** (pipeline stage 10 + automatic choice) | Owner's choice. Its own file probably carries the same bug; training once with the right rule beats training twice |
+| 2026-09-26 | One-time redo list in git (`scripts/pipeline_redo.json`) instead of hand-deleting results on Kaggle | Kaggle runs start empty and copy the earlier run in; wrong saved results would otherwise be skipped as "done" |
 | 2026-09-26 | SSD as extra GPU memory (colibri-style streaming) not used | Colibri streams only the small active part of huge mixture-of-experts models; our dense 3–4B brains read all their weights for every word, so SSD speed (~1.8 GB/s vs 128 GB/s GPU) would make answers take minutes. Windows already spills GPU → RAM → SSD, which is what made long questions take 13 min. Better: send V only the relevant parts (search), a leaner engine (llama.cpp), more RAM |
 
 ---

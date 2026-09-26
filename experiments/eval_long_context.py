@@ -37,9 +37,9 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 import torch
 from datasets import load_dataset
-from transformers import AutoTokenizer
 
 from model.training.config_loader import CFG
+from model.utils.model_loader import load_tokenizer
 from inference.engine.prompt_builder import build_prompt, format_for_model
 from inference.engine.generator import generate_from_prompt
 from experiments.code_runner import run_python
@@ -124,7 +124,7 @@ def _question(snippet: dict, result: dict, module: str) -> str:
 
 
 def build_tasks(path: Path) -> list:
-    tokenizer = AutoTokenizer.from_pretrained(CFG.model.name)   # sizes counted in the config brain's tokens
+    tokenizer = load_tokenizer()   # sizes counted in the config brain's tokens
     print("Building questions (runs each MBPP solution's tests once) ...", flush=True)
     pool = _snippet_pool(tokenizer)
     rng  = random.Random(SEED)
@@ -270,6 +270,7 @@ def run(model, tokenizer, tag: str, args):
     summary = {
         "tag": tag, "base_model": CFG.model.name, "adapter": None if args.base else args.adapter,
         "prompt_format": model.v_prompt_format,
+        "split_rules":   getattr(model, "v_split_rules", None),
         "context_window": context, "weights_mb": round(weights_mb), "max_new_tokens": MAX_NEW,
         "passed": sum(r["passed"] for r in results), "questions": len(results),
         "by_size": {size: {"passed": sum(r["passed"] for r in rows), "questions": len(rows),

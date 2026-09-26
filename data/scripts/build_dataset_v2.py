@@ -18,9 +18,8 @@ import logging
 import random
 from collections import Counter, defaultdict
 
-from transformers import AutoTokenizer
-
 from model.training.config_loader import CFG
+from model.utils.model_loader import load_tokenizer
 from data.scripts.dedupe import hash_code
 from data.scripts.decontaminate import BenchmarkIndex
 
@@ -68,7 +67,7 @@ def main():
 
     print("Loading benchmark index (MBPP + HumanEval) and tokenizer ...")
     benchmarks = BenchmarkIndex()
-    tokenizer  = AutoTokenizer.from_pretrained(CFG.model.name)
+    tokenizer  = load_tokenizer()   # same splitting in every transformers version (see load_tokenizer)
 
     by_task, report = defaultdict(list), {}
     for name, take in build["take"].items():

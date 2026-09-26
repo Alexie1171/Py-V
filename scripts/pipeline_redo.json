@@ -1,0 +1,6 @@
+{
+ "2026-09-26-tokenizer": {
+  "stages": [2, 4],
+  "why": "Kaggle run 1: transformers 5.0.0 split the plain Granite's text with GPT-2's rule (MBPP 17 instead of 69); the training set's length check used the same wrong split"
+ }
+}
