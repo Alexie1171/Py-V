@@ -14,7 +14,7 @@ from inference.engine.context_schema import SessionContext, ChatTurn
 logger = logging.getLogger(__name__)
 
 _STATE_FIELDS = ("language", "mode", "current_task", "entities", "errors_seen",
-                 "functions_touched", "last_summary")
+                 "functions_touched", "last_summary", "pending_lookup", "pending_question")
 
 
 class ContextManager:

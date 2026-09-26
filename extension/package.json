@@ -60,6 +60,11 @@
     "configuration": {
       "title": "PY-V",
       "properties": {
+        "pyv.projectSearch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Let V search your workspace folder's code when a question is about the project. The index stays on this computer (Py-V data/projects)."
+        },
         "pyv.serverUrl": {
           "type": "string",
           "default": "http://localhost:8000",

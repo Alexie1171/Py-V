@@ -31,12 +31,15 @@ def main():
     add_model_args(parser)
     parser.add_argument("--skip-done", action="store_true",
                         help="skip tests whose summary file already exists (continue after a stop)")
+    parser.add_argument("--only", nargs="+", choices=list(TESTS), default=None,
+                        help="run only these tests (the RAG stage: mbpp fix)")
     args = parser.parse_args()
 
     out_dir = CFG.evaluation.output_dir
     tag     = result_tag(args)
     todo    = {p: m for p, m in TESTS.items()
-               if not (args.skip_done and (out_dir / f"{p}_{tag}_summary.json").exists())}
+               if (not args.only or p in args.only)
+               and not (args.skip_done and (out_dir / f"{p}_{tag}_summary.json").exists())}
     if not todo:
         print(f"{tag}: all tests already done")
         return

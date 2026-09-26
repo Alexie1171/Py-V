@@ -41,7 +41,7 @@ from model.training.config_loader import CFG
 from inference.engine.prompt_builder import build_prompt
 from inference.engine.generator import generate_from_prompt
 from experiments.code_runner import run_python
-from experiments.eval_common import add_model_args, load_for_eval
+from experiments.eval_common import add_model_args, load_for_eval, retrieve
 from experiments.eval_long_context import answer_code, function_dump
 from data.scripts.sources.improve_synthetic import clumsify
 from data.scripts.sources.mutations import all_mutations
@@ -194,11 +194,14 @@ def run(model, tokenizer, tag: str, args):
     out_dir.mkdir(parents=True, exist_ok=True)
     tasks   = json.load(open(TASKS, encoding="utf-8")) if TASKS.exists() else build_tasks(TASKS)
 
-    results = []
+    results  = []
+    rag_used = 0
     with open(out_dir / f"fix_{tag}.jsonl", "w", encoding="utf-8") as out:
         for task in tasks:
             t        = time.perf_counter()
-            prompt   = build_prompt(task["mode"], task["question"], {})
+            chunks   = retrieve(args, task["question"], task["mode"])
+            rag_used += bool(chunks)
+            prompt   = build_prompt(task["mode"], task["question"], {}, chunks)
             response = generate_from_prompt(model, tokenizer, prompt, mode=task["mode"],
                                             max_tokens=MAX_NEW, temperature=0.0)
             row = {"id": task["id"], "kind": task["kind"], **grade(task, response),
@@ -211,7 +214,8 @@ def run(model, tokenizer, tag: str, args):
 
     summary = {"tag": tag, "base_model": CFG.model.name, "adapter": None if args.base else args.adapter,
                "prompt_format": model.v_prompt_format,
-               "split_rules": getattr(model, "v_split_rules", None)}
+               "split_rules": getattr(model, "v_split_rules", None),
+               "rag": {"questions_with_examples": rag_used} if getattr(args, "rag", False) else None}
     for kind in ("fix", "improve"):
         rows = [r for r in results if r["kind"] == kind]
         summary[kind] = {"passed": sum(r["passed"] for r in rows), "questions": len(rows),

@@ -33,14 +33,14 @@ It ensures:
 | Phase 5 | FastAPI inference server | Complete |
 | Phase 6 | VS Code extension | Complete |
 | Phase 7 | Chat system (context-aware assistant + controller) | Complete |
-| Phase 8 | RAG (Retrieval Augmented Generation) | Complete — turned off since 2026-09-25 (see `PROJECT_STATUS.md`) |
+| Phase 8 | RAG (Retrieval Augmented Generation) | Complete — turned off since 2026-09-25 (see `PROJECT_STATUS.md`); prep for its Kaggle on/off test built 2026-09-26 (index over dataset v3, `rag.min_score`, CPU embedder) |
 | Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
-| Phase 10 | VS Code chat panel (full UI, no terminal) | In progress — 10.1 chat in the sidebar (streaming, stop, code buttons, new chat) and 10.2 file reading (the open file / selection go into the prompt when the message is about them) built 2026-09-26 |
+| Phase 10 | VS Code chat panel (full UI, no terminal) | Code built 2026-09-26 (10.1 chat, 10.2 file reading, 10.3 file updating, 10.4 memory view, 10.5 project search) — not yet tried with the brain |
 | Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Built 2026-09-26 (`memory/`, on by default) — smoke test passes; tried with the trained Granite chat on the laptop (2026-09-26): unrelated facts derailed an answer → recall now needs real relevance |
 | Phase 12 | Machine awareness (V knows the computer and how busy it is, takes on less when busy) | Built 2026-09-26 (`inference/engine/machine.py`, config `machine:`) — busy lines are first guesses, to tune after the owner's first try |
-| Phase 13 | Learning (web lookup after asking, learning from chats, study sessions on a topic) | Planned 2026-09-26 — design in `PROJECT_STATUS.md` section 6 |
+| Phase 13 | Learning (web lookup after asking, learning from chats, study sessions on a topic) | Code built 2026-09-26 (`learning/`) — not yet tried with the brain |
 
-Build order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating (applied only on the owner's click), memory view and project-file search (RAG over the user's files) + the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language; speed work not placed yet (numbering kept stable on purpose). Current phase: **Phase 10** (chat panel) — commits "Phase 10.2: …", then 10.2.1, 10.3, …
+Build order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating (applied only on the owner's click), memory view and project-file search (RAG over the user's files) + the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language; speed work not placed yet (numbering kept stable on purpose). Code through Phase 13 built 2026-09-26; **nothing after commit 4a31ad1 has been tried with the brain** — the test list is in `PROJECT_STATUS.md` section 2 ("Needs testing"), then the big Kaggle run (pipeline stages 11-15). Commits: "Phase 10.3: …", "Phase 13: …", fixes found in testing as 10.x.y / 13.x
 
 Live status, open issues and next steps: see `PROJECT_STATUS.md` in the repo root.
 
@@ -116,7 +116,7 @@ Rules:
 ---
 
 ### `model/training/config_loader.py`
-- Parses `config.yaml` into typed dataclasses (`ModelConfig`, `GenerationConfig`, `TrainingConfig`, `PathsConfig`, `RAGConfig`, `MemoryConfig`, `MachineConfig` + `WorkLimits`, `FilesConfig`, `IntentConfig`, `DatasetV2Config`, `EvaluationConfig`)
+- Parses `config.yaml` into typed dataclasses (`ModelConfig`, `GenerationConfig`, `TrainingConfig`, `PathsConfig`, `RAGConfig`, `MemoryConfig`, `MachineConfig` + `WorkLimits`, `FilesConfig`, `ProjectConfig`, `LearningConfig`, `IntentConfig`, `DatasetV2Config`, `EvaluationConfig`)
 - Exports a module-level `CFG` singleton
 - All other modules import `CFG` from here — never re-parse yaml elsewhere
 
@@ -151,9 +151,10 @@ Rules:
 - `to_native_chat(prompt, tokenizer)` re-wraps a template prompt in the model's own chat format (`apply_chat_template`, `enable_thinking=False`) for chat-tuned brains; unchanged for models without a chat template
 - `format_for_model(prompt, model, tokenizer)` — the prompt exactly as the loaded model gets it: template, or `to_native_chat()` when `model.v_prompt_format == "native_chat"`. The generator calls it for every generation; `dataset_loader.py` does the same wrap for training — so app, tests and training always match. Everything else passes plain template prompts
 - Never define prompt format in any other file
-- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `to_native_chat()`, `format_for_model()`, `uses_chat_format()`, `build_chat_prompt()`, `chat_history()`, `format_machine()`, `format_context()`, `format_retrieved_context()`
+- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `to_native_chat()`, `format_for_model()`, `uses_chat_format()`, `build_chat_prompt()`, `chat_history()`, `format_machine()`, `format_lookup()`, `format_studies()`, `build_study_prompt()`, `format_memories()`, `format_context()`, `format_retrieved_context()`
 - **Chat mode on a chat brain (since 2026-09-26)** — `build_chat_prompt(user_input, context, memories, tokenizer)`, used when `uses_chat_format(model, tokenizer)` (`native_chat` + a chat template): a real conversation instead of the chat template — system message = `V_PERSONA` (+ remembered facts), then `chat_history()`, then the user's message exactly as written. Returns the prompt already in the brain's format → `generate_from_prompt(..., formatted=True)`. The template wrapper ("Answer the following question using only plain English...") made V answer like homework, with no name. Brains without a chat format keep `build_prompt("chat", ...)`
 - `build_chat_prompt(..., history_turns=None, machine="", editor="")` — fewer turns when the machine is busy; `machine` = `format_machine(specs, snap)` (what V knows about the computer), `editor` = `file_context.describe()` (which file is open in the panel's editor — name only, no code), both placed before the remembered facts
+- Phase 13: `build_chat_prompt(..., extra="")` — what a web lookup found (`format_lookup(found, sources)`, template `V_LOOKUP`) or what she has studied (`format_studies(topics)`, `V_STUDIES`), last in the system message; `format_memories()` also takes `memories["notes"]` (study notes, `V_NOTES`, within `learning.notes_chars`, words only, every mode); `build_study_prompt(topic, subtopic, title, excerpt, covered, tokenizer)` — one study note (`STUDY_NOTE_TEMPLATE`, persona as system message), already in the brain's format (pass `formatted=True`)
 - `build_prompt(..., file_note="")` — `file_context.note()` ("The user is working in src/app.py.") ahead of the memory block in the `{context}` slot, code modes only, when none of the file went in. The file's code itself arrives inside `user_input` (appended by `chat.py`), like pasted code — the templates are unchanged
 - `chat_history(context, turns=None)` — the last `turns` (None = `CFG.memory.history_turns`) messages of the current chat (6 = 3 exchanges), chat mode only. No code goes in (same reason as memory/RAG): code-mode turns keep the request's first line and a short note instead of V's code; code blocks elsewhere become "(code left out)"; each message cut to `HISTORY_CHARS` (400). Persona alone ~264 prompt tokens, with 3 exchanges + a fact ~470
 - History stays OFF for every other mode (since 2026-09-25) — the old brain copied previous answers and answered previous questions instead of the new one; code modes keep the prompts their adapters were trained on. `format_context()` (last two user questions only) is kept but unused
@@ -169,6 +170,7 @@ Rules:
 - `explain` and `chat` templates do NOT have `{retrieved_context}` slot
 - `OTHER_LANGUAGE_TEMPLATES` — write / fix / improve / explain in another language (`{language}`, `{tag}`), kept apart from `TEMPLATES` so the tested Python prompts and the adapter trained on them stay unchanged
 - `V_MACHINE` / `V_MACHINE_BUSY` — what V knows about the computer, in the chat system message (Phase 12)
+- Phase 13: `V_LOOKUP` (answer from what she found online, don't invent, sources are shown separately), `V_STUDIES` / `V_NOTES` (what she studied, her notes), `STUDY_NOTE_TEMPLATE` (3-6 "- " notes in her own words from part of a page, or "NOTHING USEFUL", then "NEXT:" up to 3 subtopics). Kept out of `TEMPLATES` — the trained prompts stay as they are
 - `V_PERSONA` — V's own voice in chat mode: V, an AI assistant, friendly and casual, answers only what was asked (no extra facts, no "How can I help you today?"), no emojis, "I'm V" instead of "a language model", words only. Shared only when asked (owner, 2026-09-26): who made her (Ador "Alexie" Haq aka Alexie), that she is a girl (she/her), and that she is an AI language model on IBM's Granite. Kept out of `TEMPLATES`: it is the system message of `build_chat_prompt()`, not a mode template
 - Never define templates outside this file
 
@@ -189,7 +191,8 @@ Rules:
 - No emojis in chat/explain answers (`_strip_emojis()`, owner's rule — the persona says so too, this catches the rest); code answers are left alone. All answer cleanup runs in `_clean()`
 - A chat/explain answer cut off by its token limit ends after its last full sentence (`_drop_unfinished()`), so a shorter limit on a busy machine never ends mid-word
 - `stream_from_prompt(...)` (Phase 10.1) — `generate_from_prompt` streamed: yields `("piece", text)` while the brain writes (the generation runs in a thread with a `TextIteratorStreamer`), then `("answer", cleaned text)`. `stop` event / closing the generator stops the brain after its current word (`_StopWhenSet` stopping criterion); an error in the brain reaches the caller instead of hanging the stream
-- `BRAIN_LOCK` — one generation on the brain at a time (API threads, streaming)
+- `BRAIN_LOCK` — one generation on the brain at a time (API threads, streaming, study notes)
+- `generate_from_prompt(..., stop=threading.Event)` — set it and the brain stops after its current word, no retry (a study note gives the brain up to the user). Mode `"study"`: base stop words only, no code filter
 - `remove_code_if_not_allowed()` drops an answer under 20 characters only when code was removed from it — a short answer like "I'm V." stays
 - `generate_from_prompt(..., temperature=None, formatted=False)`: temperature None = the mode's config `generation.<mode>.temperature` (default 0.2, chat 0.7); tests pass 0.0. `formatted=True` = the prompt is already in the brain's chat format (`build_chat_prompt`), not re-wrapped
 - `adapter_for_mode(model, mode)` — the context every generation runs in: the LoRA adapter switched off (`model.disable_adapter()`, no reload) when the mode is not in the adapter's `use_in_modes`. Checked on the laptop (2026-09-26): chat / generate / explain answered with it off, debug / refactor with it on
@@ -210,10 +213,39 @@ Rules:
 
 ---
 
+### `inference/engine/file_update.py` (Phase 10.3, built 2026-09-26)
+- `propose(content, code, language_id, selection, selection_line, cursor_line)` → `Proposal(content, how, summary)`: the whole file with a code block from V's answer put in — **nothing is written here**; the panel shows it as a diff and writes it only when the user clicks Apply (owner's rule)
+- In order: **selection** — the one the answer read, found again if it moved (the copy nearest its old line; changed text → skipped), re-indented to where it sits; **whole file** — the code has ≥ 60% of the file's lines and ≥ 60% of its top-level definitions (`WHOLE_LINES`, `WHOLE_NAMES`); **named blocks** — functions / classes / methods the file has are replaced (decorators, doc comments included), new ones go after the last one replaced at its indent (a method stays in its class), imports the file lacks go after its imports (after the module docstring when it has none), example lines ("print(add(2, 3))") left out; **insert** after the cursor line
+- Python by syntax tree (`ast`, exact); other languages by definition lines (`_DEF_KEYWORD` — function / def / fn / func / class / struct / …; `_DEF_ASSIGN` — `const f = () =>`; `_DEF_SIGNATURE` — C-like signatures, never lines starting with a statement word) and braces (Allman style too) or indentation (a closing `end` / `}` included). The file's line endings are kept
+- Test: `python -m experiments.eval_file_context` ("Apply to file" section: Python functions / methods / imports / moved selection / whole file / insert / CRLF, TypeScript, Java, Go)
+
+---
+
+### `retrieval/project.py` (Phase 10.5, built 2026-09-26)
+- `ProjectIndex(root, index_dir, embed, …)` — search over the user's own project folder (the panel sends it): its code files in pieces (`file_context.split_pieces`), one SQLite file per project in config `project.index_dir` (`data/projects/`, gitignored — the user's code, never leaves the laptop): tables `files` (size + mtime), `pieces` (path, lines, first defined name, text), `pieces_fts` (FTS5 over text + path), `vectors`
+- Which files: `git ls-files --cached --others --exclude-standard` in a git repository (respects .gitignore), else a walk skipping `SKIP_DIRS` (node_modules, venv, build, dist, .git, …); code / config extensions only (`CODE_EXTENSIONS` + Dockerfile, Makefile, …), ≤ `project.max_file_kb`, JSON ≤ 50 KB, no binary or minified files, ≤ `project.max_files`
+- `update(pause)` is incremental (size + mtime; deleted files dropped); `update_in_background(pause)` runs it in a thread (a second call while running queues one more pass). Embedding waits while `pause()` says so — ChatEngine passes `_index_should_wait`: V is writing or the laptop is tight
+- `search(query, top_k, skip_path)` — only relevant pieces: half the question's meaningful words (stemmed: "loaded" ~ load; code names split: `load_config` → load, config; FTS5 prefix search), or a meaning match ≥ `project.min_similarity`, or a code name from the question that the piece defines. The piece defining a matching name (+0.15) and a file named after it (+0.05) rank above pieces that only use it. `skip_path` = the open file (its code already goes in through file reading)
+- `format_hits(hits, budget)` → the prompt block ("Related code from the user's project:" + "From path (lines a-b):" fenced blocks) within `WorkLimits.project_chars` (`project.max_prompt_chars` 1500, busy 800, tight 0) + labels ("config/loader.py:1-8")
+- Uses the shared CPU embedder (`retrieval/embedder.cpu_embedder`); with `memory.semantic_search: false` keyword search only
+
+---
+
+### `learning/` (Phase 13, built 2026-09-26)
+- `web.py` — the only code that goes online: `search(query)` (DuckDuckGo's HTML page — no key; Wikipedia's search API as fallback), `read_page(url)` (readable text via `html.parser`: headings, paragraphs, list items, code; no menus / scripts / footers; ≤ 2 MB fetched), `best_part(text, words, max_chars)` (the paragraphs sharing the most words with the question / topic), `online()`. One request at a time, 1.5 s apart, 15 s timeout; offline → empty results, never a crash. Standard library + requests only
+- `lookup.py` — ask first (owner's design): `answer_kind(message)` → "yes" / "no" / None (27 yes and 19 no wordings in the test; a yes is short or about looking up — "please explain more" is a new message; "please" alone is a yes); `asked_to_look_up(message, previous)` ("look up X", "search the web for X", "google X", "can you look it up?" → the previous question) — the ask is the permission; `offer_lookup(question, answer, mode)` — chat / explain only: her answer says she doesn't know, or the question needs new facts ("latest", "newest version", "release date", a year 2020+); `build_query(question)` — search words without code or chat words: **only these leave the laptop**
+- `study.py` — `parse_study_request(message)` → (topic, minutes) for "learn about X for 30 minutes", "study X for 2 hours", "… for half an hour / an hour", "spend 45 minutes learning about X" (≤ 600 min); `is_stop_request()` ("stop studying"); `parse_note(raw)` → ("- " lines, next subtopics). `StudySession(store, topic, minutes, write, pause)`: plan = the topic's "what's next", then related topics' next items (linked), then an overview and seeds; per page: search (topic + subtopic) → a page not read before → `best_part` (3,000 chars) → `write()` (the brain; `None` = stopped because the user needed the brain → redone later) → note + source saved, progress saved after every page (seconds, covered, next). Waits while `pause()` (ChatEngine: user chatting or within 45 s of their last message, laptop not free — `Stop` wakes it at once); 3 failed searches + offline → stops. Wall-clock time. CLI for the Kaggle stage: `python -m learning.study --topic "Python code" --minutes 120 --db … --export …` (plain brain, no adapter; exit 2 when offline, 1 when no notes); `--import FILE` merges exported notes into V's memory database
+- `store.py` — `LearningStore` in V's memory database file (own tables: `study_topics`, `study_links`, `study_notes` + FTS5 + vectors, `study_pages`, `approved_answers`): topics (time, covered, next, approved, sessions), related topics (half the words or meaning ≥ 0.75), notes search (half the question's words or meaning ≥ 0.62), approved answers, export / import of topics as JSON lines (Kaggle → laptop; importing twice adds nothing)
+- `manager.py` — `LearningManager`, the one entry point: `start_study()` (one session at a time; the reply is built from the store without the brain — "Back to asyncio… Last time I covered …, so I'll pick up with …", related topics named), `stop_study()`, `study_status()`, `yield_brain()` (stops the note being written), `lookup(query, question)` (best 2 pages, `learning.lookup_chars`; search snippets when pages won't load), `recall_notes()`, `topics()`, `overview()`, `approve()` / `unapprove()`
+- `export.py` — `python -m learning.export` → `learning.learned_dir` (`data/learned/`, gitignored): `learned_answers.jsonl` (approved write / fix / improve / explain answers in Python) and `learned_topics.jsonl` (notes of owner-approved topics as explain records, in sentences). Chat and other-language answers are saved but not exported (the trainer uses the mode templates — `PROJECT_STATUS.md` section 5). `build_dataset_v2.py` adds every `learned_*.jsonl` (raw source folder or `learned_dir`) after the same cleaning; the pipeline copies uploaded ones in (`import_learned`)
+- Test (no brain, no internet — the web is faked): `python -m experiments.eval_learning` — 35/35
+
+---
+
 ### `inference/engine/chat.py`
 - An empty answer after cleanup never reaches the user: chat / explain say they couldn't put it into words (and how to ask for code), code modes ask for more detail (`_EMPTY_WORDS`, `_EMPTY_CODE`; tests call the generator directly, so their raw answers are unchanged)
 - `ChatEngine.chat()` = `_prepare()` (mode, machine check, open file, language, memory, prompt → `_Turn`) → `generate_from_prompt` → `_finish()` (save the turn, result dict); `chat_stream()` (Phase 10.1) = the same steps with `stream_from_prompt`, yielding `start` / `piece` / `done` for `/chat/stream`
-- `chat(session_id, user_input, open_file=None)` / `chat_stream(..., stop=None, open_file=None)` (Phase 10.2): `open_file` = the panel's open file as a dict (`file_context.OpenFile` fields). Selected code with a message no rule places ("hmm?") → explain, like pasted code. The file's code is appended to the message for the prompt only: mode detection, memory search and RAG use the message as typed, and the saved turn is the typed message. The result's `file` = what of the file she read ("app.py, lines 10-24"), None = nothing
+- `chat(session_id, user_input, open_file=None, project=None)` / `chat_stream(..., stop=None, open_file=None, project=None)`: `open_file` = the panel's open file as a dict (`file_context.OpenFile` fields, 10.2); `project` = the workspace folder (10.5 — searched when `file_context.about_project()` says the question is about the project: "where is …", "which file …", "in my codebase", a code name the open file doesn't have; such a message that no rule placed → explain). Selected code with a message no rule places ("hmm?") → explain, like pasted code. The file's code is appended to the message for the prompt only: mode detection, memory search and RAG use the message as typed, and the saved turn is the typed message. The result's `file` = what of the file she read ("app.py, lines 10-24"), None = nothing
 
 ---
 
@@ -271,14 +303,17 @@ Rules:
 ### `inference/engine/chat.py`
 - Top-level chat orchestrator
 - Wires together: controller (+ brain for unclear messages when on) → retriever → memory → prompt builder → generator → context manager
-- Public methods: `chat(session_id, user_input, open_file=None)` and `chat_stream(session_id, user_input, stop=None, open_file=None)`
+- Public methods: `chat(session_id, user_input, open_file=None, project=None)`, `chat_stream(session_id, user_input, stop=None, open_file=None, project=None)`, `project_index(root)` / `index_project(root)` (10.5 — one project's index in RAM at a time)
+- Phase 13: `_special()` answers without the brain — study requests (`learning.study.parse_study_request` → `LearningManager.start_study` with `_study_writer()` and `_study_should_wait`), "stop studying", and a short "no" to her lookup offer. `_prepare()` makes a **lookup turn** when the message is a yes to the pending offer (`SessionContext.pending_lookup` / `pending_question`, saved with the session) or asks her to look something up; its prompt is built in `_lookup()` once the pages are read (the question she couldn't answer, `extra=format_lookup(...)`); nothing found → a fixed reply. `chat_stream` yields `("status", {"text"})` while she searches. `_finish()` offers a lookup (appends `_OFFER`, sets the pending words, `asks` = the panel's quick replies) when `offer_lookup()` says so, saves what a lookup found as a memory fact with its source (`MemoryManager.remember_fact`, key `web:<words>`), and returns `notes` / `project` / `project_files` / `sources` / `asks` / `study`. Study notes relevant to a question go into `memories["notes"]` (every mode); "what have you studied?" in chat gets `format_studies()`
+- The user comes first: `_before_brain()` stops a study note being written (`LearningManager.yield_brain`) and marks V as answering; background study waits while she answers, 45 s after the user's last message (`USER_QUIET_SECONDS`) and while the laptop isn't free; the project index waits while the brain writes or the laptop is tight
 - Instantiates `Retriever` at startup if RAG is enabled in config
 - Gracefully disables RAG if index is missing
 
 ---
 
 ### `retrieval/indexer.py`
-- Builds the FAISS index from dataset JSONL (`CFG.paths.dataset` — dataset v2 since 2026-09-25) + codebase Python files
+- Builds the FAISS index from dataset JSONL (`CFG.paths.dataset` — dataset v3 since 2026-09-26); Py-V's own code only when config `rag.sources` has "codebase" or `--with-codebase` (project search, 10.5, covers the user's code now)
+- `python -m retrieval.indexer [--device cuda]` — embedder on config `rag.device` by default (CPU on the laptop); Kaggle stage 11 uses the GPU. Writes `build_info.json` next to the index (dataset path + md5, counts, date) — the pipeline rebuilds when the training set changed
 - Uses `chunker.py` for AST function/class-level splitting of codebase files
 - Scans: `inference/`, `model/`, `data/scripts/`, `retrieval/`
 - Skips: `__pycache__`, `sessions`, `experiments`, `extension`, `.git`, `venv`
@@ -297,6 +332,7 @@ Rules:
 ### `retrieval/embedder.py`
 - Sentence embedding wrapper around `BAAI/bge-small-en-v1.5`
 - Returns normalized numpy arrays for cosine similarity with FAISS IndexFlatIP
+- `cpu_embedder()` — **the one CPU embedder the app shares** (memory, project search, study notes, RAG retriever): one copy in RAM, loaded on first use. Never create another `Embedder(device="cpu")` in the app
 
 ---
 
@@ -313,6 +349,7 @@ Rules:
 - `detect_intent()` — routes query to sorting / searching / ml / web / general
 - `expand_query()` — adds algorithm-specific terms to improve recall
 - `_rerank()` — combines FAISS score + keyword overlap + intent boosts/penalties
+- `Retriever(index_path, device="cpu", min_score=0.0)` — `device` "cpu" = the shared CPU embedder; `min_score` = strong matches only: a candidate whose similarity is below it is dropped before reranking (config `rag.min_score` 0.8 — first guess, the Kaggle RAG stage decides). Results carry `similarity`
 - Never import model or training code
 
 ---
@@ -354,14 +391,27 @@ Rules:
 
 ---
 
+### `experiments/eval_languages.py` (2026-09-26)
+- Other-languages test: 20 requests as a user would type them (JavaScript, C, C++, Bash, Go, Rust, Java, Ruby, PHP, Lua, Haskell, PowerShell, TypeScript, Kotlin, C#, SQL, Assembly, Swift, Elixir, Dockerfile) through the app's path (`detect_language` → `OTHER_LANGUAGE_TEMPLATES` generate → adapter off). Graded by running the program where the tool is installed (`RUNNERS`: node, gcc, g++, bash, go, rustc, javac/java, ruby, php, lua, runghc, pwsh, node ≥ 22.6 for TypeScript) and checking what it prints; else only the code block ("format") — reported separately, a missing tool is never a failure. `--check-runners` lists the tools (no brain). Kaggle stage 14
+
+---
+
+### `experiments/eval_learning.py` / `experiments/eval_file_context.py` (no brain)
+- `eval_learning` — Phase 13 without brain or internet (35 checks): yes / no wordings, lookup requests and offers, study requests, note parsing, a whole study session with a fake web (notes, progress, pages never read twice, a related later session linking and picking up), notes search, approvals → training records, export / import, and the ask → "yeah" → lookup → "nah" → study start / stop flow through ChatEngine with a stand-in brain
+- `eval_file_context` — the chat panel's files (50 checks): reading (10.2), "Apply to file" placement (10.3), project search on a small project on disk and through ChatEngine (10.5)
+
+---
+
 ### `experiments/eval_all.py`
-- All four tests (MBPP, long-file, chat, fix/improve) with ONE model load — each script exposes `run(model, tokenizer, tag, args)`; `--skip-done` skips tests whose summary exists; a crashing test doesn't stop the others (non-zero exit)
+- All four tests (MBPP, long-file, chat, fix/improve) with ONE model load — each script exposes `run(model, tokenizer, tag, args)`; `--skip-done` skips tests whose summary exists; `--only mbpp fix` runs a subset (the RAG stage); a crashing test doesn't stop the others (non-zero exit)
 - Used by the one-button GPU pipeline (`scripts/gpu_pipeline.py`)
 
 ---
 
 ### `experiments/eval_common.py`
-- Shared by the scoring scripts: `add_model_args()` (`--base`, `--adapter`, `--model`, `--native-chat`, `--split-rules-from`), `result_tag()`, `load_for_eval()` → (model, tokenizer, tag)
+- Shared by the scoring scripts: `add_model_args()` (`--base`, `--adapter`, `--model`, `--native-chat`, `--split-rules-from`, `--adapter-all-modes`, `--adapter-modes`, `--rag`, `--rag-min-score`), `result_tag()`, `load_for_eval()` → (model, tokenizer, tag)
+- `--adapter-modes debug refactor` — the adapter only in those modes, overriding `v_adapter.json` (V's app setup; a Kaggle copy of the adapter lacks the hand-added `use_in_modes`); tag `_modes-debug-refactor`
+- `--rag` — `retrieve(args, query, mode)` adds RAG examples (the app's `Retriever`, strong matches only) to write / fix / improve questions in `eval_mbpp` and `eval_fix`; tag gets `_rag`; the summaries count the questions that got examples
 - The prompt format travels with the loaded model (`model.v_prompt_format`) and the generator applies it — scripts pass plain template prompts. `--native-chat` forces the brain's own chat format (thinking off) for an untrained chat brain; tag gets `_native`. A trained adapter uses the format from its `v_adapter.json`
 - `--split-rules-from NAME` gives a base brain another brain's splitting rules (tag gets `_split-<brain>`); a trained adapter always uses the rules in its `v_adapter.json`
 - Runs on the cloud T4 (Kaggle / Colab) like every big test. On the T4 (15 GB) it measures ability; how much fits on the laptop (4 GB) is a separate short laptop check
@@ -387,6 +437,8 @@ Rules:
 - Every stage checks its results first and is skipped when done; training resumes from its checkpoint. Stages whose inputs are missing are "blocked", not crashed; a Python error in a stage is caught and marked FAILED, the other lanes go on
 - `--stop-after H` (Kaggle: 11 — the limit is 12 h a run): jobs still running then are killed, later stages marked "not started (run time limit)", and the run ends normally so its output is saved. Per-job timeouts: tests 4 h, training 8 h, fetch 3 h, build 1 h (timer-based, fires even when a job prints nothing)
 - After every stage change: `{root}/results/PIPELINE_REPORT.md` + `.json` (stage status + where it ran, all scores, training notes); the whole console output is appended to `results/pipeline_log.txt`. Sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` for its jobs
+- **The big run after Phase 13 (2026-09-26): stages 11-15.** 11 RAG index over dataset v3 (`retrieval.indexer --device cuda`; done = `build_info.json` md5 matches the training set now; installs faiss-cpu / sentence-transformers if missing); 12 V as the app runs her (`app_args()`: chat brain + its adapter with `--adapter-modes debug refactor` — `APP_ADAPTER_MODES`) — all four tests, the chat test on the new chat path; 13 the same with `--rag --only mbpp fix`; 14 `experiments.eval_languages` in that setup; 15 the study session (`learning.study`, `STUDY_TOPIC` "Python code", `STUDY_MINUTES` 120, notes → `results/study/python_code.jsonl`; needs internet — the notebook has it). Two GPUs: chat lane … 6 → 11 → 12 → 13 → 14, plain lane … 8 → 15 (the study runs next to the tests); one GPU: all in a row. `retrieval/index` → `results/rag_index` is linked like the other output folders. The report gets "V as the app runs her" (RAG off / on side by side), other languages and the study session. Checked with a dry run (fake jobs)
+- `import_learned()` — uploaded `learned_*.jsonl` (Phase 13 exports) are copied into the raw source folder at the start; the next dataset build adds them (a retrain with them: redo stages 4, 5, 6)
 - New big jobs go into this pipeline as stages, not only into single notebook cells
 
 ---
@@ -470,8 +522,8 @@ Rules:
 - No heavy logic inside endpoints
 - Must call inference engine only
 - Model loaded once at startup via lifespan, stored in app state
-- Endpoints: `GET /health`, `POST /generate`, `POST /chat`, `POST /chat/stream` (the panel), `GET /memory`, `DELETE /memory/{fact_id}`
-- `/chat` and `/chat/stream` take an optional `file` (`schemas.OpenFile`, Phase 10.2 — the open file; text and selection up to 400,000 characters each) and answer with `file` (what of it V read)
+- Endpoints: `GET /health`, `POST /generate`, `POST /chat`, `POST /chat/stream` (the panel), `GET /memory`, `DELETE /memory/{fact_id}`, `POST /file/change` (10.3 — the file with a code block put in; writes nothing; no brain), `POST /project/index` + `GET /project/status?root=` (10.5), `GET /learning` (topics, approved count, study status), `POST /learning/approve` + `DELETE /learning/approve/{id}`, `POST /learning/topics/{id}/approve` + `DELETE /learning/topics/{id}`, `GET /learning/study` + `POST /learning/study/stop` (Phase 13)
+- `/chat` and `/chat/stream` take an optional `file` (`schemas.OpenFile`, Phase 10.2 — the open file; text and selection up to 400,000 characters each) and `project` (the workspace folder, 10.5), and answer with `file` (what of it V read), `notes`, `project` / `project_files`, `sources`, `asks`, `study`. `/chat/stream` events: `start` → `status` (while she looks something up) → `piece`… → `done` / `error`
 
 ---
 
@@ -481,14 +533,16 @@ Rules:
 - `src/extension.ts` — command registration, status bar
 - `src/api.ts` — HTTP client for the FastAPI server
 - `src/provider.ts` — editor insertion and instruction extraction
+- `src/file_update.ts` — (Phase 10.3) `ChangeReviewer`: "Apply to file" → `POST /file/change` (the answer's saved target: the file and the selection it read) → VS Code's diff (`vscode.diff`, the proposed file served from memory under the `pyv-change:` scheme) → Apply writes it with a minimal `WorkspaceEdit` (unsaved; if the document changed since, the change is worked out again first and the user asked once more) / Discard closes the diff. Never writes on its own
 - `src/file_context.ts` — (Phase 10.2) reads the open file for the panel: `describeEditor()` (name + selected lines, for the chip), `readOpenFile()` (what goes to the server: name relative to the workspace, `languageId`, text — a file over 300,000 characters as a window around the cursor — selection, cursor line). Only real documents: files, unsaved "Untitled" files, notebook cells — not the Output panel, git views or settings
 - Shortcuts in Python files: Ctrl+Shift+G = generate from selection / comment; Ctrl+Alt+G = generate from a typed prompt (was Ctrl+Shift+P, which hid VS Code's Command Palette once the extension was installed in the normal window)
 - `src/panel.ts` — (Phase 10) `ChatViewProvider`: the sidebar chat view (`pyv.chatView`, a `WebviewView` in V's own activity-bar container) — creates the page, passes messages between the page and `api.ts`, does the editor work the page asks for (insert / copy code)
 - `src/chat_view.ts` — (Phase 10) the page's HTML skeleton and security policy (nonce, no inline styles or scripts), linking `media/chat.css` and `media/chat.js`
-- `media/chat.js` — (Phase 10) everything that runs inside the page: rendering messages (text from V always via `textContent`, never HTML), input, scrolling, the live answer while V writes, the open-file chip, page state (`vscode.setState`: messages, session id and the chip's on/off survive hiding the panel and reloads)
+- `media/chat.js` — (Phase 10) everything that runs inside the page: rendering messages (text from V always via `textContent`, never HTML), input, scrolling, the live answer while V writes (and "Looking it up online: …"), the open-file chip, code block buttons (Copy / Insert at cursor / Apply to file → the review line with Apply / Discard), the memory view (facts with Forget, studied topics with "Use for training" / Forget, answers saved, project search status), the study bar (topic, minutes left, notes, Stop), "Good answer" (undo) under answers, sources (links, http(s) only) and quick replies ("Yes, look it up" / "No thanks") under the newest answer, page state (`vscode.setState`: messages with their ids / targets / approvals, session id and the chip's on/off survive hiding the panel and reloads)
 - `media/chat.css` — (Phase 10) panel styling, colors from the VS Code theme
 - `media/v.svg` — V's activity-bar icon
 - `src/server.ts` — (Phase 10) `ServerManager`: V's server follows the chat panel (owner, 2026-09-26). Panel opens → starts `python -m uvicorn inference.api.main:app --host 127.0.0.1 --port <from pyv.serverUrl>` in the Py-V folder (dot: yellow while the brain loads, ~1 min; green when `/health` answers). Panel closed for `pyv.stopServerAfterSeconds` (default 120 — owner chose 2 minutes so quick trips to Explorer don't reload the brain) → stops it (`taskkill /T /F` on Windows), freeing RAM and the GPU; closing VS Code stops it too. A server started elsewhere (a terminal) is used and never stopped. Starts only from a trusted workspace folder with `inference/api/main.py` or `pyv.projectPath`. Settings: `pyv.manageServer`, `pyv.stopServerAfterSeconds`, `pyv.pythonPath`, `pyv.projectPath`. Server output: Output → "V Server". Chat commands (owner): `/stop-server` stops her server now and keeps it stopped (no automatic start when the panel reopens) until `/start-server`; `/help` lists them — handled by the extension, never sent to the brain, not saved. A server started in a terminal can't be stopped from the panel (she says so). The chat view keeps its page alive while hidden (`retainContextWhenHidden`), so an answer being written isn't lost
+- `src/panel.ts` also: the workspace folder for project search (`pyv.projectSearch`, trusted folders; the open file's folder, else the first) — indexed when V comes online and 20 s after saves, `/index`; study polling every 10 s while a session runs; commands `/memory`, `/stop-study`, `/index`, `/stop-server`, `/start-server`, `/help`
 - Communicates with backend via `POST /api/v1/generate`, `POST /api/v1/chat` and `POST /api/v1/chat/stream` (the panel — `chatStream()` in `api.ts` reads the server-sent events with `fetch`: with Node's `http` module the event handling ran inside the HTTP parser and failed in VS Code's extension host with "Parse Error: JS Exception"; a server that can't be reached shows as offline — "fetch failed, ECONNREFUSED" — with the start command, and the panel rechecks every 5 s while offline)
 - Run it (owner's choice, 2026-09-26): **installed into the normal VS Code window** — `cd extension && npm run install-local` (compiles, packages `v.vsix` with `@vscode/vsce`, installs it), then "Developer: Reload Window". No second window (less RAM), no debugger. The package holds only `out/`, `media/`, `package.json`, README (`.vscodeignore`; the code needs no npm packages at run time). F5 ("Run V extension", `.vscode/launch.json`) is kept but failed on this laptop: the "JavaScript Debugger (Nightly)" extension kept connecting to `::1:<port>` (ECONNREFUSED) and VS Code closed the new window
 - Handles ECONNREFUSED and timeout errors gracefully
@@ -497,7 +551,10 @@ Rules:
 
 ## RAG Rules (Phase 8)
 
-> RAG is turned off in `configs/config.yaml` (`rag.enabled: false`) since 2026-09-25 — weak dataset matches were copied into answers. Rules below still apply when it is turned back on.
+> RAG is turned off in `configs/config.yaml` (`rag.enabled: false`) since 2026-09-25 — weak dataset matches were copied into answers. Prep for its comeback built 2026-09-26: index over dataset v3, strong matches only (`rag.min_score`), the shared CPU embedder (`rag.device`), the training set only (`rag.sources`); Kaggle stages 11-13 score it on vs off — switch on only if better. Rules below still apply when it is turned back on.
+
+- RAG over **training examples** (this section) and **project search** over the user's own code (Phase 10.5, `retrieval/project.py`) are separate indexes — never mix the user's code into the training-example index
+- Strong matches only: `Retriever(min_score=CFG.rag.min_score)`; the retriever's embedder is the shared CPU one
 
 - RAG only fires for `generate`, `debug`, `refactor` modes
 - RAG is never injected for `explain` or `chat` modes
@@ -526,11 +583,11 @@ Phase 9 adds per-language LoRA adapters. All rules below apply when implementing
 
 ---
 
-## Phase 10 Rules — VS Code Chat Panel (in progress — 10.1 built 2026-09-26)
+## Phase 10 Rules — VS Code Chat Panel (code built 2026-09-26: 10.1–10.5; not yet tried with the brain)
 
 Phase 10 replaces terminal interaction with a Copilot-style chat panel inside VS Code. All rules below apply when implementing Phase 10.
 
-Steps (owner: built one by one, each tried before the next): **10.1 chat in the sidebar (built)** → **10.2 file reading (built)** → 10.3 file updating → 10.4 memory view → 10.5 search over the user's project files.
+Steps: **10.1 chat in the sidebar** → **10.2 file reading** → **10.3 file updating** → **10.4 memory view** → **10.5 search over the user's project files** — all built 2026-09-26. The owner first chose "one by one, each tried before the next", then (2026-09-26) "continue the build and dont stop until done" — so 10.2–10.5 are untried with the brain; the test list is in `PROJECT_STATUS.md` section 2.
 
 - The chat panel is a sidebar `WebviewView` (`pyv.chatView`) in V's own activity-bar container — a view, not an editor-tab `WebviewPanel`
 - `extension/src/panel.ts` owns the view's lifecycle — creation, disposal, message passing
@@ -551,12 +608,14 @@ Steps (owner: built one by one, each tried before the next): **10.1 chat in the 
 - The panel is activated by a new command: `pyv.openChat`
 - No Python logic in any extension file — all backend calls go through `api.ts`
 - Added to the plan 2026-09-26 (owner): file reading, file updating, a memory view (list / forget facts) and search over the user's project files (RAG over their own code, built here — the Kaggle test of RAG over training examples runs separately)
-- File updating: V shows the change (a diff) and writes the file only when the user clicks apply — never on her own
+- File updating (10.3, built): V shows the change (a diff) and writes the file only when the user clicks Apply — never on her own. Placement on the server (`inference/engine/file_update.py`), diff + edit in the extension (`src/file_update.ts`); applied changes stay unsaved (Ctrl+S / Ctrl+Z)
+- Memory view (10.4, built): facts with Forget (`DELETE /memory/{id}`), studied topics, answers saved for training, project search status — the "Memory" button or `/memory`
+- Project search (10.5, built): only for questions about the project, only relevant pieces, within `WorkLimits.project_chars`; the index is the user's code — local, gitignored, never sent anywhere
 - Machine awareness applies to file reading: a long file goes in pieces, fewer when the machine is busy (Phase 12) — `machine.busy_work` / `tight_work` `file_chars`
 
 ---
 
-## Phase 13 Rules — Learning (planned 2026-09-26, nothing built)
+## Phase 13 Rules — Learning (code built 2026-09-26 in `learning/`; not yet tried with the brain)
 
 The owner's design. Nothing here changes the brain's weights on its own — retraining stays a Kaggle run the owner starts.
 
@@ -567,6 +626,10 @@ The owner's design. Nothing here changes the brain's weights on its own — retr
 - **Training on a topic**: study notes become training examples only when the owner approves that topic; the retrain is a Kaggle run the owner starts
 - Only the search words leave the laptop — never chat history, code or memory. Notes live in the local memory database (gitignored, never committed)
 - Honest limit: on the GTX 1650 reading one web page and writing a note should take the brain roughly half a minute to a minute (estimate from the 21–41 s answers of the first laptop check, not measured), so 30 minutes of study is tens of pages, not hundreds
+- As built: all network access in `learning/web.py`; all wording rules in `learning/lookup.py` and `learning/study.py` (rules, no brain); storage in `learning/store.py` (V's memory database); `learning/manager.py` is the only entry point for the chat engine and the API. Replies that need no brain (study start / stop, "no" to a lookup) never touch it
+- The brain goes to the user first: a study note being written is stopped when a message arrives and redone later; a session waits while the user chats and 45 s after, and while the laptop is busy (Phase 12)
+- A web fact saved to memory always carries its source and date (key `web:<search words>`, newest wins) — the one exception to "facts come only from the user's messages"
+- Training exports (`learning/export.py`) only take what the owner approved; chat / other-language answers are not exported until the trainer uses their prompt formats
 
 ---
 
@@ -604,7 +667,7 @@ Layout (as built):
 
 Rules:
 
-- Memory reuses `retrieval/embedder.py` — never add a second embedding model or loader
+- Memory reuses `retrieval/embedder.py` — never add a second embedding model or loader; since 2026-09-26 through `cpu_embedder()`, the one CPU copy shared with project search, study notes and the RAG retriever
 - All memory settings come from `CFG.memory.*` — never hardcode the DB path, top_k or token budget
 - Memory gets a small, fixed prompt budget (a few short items) — Granite can read 128K tokens, but on the 4 GB laptop GPU prompts over ~1,500 tokens spill into system RAM and slow down (long-question test); RAG shares the same budget
 - `explain` and `chat` modes receive facts only — never code snippets from memory (same code-bias reason as the RAG rule)
@@ -755,8 +818,22 @@ python -m inference.engine.machine
 # Language detection test (instant, no brain)
 python -m experiments.eval_language
 
-# File reading test for the chat panel (instant, no brain): what of the open file goes into the prompt
+# Chat panel files test (instant, no brain): reading, Apply-to-file placement, project search
 python -m experiments.eval_file_context
+
+# Phase 13 learning test (instant, no brain, no internet — the web is faked)
+python -m experiments.eval_learning
+
+# Other-languages test (loads the brain — Kaggle stage 14); which tools this machine has (no brain)
+python -m experiments.eval_languages --adapter model/lora --adapter-modes debug refactor
+python -m experiments.eval_languages --check-runners
+
+# A study session without the panel (loads the brain; needs internet) / import notes from the Kaggle run
+python -m learning.study --topic "asyncio" --minutes 10
+python -m learning.study --import "Kaggle downloads/<run>/results/study/python_code.jsonl"
+
+# Approved answers + approved study topics → training records (data/learned/)
+python -m learning.export
 
 # Mode detection test: word rules (instant, no brain) / with the brain for unclear messages (loads it)
 python -m experiments.eval_intent

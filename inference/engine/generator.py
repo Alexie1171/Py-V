@@ -322,21 +322,24 @@ def generate_from_prompt(
     temperature: float = None,
     formatted:   bool  = False,
     adapter:     bool  = True,
+    stop:        threading.Event = None,
 ) -> str:
     """
     temperature None = the mode's setting (config generation.<mode>.temperature).
     formatted = the prompt is already in the brain's own chat format
     (prompt_builder.build_chat_prompt) — V's templates are re-wrapped otherwise.
     adapter = False: the plain brain even in the adapter's modes (another language).
+    stop: set it and the brain stops after its current word (a study note gives
+    the brain up to the user — learning/study.py); no retry then.
     """
     if temperature is None:
         temperature = CFG.generation.for_mode(mode).temperature
 
     text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, temperature, mode, formatted,
-                                  adapter=adapter), mode)
+                                  stop=stop, adapter=adapter), mode)
 
     # Retry at higher temperature if output is empty
-    if not text.strip() and mode in ["chat", "explain"]:
+    if not text.strip() and mode in ["chat", "explain"] and not (stop and stop.is_set()):
         text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, max(temperature, 0.5), mode, formatted,
                                       adapter=adapter), mode)
 

@@ -14,13 +14,24 @@ GPU T4 x2) or of Google Colab/py_v_runner.ipynb (one T4, results on Drive).
        1 or 10 that passed more test questions), then test it
   7-8  train the plain version (V's template), then test it
   9    extra: the chat version with V's template (untrained)
+The big run after the code through Phase 13 (owner, 2026-09-26):
+  11   RAG index over training set v3 (GPU, about a minute)
+  12   V as the app runs her: the chat version + its adapter only for fix /
+       improve — all four tests (the chat test takes the new chat path:
+       persona, no emojis, answers only what is asked)
+  13   RAG test: 12's setup with RAG examples (MBPP + fix/improve) — compare with 12
+  14   other-languages test (experiments/eval_languages.py) in 12's setup
+  15   V's first study session: "learn about Python code" for 2 hours
+       (learning/study.py — needs Kaggle's internet on; notes exported to
+       results/study/, imported on the laptop with --import)
 
 Every test = MBPP (write code) + long-file bug fixes + chat + fix/improve.
 
 Lanes run at the same time, each job seeing only its own GPU (CUDA_VISIBLE_DEVICES):
   data lane, CPU:     3 → 4 (the trainings wait for it)
-  two GPUs (Kaggle):  chat lane on GPU 0: 1 → 10 → 5 → 6   plain lane on GPU 1: 2 → 7 → 8
-  one GPU (Colab):    1 → 2 → 10 → 5 → 6 → 7 → 8
+  two GPUs (Kaggle):  chat lane on GPU 0: 1 → 10 → 5 → 6 → 11 → 12 → 13 → 14
+                      plain lane on GPU 1: 2 → 7 → 8 → 15 (the study session runs next to the tests)
+  one GPU (Colab):    1 → 2 → 10 → 5 → 6 → 7 → 8 → 11 → 12 → 13 → 14 → 15
 Stage 9 is done by whichever GPU lane is free first (also while one waits for the data).
 scripts/pipeline_redo.json (in git) lists stages to run once more because their
 saved results are wrong; each entry is applied once per --root.
@@ -82,7 +93,14 @@ STAGES = {
     8:  "Test trained Granite plain",
     9:  "Extra: test Granite chat with V's template (untrained)",
     10: "Test Granite chat with Granite's splitting rule (untrained, own chat format)",
+    11: "RAG index over training set v3",
+    12: "Test V as the app runs her (adapter for fix / improve only; new chat path)",
+    13: "RAG test: V's setup + RAG examples (MBPP, fix / improve)",
+    14: "Other-languages test (V's setup)",
+    15: "Study session: learn about Python code for 2 hours (internet)",
 }
+APP_ADAPTER_MODES = ["debug", "refactor"]   # the laptop adapter's use_in_modes (added by hand after Kaggle run 2)
+STUDY_TOPIC, STUDY_MINUTES = "Python code", 120
 TEST_STAGES = {   # stage → (brain, trained, native chat format, splitting rules from)
     1: ("chat", False, True, None),  2: ("plain", False, False, None), 6: ("chat", True, True, None),
     8: ("plain", True, False, None), 9: ("chat", False, False, None),  10: ("chat", False, True, CHAT_SPLIT_FIX),
@@ -95,7 +113,8 @@ OUTPUTS  = CFG.evaluation.output_dir
 DATA_DIR = CFG.dataset_v2.output_dir
 LINKS    = {DATA_DIR: "results/data_v2",                             # project folder → saved folder under root
             CFG.dataset_v2.build["output_dir"]: "results/dataset_v3",
-            OUTPUTS: "results/eval"}
+            OUTPUTS: "results/eval",
+            CFG.rag.index_path: "results/rag_index"}
 V1_MD5  = "4028f2d3a010abf0aa36d52c498031e9"   # the v1 dataset (source of old_github) — laptop data/datasets/train.jsonl
 ENV     = {**os.environ, "PYTHONUNBUFFERED": "1",
            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}   # less fragmentation → more of the T4 usable
@@ -261,8 +280,72 @@ class Pipeline:
                 self.data_done),
             5: (self.trained("chat"), self.train("chat"), lambda: self.dataset_done() and chat_tested()),
             7: (self.trained("plain"), self.train("plain"), self.dataset_done),
+            11: (self.rag_index_done, lambda lane: self.ensure_rag_packages(lane)
+                 and self.run(lane, ["retrieval.indexer", "--device", "cuda"], timeout_h=1), self.dataset_done),
+            12: (self.app_done(rag=False), lambda lane: self.run(lane, ["experiments.eval_all", *self.app_args(),
+                                                                         "--skip-done"], timeout_h=4),
+                 self.trained("chat")),
+            13: (self.app_done(rag=True), lambda lane: self.run(lane, ["experiments.eval_all", *self.app_args(),
+                                                                        "--rag", "--only", "mbpp", "fix",
+                                                                        "--skip-done"], timeout_h=3),
+                 lambda: self.trained("chat")() and self.rag_index_done()),
+            14: (lambda: (OUTPUTS / f"languages_{self.app_tag()}_summary.json").exists(),
+                 lambda lane: self.run(lane, ["experiments.eval_languages", *self.app_args()], timeout_h=1),
+                 self.trained("chat")),
+            15: (lambda: self.study_file.exists(), self.study, None),
         })
         return jobs
+
+    # ─── the big run after Phase 13 (stages 11-15) ────────────────────────────
+
+    def ensure_rag_packages(self, lane: Lane) -> bool:
+        """faiss + sentence-transformers (RAG index, study-note search) - installed when the image lacks them."""
+        missing = [pkg for module, pkg in (("faiss", "faiss-cpu"), ("sentence_transformers", "sentence-transformers"))
+                   if subprocess.run([sys.executable, "-c", f"import {module}"], capture_output=True).returncode != 0]
+        if not missing:
+            return True
+        self.say(f"installing {', '.join(missing)}", lane)
+        return subprocess.run([sys.executable, "-m", "pip", "install", "-q", *missing]).returncode == 0
+
+    def app_args(self) -> list:
+        """V as the app runs her: the chat version, its trained adapter only for fix / improve."""
+        return ["--model", BRAINS["chat"]["model"], "--adapter", str(self.adapter_dir("chat")),
+                "--adapter-modes", *APP_ADAPTER_MODES]
+
+    def app_tag(self, rag: bool = False) -> str:
+        args = argparse.Namespace(base=False, model=BRAINS["chat"]["model"], adapter=str(self.adapter_dir("chat")),
+                                  native_chat=False, split_rules_from=None, adapter_all_modes=False,
+                                  adapter_modes=APP_ADAPTER_MODES, rag=rag)
+        return result_tag(args)
+
+    def app_done(self, rag: bool):
+        prefixes = ("mbpp", "fix") if rag else tuple(p for p, _ in TESTS)
+        return lambda: all((OUTPUTS / f"{p}_{self.app_tag(rag)}_summary.json").exists() for p in prefixes)
+
+    def rag_index_done(self) -> bool:
+        """The index exists and was built from the training set that is there now."""
+        info = Path(CFG.rag.index_path) / "build_info.json"
+        data = Path(CFG.paths.dataset)
+        if not info.exists() or not data.exists() or not (Path(CFG.rag.index_path) / "faiss.index").exists():
+            return False
+        return json.load(open(info, encoding="utf-8")).get("dataset_md5") == hashlib.md5(data.read_bytes()).hexdigest()
+
+    @property
+    def study_file(self) -> Path:
+        return self.results / "study" / "python_code.jsonl"
+
+    def study(self, lane: Lane) -> bool:
+        """V's first study session (owner: "learn about Python code for 2 hours"). Needs Kaggle's internet on."""
+        folder = self.study_file.parent
+        folder.mkdir(parents=True, exist_ok=True)
+        self.ensure_rag_packages(lane)          # meaning search over notes; without it: keyword search only
+        ok = self.run(lane, ["learning.study", "--topic", STUDY_TOPIC, "--minutes", str(STUDY_MINUTES),
+                             "--db", str(folder / "study.db"), "--export", str(self.study_file)],
+                      timeout_h=STUDY_MINUTES / 60 + 0.75)
+        if not ok and not self.study_file.exists():
+            self.say("Study session: no notes - is the notebook's internet on (Settings > Internet)? "
+                     "Laptop alternative: \"learn about Python code for 2 hours\" in V's panel", lane)
+        return ok
 
     def adapter_dir(self, brain: str) -> Path:
         return self.root / f"model_{BRAINS[brain]['model'].split('/')[-1]}" / "lora"
@@ -360,6 +443,17 @@ class Pipeline:
                 part.replace(target)
                 self.say(f"{name}: copied from {found[0]}", lane)
 
+    def import_learned(self):
+        """V's learned_*.jsonl (Phase 13, learning/export.py: approved answers + approved study topics)
+        uploaded to --inputs → the raw source folder; the next dataset build (stage 4) adds them all.
+        A retrain with them needs stages 4, 5, 6 redone (scripts/pipeline_redo.json)."""
+        for found in find(self.inputs, "learned_*.jsonl"):
+            target = DATA_DIR / found.name
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(found, target)
+                self.say(f"{found.name}: copied from {found} (goes into the next dataset build)")
+
     def _restore_v1(self, lane: Lane) -> bool:
         """The v1 dataset is not on GitHub: find it by fingerprint in --inputs or on Drive."""
         target = Path(CFG.dataset_v2.sources["old_github"]["path"])
@@ -432,6 +526,14 @@ class Pipeline:
             files = [DATA_DIR / "long_file_fix.jsonl"]
         elif n == 4:
             files = [CFG.dataset_v2.build["output_dir"] / name for name in ("build_report.json", "train.jsonl", "val.jsonl")]
+        elif n == 11:
+            files = [Path(CFG.rag.index_path) / name for name in ("faiss.index", "metadata.pkl", "build_info.json")]
+        elif n in (12, 13, 14):
+            tag      = self.app_tag(rag=n == 13)
+            prefixes = ["languages"] if n == 14 else ["mbpp", "fix"] if n == 13 else [p for p, _ in TESTS]
+            files    = [OUTPUTS / f"{prefix}_{tag}{end}" for prefix in prefixes for end in (".jsonl", "_summary.json")]
+        elif n == 15:
+            files = [self.study_file]
         else:
             raise ValueError(f"stage {n} cannot be redone")
         removed = [path for path in files if path.exists()]
@@ -484,6 +586,7 @@ class Pipeline:
             fix  = got.get("fix", {})
             lines.append(f"| {label} | {cell('mbpp')} | {cell('longctx', 'passed')} | {cell('chat', 'passed')} | "
                          f"{fix.get('fix', {}).get('passed', '—')} | {fix.get('improve', {}).get('passed', '—')} |")
+        lines += self._app_report(scores)
         lines += ["", "## Training"]
         training = {}
         for brain in BRAINS:
@@ -506,6 +609,37 @@ class Pipeline:
                                   for n, (s, w, m) in sorted(self.status.items())],
                        "scores": scores, "training": training}, f, indent=1)
 
+    def _app_report(self, scores: dict) -> list:
+        """Stages 12-15: V as the app runs her, RAG on vs off, other languages, the study session."""
+        off, on = self.summaries(self.app_tag()), self.summaries(self.app_tag(rag=True))
+        scores[self.app_tag()], scores[self.app_tag(rag=True)] = off, on
+        cell = lambda got, p, key="score": str(got[p].get(key, "")) if p in got else "—"
+        fix  = lambda got, kind: str(got.get("fix", {}).get(kind, {}).get("passed", "—"))
+        lines = ["", "## V as the app runs her (stages 12-13)",
+                 "| Setup | MBPP /100 | Long-file /10 | Chat /8 | Fix /40 | Improve /40 |", "|---|---|---|---|---|---|",
+                 f"| Adapter for fix / improve only, RAG off | {cell(off, 'mbpp')} | {cell(off, 'longctx', 'passed')} | "
+                 f"{cell(off, 'chat', 'passed')} | {fix(off, 'fix')} | {fix(off, 'improve')} |",
+                 f"| Same + RAG examples (strong matches only) | {cell(on, 'mbpp')} | — | — | {fix(on, 'fix')} | "
+                 f"{fix(on, 'improve')} |"]
+        rag = on.get("mbpp", {}).get("rag")
+        if rag:
+            lines.append(f"\nRAG examples went into {rag['questions_with_examples']} of 100 MBPP questions "
+                         f"(min_score {rag['min_score']}). Switch RAG on in config only if the RAG row is better.")
+        lang = OUTPUTS / f"languages_{self.app_tag()}_summary.json"
+        if lang.exists():
+            got = json.load(open(lang, encoding="utf-8"))
+            lines += ["", "## Other languages (stage 14)",
+                      f"- Programs run and correct: {got['ran']['passed']}/{got['ran']['questions']} "
+                      f"({', '.join(got['ran']['languages'])})",
+                      f"- Code blocks where no tool was installed: {got['format']['passed']}/{got['format']['questions']}",
+                      f"- Not recognised: {', '.join(got['not_recognised']) or 'none'}"]
+        if self.study_file.exists():
+            notes = sum(len(json.loads(line)["notes"]) for line in open(self.study_file, encoding="utf-8") if line.strip())
+            lines += ["", "## Study session (stage 15)",
+                      f"- \"{STUDY_TOPIC}\" for {STUDY_MINUTES} min: {notes} notes -> `results/study/python_code.jsonl` "
+                      "(laptop: `python -m learning.study --import <file>`)"]
+        return lines
+
     # ─── order ────────────────────────────────────────────────────────────────
 
     def go(self):
@@ -519,15 +653,16 @@ class Pipeline:
         for note in notes:
             self.say(note)
         self.link_outputs()
+        self.import_learned()
         self.apply_redo()
         self.write_report()
 
         data_ready = threading.Event()
         data = Lane("data", "")
         if self.gpus >= 2:
-            gpu_lanes = [(Lane("chat", "0"), (1, 10), (5, 6)), (Lane("plain", "1"), (2,), (7, 8))]
+            gpu_lanes = [(Lane("chat", "0"), (1, 10), (5, 6, 11, 12, 13, 14)), (Lane("plain", "1"), (2,), (7, 8, 15))]
         else:
-            gpu_lanes = [(Lane("gpu", "0"), (1, 2, 10), (5, 6, 7, 8))]
+            gpu_lanes = [(Lane("gpu", "0"), (1, 2, 10), (5, 6, 7, 8, 11, 12, 13, 14, 15))]
 
         def data_lane():
             try:

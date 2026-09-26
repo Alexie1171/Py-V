@@ -118,7 +118,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   context.subscriptions.push(generateCmd, generateFromInputCmd, checkServerCmd, chatView, openChatCmd, server,
-                             chatProvider.trackEditor());
+                             chatProvider, chatProvider.trackEditor());
 }
 
 // ─── Deactivation ─────────────────────────────────────────────────────────────

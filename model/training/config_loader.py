@@ -79,6 +79,9 @@ class RAGConfig:
     index_path:   Path
     top_k:        int
     active_modes: list
+    min_score:    float   # strong matches only: a chunk's similarity must reach this
+    device:       str     # the retriever's embedder: "cpu" = the shared CPU copy (never the laptop GPU)
+    sources:      list    # what the index holds: "dataset" (training set) and/or "codebase" (Py-V's own code)
 
 
 @dataclass
@@ -100,6 +103,7 @@ class WorkLimits:
     memory_code:      int
     prose_max_tokens: Optional[int]   # None = model.max_tokens
     file_chars:       int = 0         # of the open file in the prompt (Phase 10.2); 0 = files.max_prompt_chars
+    project_chars:    int = -1        # of project search results (Phase 10.5); -1 = project.max_prompt_chars
 
 
 @dataclass
@@ -117,6 +121,30 @@ class MachineConfig:
 class FilesConfig:
     max_prompt_chars: int   # of the open file per answer (chat panel, Phase 10.2)
     piece_lines:      int   # a long file goes in pieces of at most this many lines
+
+
+@dataclass
+class ProjectConfig:
+    enabled:          bool
+    index_dir:        Path    # one SQLite file per project — the user's code, gitignored
+    max_file_kb:      int
+    max_files:        int
+    top_k:            int
+    max_prompt_chars: int
+    min_similarity:   float
+
+
+@dataclass
+class LearningConfig:
+    enabled:           bool
+    web:               bool    # lookups and study sessions may go online (only search words leave the laptop)
+    lookup_pages:      int     # pages read for one lookup
+    lookup_chars:      int     # of those pages in the answer's prompt
+    notes_top_k:       int     # study notes added to an answer's prompt
+    notes_chars:       int
+    note_tokens:       int     # the brain's budget for one study note
+    study_max_minutes: int
+    learned_dir:       Path    # exports for training (approved answers + approved topics) — private, gitignored
 
 
 @dataclass
@@ -152,6 +180,8 @@ class AppConfig:
     memory:     MemoryConfig
     machine:    MachineConfig
     files:      FilesConfig
+    project:    ProjectConfig
+    learning:   LearningConfig
     intent:     IntentConfig
     dataset_v2: DatasetV2Config
     evaluation: EvaluationConfig
@@ -217,6 +247,9 @@ def load_config() -> AppConfig:
         index_path   = Path(r.get("index_path", "./retrieval/index")),
         top_k        = r.get("top_k",        3),
         active_modes = r.get("active_modes", ["generate", "debug", "refactor"]),
+        min_score    = r.get("min_score",    0.8),
+        device       = r.get("device",       "cpu"),
+        sources      = r.get("sources",      ["dataset"]),
     )
 
     m = raw.get("memory", {})
@@ -238,10 +271,10 @@ def load_config() -> AppConfig:
         tight            = mc.get("tight",            {"ram_free_gb": 1.0, "gpu_free_gb": 0.3, "cpu_percent": 97}),
         busy_work        = WorkLimits(**mc.get("busy_work",  {"history_turns": 4, "memory_facts": 3,
                                                                "memory_code": 1, "prose_max_tokens": 384,
-                                                               "file_chars": 1600})),
+                                                               "file_chars": 1600, "project_chars": 800})),
         tight_work       = WorkLimits(**mc.get("tight_work", {"history_turns": 2, "memory_facts": 1,
                                                                "memory_code": 0, "prose_max_tokens": 256,
-                                                               "file_chars": 800})),
+                                                               "file_chars": 800, "project_chars": 0})),
         gentle           = mc.get("gentle",           True),
         heads_up_minutes = mc.get("heads_up_minutes", 10),
     )
@@ -250,6 +283,30 @@ def load_config() -> AppConfig:
     files_cfg = FilesConfig(
         max_prompt_chars = fc.get("max_prompt_chars", 3000),
         piece_lines      = fc.get("piece_lines",      40),
+    )
+
+    pc = raw.get("project", {})
+    project_cfg = ProjectConfig(
+        enabled          = pc.get("enabled",          True),
+        index_dir        = Path(pc.get("index_dir",   "./data/projects")),
+        max_file_kb      = pc.get("max_file_kb",      200),
+        max_files        = pc.get("max_files",        5000),
+        top_k            = pc.get("top_k",            3),
+        max_prompt_chars = pc.get("max_prompt_chars", 1500),
+        min_similarity   = pc.get("min_similarity",   0.55),
+    )
+
+    lc = raw.get("learning", {})
+    learning_cfg = LearningConfig(
+        enabled           = lc.get("enabled",           True),
+        web               = lc.get("web",               True),
+        lookup_pages      = lc.get("lookup_pages",      2),
+        lookup_chars      = lc.get("lookup_chars",      2400),
+        notes_top_k       = lc.get("notes_top_k",       2),
+        notes_chars       = lc.get("notes_chars",       700),
+        note_tokens       = lc.get("note_tokens",       320),
+        study_max_minutes = lc.get("study_max_minutes", 240),
+        learned_dir       = Path(lc.get("learned_dir",  "./data/learned")),
     )
 
     intent_cfg = IntentConfig(brain_for_unclear=raw.get("intent", {}).get("brain_for_unclear", False))
@@ -283,6 +340,8 @@ def load_config() -> AppConfig:
         memory     = memory_cfg,
         machine    = machine_cfg,
         files      = files_cfg,
+        project    = project_cfg,
+        learning   = learning_cfg,
         intent     = intent_cfg,
         dataset_v2 = dataset_v2_cfg,
         evaluation = evaluation_cfg,

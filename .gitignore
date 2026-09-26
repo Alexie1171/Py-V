@@ -33,6 +33,10 @@ Kaggle downloads/
 # Private conversations — V's memory database (Phase 11) and old session files
 data/memory/
 sessions/
+# Project search indexes (Phase 10.5) — the user's own code
+data/projects/
+# Training exports from approved answers / studied topics (Phase 13) — the user's chats
+data/learned/
 Google Colab/
 
 # ── PY-V specific ──────────────────────

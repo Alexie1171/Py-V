@@ -2,7 +2,7 @@
 
 import faiss
 import pickle
-from retrieval.embedder import Embedder
+from retrieval.embedder import Embedder, cpu_embedder
 from retrieval.vector_store import VectorStore
 
 
@@ -11,9 +11,12 @@ class Retriever:
     # ----------------------------
     # INIT
     # ----------------------------
-    def __init__(self, index_path="retrieval/index"):
-        self.embedder   = Embedder()
+    def __init__(self, index_path="retrieval/index", device: str = "cpu", min_score: float = 0.0):
+        """device "cpu" = the app's shared CPU embedder (the laptop GPU holds the brain);
+        min_score = strong matches only — a candidate's similarity must reach it (0 = no cut-off)."""
+        self.embedder   = cpu_embedder() if device == "cpu" else Embedder(device=device)
         self.index_path = index_path
+        self.min_score  = min_score
         self.store      = VectorStore(dim=0)
         self._load_index()
 
@@ -159,9 +162,10 @@ class Retriever:
             )
 
             reranked.append({
-                "score":    final_score,
-                "metadata": r["metadata"],
-                "content":  content,
+                "score":     final_score,
+                "similarity": faiss_score,
+                "metadata":  r["metadata"],
+                "content":   content,
             })
 
         reranked.sort(key=lambda x: x["score"], reverse=True)
@@ -179,6 +183,8 @@ class Retriever:
         filtered = []
 
         for r in candidates:
+            if r["score"] < self.min_score:      # weak match: left out (they were copied into answers)
+                continue
             content = self._get_content(r).lower()
 
             # Hard filter: remove list-chunking noise for sorting queries

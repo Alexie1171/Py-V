@@ -4,7 +4,7 @@ Pydantic request and response models for the FastAPI layer.
 No business logic here — types only.
 """
 
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -64,6 +64,10 @@ class ChatRequest(BaseModel):
         None,
         description = "The file open in the editor (chat panel). Its code goes into the prompt when the message is about it.",
     )
+    project: Optional[str] = Field(
+        None,
+        description = "The workspace folder (chat panel). Searched when a question is about the project (Phase 10.5).",
+    )
 
 
 class ChatResponse(BaseModel):
@@ -77,6 +81,24 @@ class ChatResponse(BaseModel):
     load:        Optional[str] = Field(None, description="How busy the computer was: free / busy / tight (V takes on less when busy).")
     note:        Optional[str] = Field(None, description="V's casual heads-up about the computer, when she has one.")
     file:        Optional[str] = Field(None, description="What of the open file V read, e.g. 'app.py, lines 10-24'; None = nothing.")
+    notes:       int           = Field(0, description="Study notes added to the prompt (Phase 13).")
+    project:     int           = Field(0, description="Pieces of the user's project added to the prompt (Phase 10.5).")
+    project_files: List[str]   = Field(default_factory=list, description="Which ones, e.g. 'src/a.py:10-40'.")
+    sources:     Optional[List[dict]] = Field(None, description="Pages a web lookup read: [{title, url}] (Phase 13).")
+    asks:        Optional[List[str]]  = Field(None, description="Quick replies the panel offers, e.g. to 'Want me to look that up online?'.")
+    study:       Optional[dict] = Field(None, description="The study session, if one runs (Phase 13).")
+
+
+class ChangeRequest(BaseModel):
+    """A code block from V's answer to put into the open file (chat panel "Apply to file", Phase 10.3)."""
+    code: str      = Field(..., min_length=1, max_length=400_000, description="The code block.")
+    file: OpenFile = Field(..., description="The file as it is now; selection / selection_line = what the answer read.")
+
+
+class ChangeResponse(BaseModel):
+    content: str = Field(..., description="The whole file with the change — shown as a diff, written only on Apply.")
+    how:     str = Field(..., description="selection / whole / blocks / insert")
+    summary: str = Field(..., description="What the change does, e.g. 'replaces add() and adds 1 import'.")
 
 
 class MemoryFact(BaseModel):
@@ -96,6 +118,33 @@ class MemoryListResponse(BaseModel):
 class MemoryDeleteResponse(BaseModel):
     id:      int  = Field(..., description="The fact id that was asked to be deleted.")
     deleted: bool = Field(..., description="True if it existed and is now gone.")
+
+
+class ProjectIndexRequest(BaseModel):
+    root: str = Field(..., min_length=1, description="The workspace folder to index (the user's own code, stays local).")
+
+
+class ProjectStatus(BaseModel):
+    root:     str
+    status:   str             = Field(..., description="idle / indexing / paused / ready / error / off")
+    files:    int             = 0
+    pieces:   int             = 0
+    embedded: int             = 0
+    updated:  Optional[float] = None
+    error:    Optional[str]   = None
+
+
+class ApproveRequest(BaseModel):
+    """ "Good answer" in the panel — saved as a training example (Phase 13)."""
+    question:   str           = Field(..., min_length=1)
+    answer:     str           = Field(..., min_length=1)
+    mode:       Optional[str] = None
+    language:   Optional[str] = None
+    session_id: Optional[str] = None
+
+
+class TopicApproval(BaseModel):
+    approved: bool = Field(..., description="True = her notes on this topic may go into the next training run.")
 
 
 class HealthResponse(BaseModel):

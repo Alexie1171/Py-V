@@ -2,6 +2,7 @@
 manager.py — PY-V (memory/)
 MemoryManager — what the chat engine and the API use:
   remember_turn()  save both messages, tag facts from the user's message
+  remember_fact()  a fact from a web lookup, with its source (Phase 13)
   recall()         facts (every mode) + earlier code answers (code modes only)
   list_facts() / forget()   for GET / DELETE /api/v1/memory
   load_session() / save_session() / history()   session state (replaces sessions/*.json)
@@ -39,8 +40,8 @@ class MemoryManager:
             return None
         if self._encoder is None:
             try:
-                from retrieval.embedder import Embedder
-                self._encoder = Embedder(device="cpu")
+                from retrieval.embedder import cpu_embedder
+                self._encoder = cpu_embedder()   # shared with project search and study notes
             except Exception as e:
                 logger.warning(f"Memory: embedding model unavailable ({e}) - keyword search only")
                 self._failed = True
@@ -71,6 +72,13 @@ class MemoryManager:
         if mode in self.cfg.active_code_modes and has_code(assistant_text):
             self._index("message", assistant_id, f"{user_text}\n{assistant_text}")
         return fact_ids
+
+    def remember_fact(self, key: str, text: str) -> int:
+        """A fact that doesn't come from the user's message — what a web lookup found, with its source
+        (Phase 13). Same key → the newer one wins."""
+        fact_id = self.store.add_fact(key, text)
+        self._index("fact", fact_id, text)
+        return fact_id
 
     def recall(self, query: str, mode: str, top_k: int = None, code_top_k: int = None) -> dict:
         """{"facts": [MemoryHit], "code": [MemoryHit]} — code only in the code modes.

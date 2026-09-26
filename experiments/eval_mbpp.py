@@ -38,7 +38,7 @@ from model.training.config_loader import CFG
 from inference.engine.prompt_builder import build_prompt
 from inference.engine.generator import generate_from_prompt
 from experiments.code_runner import run_python
-from experiments.eval_common import add_model_args, load_for_eval
+from experiments.eval_common import add_model_args, load_for_eval, retrieve
 
 
 def load_problems() -> list:
@@ -97,14 +97,18 @@ def run(model, tokenizer, tag: str, args):
     ev.output_dir.mkdir(parents=True, exist_ok=True)
     out_path = ev.output_dir / f"mbpp_{tag}.jsonl"
 
-    passed = 0
-    start  = time.perf_counter()
+    passed   = 0
+    rag_used = 0          # questions that got RAG examples (--rag; strong matches only)
+    start    = time.perf_counter()
 
     with open(out_path, "w", encoding="utf-8") as out:
         for i, problem in enumerate(problems, 1):
             t = time.perf_counter()
 
-            prompt    = build_prompt("generate", build_task(problem), {}, [])
+            task      = build_task(problem)
+            chunks    = retrieve(args, task, "generate")
+            rag_used += bool(chunks)
+            prompt    = build_prompt("generate", task, {}, chunks)
             response  = generate_from_prompt(model, tokenizer, prompt,
                                              mode="generate", temperature=0.0)
             code      = extract_code(response)
@@ -129,10 +133,11 @@ def run(model, tokenizer, tag: str, args):
     print(f"\nMBPP score ({tag}): {passed}/{len(problems)} "
           f"= {100 * passed / len(problems):.1f}% in {minutes:.0f} min -> {out_path}")
 
-    write_summary(ev.output_dir / f"mbpp_{tag}_summary.json", args, model, passed, len(problems), minutes)
+    write_summary(ev.output_dir / f"mbpp_{tag}_summary.json", args, model, passed, len(problems), minutes,
+                  rag_used if getattr(args, "rag", False) else None)
 
 
-def write_summary(path: Path, args, model, passed: int, total: int, minutes: float):
+def write_summary(path: Path, args, model, passed: int, total: int, minutes: float, rag_used: int = None):
     """Score plus every setting that can change it, so runs stay comparable."""
     import peft, torch, transformers
 
@@ -151,6 +156,10 @@ def write_summary(path: Path, args, model, passed: int, total: int, minutes: flo
         "adapter":      adapter,
         "benchmark":    dataclasses.asdict(CFG.evaluation) | {"output_dir": str(CFG.evaluation.output_dir)},
         "prompt_mode":  "generate",
+        "rag":          None if rag_used is None else {"questions_with_examples": rag_used,
+                                                       "min_score": args.rag_min_score if args.rag_min_score is not None
+                                                                    else CFG.rag.min_score,
+                                                       "top_k": CFG.rag.top_k, "index": str(CFG.rag.index_path)},
         "prompt_format": model.v_prompt_format,
         "split_rules":   getattr(model, "v_split_rules", None),
         "decoding":     {"temperature": 0.0, "max_new_tokens": CFG.model.max_tokens,

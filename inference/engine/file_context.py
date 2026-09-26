@@ -107,6 +107,31 @@ def about_file(message: str, file: OpenFile) -> bool:
     return False
 
 
+_ABOUT_PROJECT = re.compile(
+    r"\b(my|the|this|our|whole|entire) (project|codebase|code base|repo|repository|workspace)\b"
+    r"|\bwhere (is|are|do|does|did|was|were)\b|\bwhich (file|files|module|modules)\b"
+    r"|\bin (another|other|which|what) (file|files|module)\b"
+    r"|\bwhere\b[^?\n]*\b(defined|declared|used|called|set|loaded|created|stored|handled|imported|implemented|saved)\b",
+    re.IGNORECASE)
+
+
+def about_project(message: str, file: Optional[OpenFile] = None) -> bool:
+    """
+    Project search (Phase 10.5) should look: the message asks about the
+    project ("where is the config loaded?", "which file handles login", "in
+    my codebase"), or names code the open file doesn't have ("what does
+    load_config do?" with another file open).
+    """
+    if _ABOUT_PROJECT.search(message):
+        return True
+    text = (file.selection + "\n" + file.content) if file else ""
+    for match in _CODE_NAME.finditer(message):
+        name = next(g for g in match.groups() if g).strip()
+        if len(name) > 2 and not re.search(rf"(?<![\w]){re.escape(name)}(?![\w])", text):
+            return True
+    return False
+
+
 def _about_text(message: str, text: str) -> bool:
     """Explain mode: the message is about this text — "this" / "it", a word from it, or
     too short to have a subject of its own ("explain", "hmm?", "why")."""

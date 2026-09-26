@@ -29,12 +29,24 @@ def add_model_args(parser):
     parser.add_argument("--adapter-all-modes", action="store_true",
                         help="use the adapter in every mode, ignoring its v_adapter.json \"use_in_modes\" "
                              "(the pipeline measures a new adapter this way)")
+    parser.add_argument("--adapter-modes", nargs="+", default=None,
+                        help="use the adapter only in these modes (the app's setup, e.g. debug refactor) - "
+                             "overrides v_adapter.json (a Kaggle copy of the adapter lacks the hand-added setting)")
+    parser.add_argument("--rag", action="store_true",
+                        help="add RAG examples from the training set to write / fix / improve prompts "
+                             "(index: config rag.index_path; strong matches only, config rag.min_score)")
+    parser.add_argument("--rag-min-score", type=float, default=None,
+                        help="override config rag.min_score for this run")
 
 
 def adapter_modes(args):
-    """Modes the adapter is limited to (its v_adapter.json "use_in_modes"), None = every mode."""
+    """Modes the adapter is limited to (--adapter-modes, else its v_adapter.json "use_in_modes"), None = every mode."""
+    if args.base or getattr(args, "adapter_all_modes", False):
+        return None
+    if getattr(args, "adapter_modes", None):
+        return list(args.adapter_modes)
     meta = Path(args.adapter) / ADAPTER_META
-    if args.base or getattr(args, "adapter_all_modes", False) or not meta.exists():
+    if not meta.exists():
         return None
     return json.loads(meta.read_text(encoding="utf-8")).get("use_in_modes")
 
@@ -51,7 +63,8 @@ def result_tag(args) -> str:
     modes = adapter_modes(args)
     return (tag + ("_native" if args.native_chat else "")
             + (f"_split-{split.split('/')[-1]}" if args.base and split and split != args.model else "")
-            + (f"_modes-{'-'.join(modes)}" if modes else ""))
+            + (f"_modes-{'-'.join(modes)}" if modes else "")
+            + ("_rag" if getattr(args, "rag", False) else ""))
 
 
 def load_for_eval(args):
@@ -72,4 +85,21 @@ def load_for_eval(args):
         model.v_prompt_format = "native_chat"
     if getattr(args, "adapter_all_modes", False):
         model.v_adapter_modes = None
+    elif getattr(args, "adapter_modes", None) and not args.base:
+        model.v_adapter_modes = list(args.adapter_modes)
     return model, tokenizer, tag
+
+
+_retriever = {}
+
+
+def retrieve(args, query: str, mode: str) -> list:
+    """RAG examples for a test question (--rag): the app's retriever and cut-off, only in config
+    rag.active_modes; [] without --rag. The index must exist (python -m retrieval.indexer)."""
+    if not getattr(args, "rag", False) or mode not in CFG.rag.active_modes:
+        return []
+    if "r" not in _retriever:
+        from retrieval.retriever import Retriever
+        min_score = args.rag_min_score if args.rag_min_score is not None else CFG.rag.min_score
+        _retriever["r"] = Retriever(index_path=str(CFG.rag.index_path), device=CFG.rag.device, min_score=min_score)
+    return _retriever["r"].search(query, k=CFG.rag.top_k)

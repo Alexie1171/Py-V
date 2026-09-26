@@ -120,6 +120,37 @@ Right now: {usage}.{busy}
 If asked about the computer, use these numbers; don't guess others."""
 V_MACHINE_BUSY = " It's busy, so keep this answer short."
 
+# ─── Phase 13 — learning ──────────────────────────────────────────────────────
+
+# A web lookup the user said yes to (learning/lookup.py): the chat system
+# message gets what she found, and she answers from it.
+V_LOOKUP = """You just looked this up online. What you found (from {sources}):
+\"\"\"
+{found}
+\"\"\"
+Answer the user's question from what you found, in your own words, briefly. If it doesn't answer the question, say so. Don't invent facts that aren't there. Don't list the sources — they are shown under your answer."""
+
+# What she has studied, in the chat system message when the user asks about it
+# or a note is relevant (learning/manager.py).
+V_STUDIES = """Topics you studied on your own (study sessions): {topics}."""
+V_NOTES   = """From your study notes:
+{notes}"""
+
+# One study note (learning/study.py): part of a web page → short notes in her
+# own words + what to study next. The system message is V_PERSONA.
+STUDY_NOTE_TEMPLATE = """You are studying "{topic}" on your own. Below is part of a web page ("{title}") about "{subtopic}".
+
+Write short study notes in your own words: 3 to 6 lines starting with "- ", each one fact worth remembering about {topic}. A short code example (at most 3 lines) is fine inside a note. Don't copy long sentences. If the page has nothing useful about {topic}, write only: NOTHING USEFUL
+
+Then write one line starting with "NEXT:" and up to 3 related subtopics of {topic} worth studying next, separated by commas.
+
+Already covered: {covered}
+
+Page part:
+\"\"\"
+{excerpt}
+\"\"\""""
+
 # Mode question for a message the word rules couldn't place (controller.py flags
 # it "unclear"; inference/engine/intent_classifier.py asks the brain). Kept out of
 # TEMPLATES: it is not an answer mode and must not feed the prompt-echo filter.

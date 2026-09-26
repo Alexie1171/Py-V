@@ -2,7 +2,8 @@ import re
 
 from model.training.config_loader import CFG
 from inference.engine.prompt_templates import (TEMPLATES, OTHER_LANGUAGE_TEMPLATES, INTENT_TEMPLATE, V_PERSONA,
-                                               V_MACHINE, V_MACHINE_BUSY)
+                                               V_MACHINE, V_MACHINE_BUSY, V_LOOKUP, V_STUDIES, V_NOTES,
+                                               STUDY_NOTE_TEMPLATE)
 
 # Modes that receive RAG context — kept in sync with config, but also
 # checked here so prompt_builder stays self-contained.
@@ -79,9 +80,11 @@ def build_prompt(
 def format_memories(memories: dict, mode: str) -> str:
     """
     Memory block for the prompt's {context} slot: short facts in every mode,
+    study notes (Phase 13, "notes": learning store rows) in every mode,
     earlier code answers only in the code modes (never in explain/chat — same
     code-bias reason as RAG). Stays within CFG.memory.max_prompt_tokens
-    (~4 characters per token); best matches first.
+    (~4 characters per token) — notes get their own CFG.learning.notes_chars;
+    best matches first.
     """
     budget = CFG.memory.max_prompt_tokens * 4
     lines  = []
@@ -96,6 +99,16 @@ def format_memories(memories: dict, mode: str) -> str:
             lines.append(line)
         if len(lines) == 1:
             lines = []
+
+    notes = memories.get("notes") or []
+    if notes:
+        room, block = CFG.learning.notes_chars, []
+        for n in notes:
+            text = f"({n['topic']}, {n['subtopic']}) " + " ".join(l.lstrip("- ").strip() for l in n["text"].split("\n"))
+            if block and sum(len(b) + 1 for b in block) + len(text) > room:
+                break
+            block.append(text[:room])
+        lines.append(V_NOTES.format(notes="\n".join(f"- {b}" for b in block)))
 
     code = (memories.get("code") or []) if mode in CFG.memory.active_code_modes else []
     for hit in code:
@@ -167,7 +180,7 @@ def format_for_model(prompt: str, model, tokenizer) -> str:
 
 
 def build_chat_prompt(user_input: str, context: dict, memories: dict, tokenizer,
-                      history_turns: int = None, machine: str = "", editor: str = "") -> str:
+                      history_turns: int = None, machine: str = "", editor: str = "", extra: str = "") -> str:
     """
     Chat mode for brains with their own chat format, as a real conversation:
     V's persona (+ what she knows about the computer, + remembered facts) as
@@ -177,11 +190,13 @@ def build_chat_prompt(user_input: str, context: dict, memories: dict, tokenizer,
     format — generate_from_prompt(..., formatted=True). Brains without a chat
     format use build_prompt("chat", ...). history_turns None = config;
     machine = format_machine() output; editor = file_context.describe() (the
-    file open in the chat panel's editor — its name only, no code).
+    file open in the chat panel's editor — its name only, no code); extra =
+    Phase 13 blocks (what she found online — format_lookup(); what she has
+    studied — format_studies()), last, closest to the question.
     """
     system = V_PERSONA
     facts  = format_memories(memories, "chat") if memories else ""
-    for block in (machine, editor, facts):
+    for block in (machine, editor, facts, extra):
         if block:
             system += "\n\n" + block.strip()
 
@@ -226,6 +241,40 @@ def chat_history(context: dict, turns: int = None) -> list:
     while out and out[0]["role"] == "assistant":   # a conversation starts with the user
         out.pop(0)
     return out
+
+
+def format_lookup(found: str, sources: list) -> str:
+    """What a web lookup found, for the chat system message (V_LOOKUP)."""
+    names = ", ".join(s.get("title") or s.get("url", "") for s in sources) or "the web"
+    return V_LOOKUP.format(found=found.strip(), sources=names)
+
+
+def format_studies(topics: list, limit: int = 5) -> str:
+    """What she has studied (learning store topics), for the chat system message (V_STUDIES)."""
+    parts = []
+    for t in topics[:limit]:
+        part = f"{t['topic']} ({t['minutes']:g} min, {t.get('notes', 0)} notes"
+        if t["covered"]:
+            part += "; covered: " + ", ".join(t["covered"][:5])
+        if t["next"]:
+            part += "; not yet: " + ", ".join(t["next"][:3])
+        parts.append(part + ")")
+    return V_STUDIES.format(topics="; ".join(parts)) if parts else ""
+
+
+def build_study_prompt(topic: str, subtopic: str, title: str, excerpt: str, covered: list, tokenizer) -> str:
+    """One study note (learning/study.py): V's persona + STUDY_NOTE_TEMPLATE, in the brain's own chat
+    format when it has one (pass formatted=True), else V's template format."""
+    body = STUDY_NOTE_TEMPLATE.format(topic=topic, subtopic=subtopic, title=title or "a web page",
+                                      covered=", ".join(covered) if covered else "nothing yet", excerpt=excerpt.strip())
+    if not getattr(tokenizer, "chat_template", None):
+        return f"### Instruction:\n{body}\n\n### Answer:\n"
+    return tokenizer.apply_chat_template(
+        [{"role": "system", "content": V_PERSONA}, {"role": "user", "content": body}],
+        tokenize              = False,
+        add_generation_prompt = True,
+        enable_thinking       = False,
+    )
 
 
 def format_machine(specs: dict, snap) -> str:

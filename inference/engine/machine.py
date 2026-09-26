@@ -105,7 +105,7 @@ class Machine:
         """The most V takes on for this answer: the normal settings, capped when busy / tight."""
         normal = WorkLimits(history_turns=CFG.memory.history_turns, memory_facts=CFG.memory.top_k,
                             memory_code=CFG.memory.code_top_k, prose_max_tokens=None,
-                            file_chars=CFG.files.max_prompt_chars)
+                            file_chars=CFG.files.max_prompt_chars, project_chars=CFG.project.max_prompt_chars)
         if snap is None or snap.level == "free":
             return normal
         cap = self.cfg.tight_work if snap.level == "tight" else self.cfg.busy_work
@@ -113,7 +113,9 @@ class Machine:
                           memory_facts     = min(normal.memory_facts,  cap.memory_facts),
                           memory_code      = min(normal.memory_code,   cap.memory_code),
                           prose_max_tokens = min(CFG.model.max_tokens, cap.prose_max_tokens),
-                          file_chars       = min(normal.file_chars, cap.file_chars or normal.file_chars))
+                          file_chars       = min(normal.file_chars, cap.file_chars or normal.file_chars),
+                          project_chars    = normal.project_chars if cap.project_chars < 0
+                                             else min(normal.project_chars, cap.project_chars))
 
     def _pace(self, gentle: bool):
         """Gentle = lower process priority (Windows; elsewhere it could not be raised

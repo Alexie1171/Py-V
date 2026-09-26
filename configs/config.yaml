@@ -110,9 +110,10 @@ machine:
   tight: {ram_free_gb: 1.0, gpu_free_gb: 0.3, cpu_percent: 97}   # any one → tight (freezing territory)
   # The most V takes on at each level; a free machine uses the normal settings
   # (memory.history_turns / top_k / code_top_k, model.max_tokens). Prose = chat + explain.
-  # file_chars = how much of the open file goes into the prompt (files: below).
-  busy_work:  {history_turns: 4, memory_facts: 3, memory_code: 1, prose_max_tokens: 384, file_chars: 1600}
-  tight_work: {history_turns: 2, memory_facts: 1, memory_code: 0, prose_max_tokens: 256, file_chars: 800}
+  # file_chars = how much of the open file goes into the prompt (files: below);
+  # project_chars = how much project search brings in (project: below; 0 = none).
+  busy_work:  {history_turns: 4, memory_facts: 3, memory_code: 1, prose_max_tokens: 384, file_chars: 1600, project_chars: 800}
+  tight_work: {history_turns: 2, memory_facts: 1, memory_code: 0, prose_max_tokens: 256, file_chars: 800, project_chars: 0}
   gentle: true               # lower priority + half the CPU threads while busy / tight
   heads_up_minutes: 10       # a casual heads-up at most this often at the same level (sooner when it gets worse)
 
@@ -127,12 +128,56 @@ files:
   max_prompt_chars: 3000
   piece_lines: 40
 
+project:
+  # Chat panel search over your own project files (Phase 10.5, retrieval/project.py):
+  # the workspace folder's code files in pieces, keyword + meaning search (the
+  # shared CPU embedder), kept up to date in the background (paused while V
+  # answers or the laptop is busy). Used when a question is about the project
+  # ("where is the config loaded?", a function name from another file). The
+  # index holds your code: one SQLite file per project under index_dir,
+  # gitignored, never leaves the laptop.
+  enabled: true
+  index_dir: "./data/projects"
+  max_file_kb: 200          # bigger files are skipped (data, generated code)
+  max_files: 5000
+  top_k: 3                  # pieces per question at most
+  max_prompt_chars: 1500    # ~430 tokens of found code per answer (with the open file ~1,300)
+  min_similarity: 0.55      # meaning match needed (bge-small: unrelated code scores ~0.4-0.5)
+
+learning:
+  # Phase 13 (learning/): V learns, but never changes her own weights — a
+  # retrain stays a Kaggle run the owner starts.
+  #  - Web lookup, after asking: "Want me to look that up online?" — only on a
+  #    yes (any wording); "look up X" is itself a yes. What she found goes into
+  #    the answer's prompt and a short fact with its source into memory.
+  #  - Study sessions: "learn about <topic> for <time>" — reads pages, writes
+  #    notes in her own words, saves progress per topic; later sessions pick up.
+  #  - "Good answer" in the panel saves the question + answer for training;
+  #    study notes go into training only for topics the owner approves.
+  # Only search words and page addresses leave the laptop.
+  enabled: true
+  web: true
+  lookup_pages: 2           # pages read for one lookup
+  lookup_chars: 2400        # of their text in the answer's prompt (~700 tokens)
+  notes_top_k: 2            # study notes added to an answer when relevant
+  notes_chars: 700
+  note_tokens: 320          # one study note (3-6 lines + what's next)
+  study_max_minutes: 240
+  learned_dir: "./data/learned"   # training exports (learning/export.py) — your chats, gitignored
+
 rag:
   # Off since 2026-09-25: weak matches were copied into answers instead of
   # helping. Turn back on after the dataset is improved — see PROJECT_STATUS.md.
   enabled: false
   index_path: "./retrieval/index"
   top_k: 3
+  # Before it comes back (owner, 2026-09-26 — "both kinds"): index rebuilt from
+  # dataset v3 (paths.dataset), strong matches only, embedder on the CPU, then
+  # the big Kaggle run scores RAG on vs off (pipeline stages 11-13). Switch on
+  # only if the scores go up.
+  min_score: 0.8            # a training example must be this close (bge-small cosine) — weak matches were copied into answers
+  device: "cpu"             # the retriever's embedder: the shared CPU copy (the laptop GPU holds the brain)
+  sources: ["dataset"]      # "dataset" = training set; "codebase" = Py-V's own code (project search, Phase 10.5, covers yours)
   # Modes that will receive RAG context injection
   # explain and chat are excluded to prevent code pattern bias
   active_modes:

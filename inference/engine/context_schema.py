@@ -34,6 +34,10 @@ class SessionContext:
     # system hints
     last_summary: Optional[str] = None
 
+    # Phase 13: V asked "Want me to look that up online?" — the search words and the question, until answered
+    pending_lookup: Optional[str] = None
+    pending_question: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "session_id": self.session_id,
@@ -47,5 +51,7 @@ class SessionContext:
             "entities": self.entities,
             "errors_seen": self.errors_seen,
             "functions_touched": self.functions_touched,
-            "last_summary": self.last_summary
+            "last_summary": self.last_summary,
+            "pending_lookup": self.pending_lookup,
+            "pending_question": self.pending_question,
         }

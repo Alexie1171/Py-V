@@ -34,14 +34,29 @@ Work paused on **2026-05-04** and resumed on **2026-09-25**.
 | 5 | FastAPI server | Done |
 | 6 | VS Code extension | Done |
 | 7 | Chat system (intent routing + session context) | Done |
-| 8 | RAG | Done, but **turned off** since 2026-09-25 — see section 5 |
+| 8 | RAG | Done, but **turned off** since 2026-09-25 — see section 5. Ready to test (2026-09-26): index over dataset v3, strong matches only, embedder on the CPU; the big Kaggle run scores it on vs off (stages 11-13) |
 | 9 | Multi-language adapters (JS/TS etc.) | Planned — nothing started |
-| 10 | VS Code chat panel | **In progress** — 10.1 built 2026-09-26: chat in the VS Code sidebar with live (streamed) answers, Stop, mode badge, heads-up notes, Copy / Insert-at-cursor on code, New chat. **10.2 built 2026-09-26: file reading** — the open file and the selection go into the prompt when the message is about them (long files in pieces, fewer when busy), the file's language sets the answer's, a chip shows which file V can read (× = don't share). Next: 10.3 file updating → 10.4 memory view → 10.5 project-file search |
+| 10 | VS Code chat panel | **Code built 2026-09-26 (10.1–10.5), not yet tried with the brain** — 10.1 chat in the sidebar (streaming, Stop, badges, code buttons, New chat); 10.2 file reading (open file / selection when the message is about them, long files in pieces, the file's language); 10.3 file updating ("Apply to file" → diff → the file changes only on Apply); 10.4 memory view (facts with Forget, studied topics, project search status); 10.5 search over your project files |
 | 11 | Long-term memory | **Built 2026-09-26** (`memory/`, on by default; smoke test passes) — tried with the trained Granite chat on the laptop: an unrelated fact derailed an answer, fixed (recall needs real relevance) |
 | 12 | Machine awareness | **Built 2026-09-26** (`inference/engine/machine.py`, on by default) — V knows the laptop and how busy it is, takes on less when busy, says so casually; busy lines are first guesses |
-| 13 | Learning (web lookup after asking, learning from chats, study sessions) | Planned 2026-09-26 — design in section 6 |
+| 13 | Learning (web lookup after asking, learning from chats, study sessions) | **Code built 2026-09-26, not yet tried with the brain** (`learning/`) — web lookup only after a yes, study sessions with saved progress that later sessions pick up, "Good answer" → training examples, topic training only when approved |
 
-**Build order (owner, 2026-09-26):** Phase 12 machine awareness (built) → Phase 10 chat panel (**current phase, commits numbered 10.x**) with file reading, file updating, memory view and search over your project files, plus the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language. Speed work not placed yet.
+**Build order (owner, 2026-09-26):** Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating, memory view and search over your project files, plus the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language. Speed work not placed yet. **The code through Phase 13 is built (2026-09-26) — next is testing, see "Needs testing" right below**, then the big Kaggle run.
+
+### ⚠ Needs testing — nothing after commit 4a31ad1 has been tried with the real brain
+
+Owner, 2026-09-26: "we havent tested after 4a31ad1 commit" — Phase 12.1 (commit 4a31ad1, V answers only what is asked, no emojis) is the last thing tried with V's brain. Everything after it was checked **without the brain only** (no-brain tests, stand-in servers with a fake brain, the compiled panel driven by a fake VS Code): commits 31de107 (10.1 chat panel), 0946f5b (10.1.1 any language, chat commands) and all the work after them (10.2–10.5, RAG prep, Phase 13, Kaggle stages 11-15). Test from there, in this order (tell Claude before each one that loads the brain):
+
+1. **Panel basics (10.1)** — install (`cd extension && npm run install-local`, Reload Window), open V's panel: server starts, answers stream, Stop, New chat, `/stop-server`, `/start-server`. Note `laptop=` levels in the badges to tune the busy lines (section 5).
+2. **Other languages (10.1.1)** — "give an example on type script", "fibonacci in haskell", "hello world in gleam": code in that language, badge shows it.
+3. **File reading (10.2)** — select a function → "fix this function"; with code selected → "what is a decorator?" (must *not* read it); × on the chip; "fix the bug" in a .ts file; a long file → "what does <function> do?".
+4. **File updating (10.3)** — "Apply to file" on a fix → the diff opens → Apply (file changes, unsaved; Ctrl+Z undoes) / Discard (nothing changes).
+5. **Memory view (10.4)** — Memory button or `/memory`: facts, Forget.
+6. **Project search (10.5)** — in the Py-V folder: "where is the config loaded?", "what does detect_language do?" (answer tagged "project N"). Watch RAM while it first indexes (the shared CPU embedder).
+7. **Web lookup (13)** — "what is the newest Zig release?" → she should offer to look it up → "yeah" (sources under the answer) / "nah". "look up the latest pandas version" → looks it up at once.
+8. **Study session (13)** — "learn about asyncio for 10 minutes": the study bar, she pauses while you chat, "stop studying" / `/stop-study`; later "what have you studied?"; Memory view → Studied topics → "Use for training".
+9. **Good answer (13)** — on a fix answer → "Saved for training"; `python -m learning.export` writes `data/learned/`.
+10. **Big Kaggle run** — push, then the Kaggle notebook's RUN EVERYTHING (internet on): stages 11-15 (RAG on vs off, V's setup with the new chat path, other languages, the 2-hour study session). Afterwards import the notes: `python -m learning.study --import "<downloads>/results/study/python_code.jsonl"`.
 
 **Now (2026-09-26): Granite retrain done — V's brain is the Granite chat version with its adapter per mode.** Both Granite versions were tested, trained and tested on Kaggle (run 1: 3.7 h — untrained tests, trainings failed; run 2: 6.2 h — fixes, both trained; ~10 of 30 weekly GPU hours; results in `Kaggle downloads/run1/`, `run2/`). Then built on the laptop: adapter on/off per mode, better mode-detection word rules, memory relevance fix — laptop check passed (fits: 2.5 GB after loading, ~3.5 GB peak; 21–41 s per answer). Owner's first try in the terminal (`python test_chat.py`): good answers, but V had no name ("I am a language model…"), "what is your name?" went to explain mode, and chat felt robotic → chat mode rebuilt as a real conversation: V's persona (name V, a girl — she/her, made by Ador "Alexie" Haq aka Alexie, friendly and casual), the message as written, the last 3 exchanges, livelier settings; questions about V → chat. V is a girl (she/her). Then **Phase 12 machine awareness** built: she reads the laptop (GTX 1650 4 GB, 15.4 GB usable RAM, Ryzen 7 3750H) and its load before every answer; when busy she uses less history / memory / answer length, runs at lower priority, and gives a casual heads-up. Checked without the brain (readings, heads-ups, chat wiring with a stand-in); not tried with the brain yet — next: the owner chats with V (`python test_chat.py` shows `laptop=free/busy/tight`) and we tune the busy lines.
 
@@ -171,15 +186,15 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 
 | What | Since | Why | Bring back when / how |
 |------|-------|-----|-----------------------|
-| **RAG (code search)** | 2026-09-25 | Weak dataset matches were pasted into answers instead of helping (2 of 3 code answers broken in test 2) | Owner 2026-09-26: bring back **both kinds** — your project files with the chat panel (Phase 10); training examples after rebuilding the index from v3, a strong-matches-only cut-off, the embedder on the CPU and a Kaggle on/off test (section 6). Earlier note: after the dataset is improved (cleaner v4 + better instructions). Maybe add a "strong matches only" cut-off. Switch: `rag.enabled: true` in `configs/config.yaml`. The index must be rebuilt first — it now reads dataset v2 (`paths.dataset`) |
+| **RAG over training examples** | 2026-09-25 | Weak dataset matches were pasted into answers instead of helping (2 of 3 code answers broken in test 2) | Project files: **built** as project search (10.5, its own index). Training examples: prep **built 2026-09-26** — index over dataset v3 (`python -m retrieval.indexer`, writes `build_info.json`), strong matches only (`rag.min_score` 0.8, a first guess), the shared CPU embedder (`rag.device`), Py-V's own code no longer mixed in (`rag.sources`). Decide from the big Kaggle run: stage 13 (RAG on) vs stage 12 (off) on MBPP and fix/improve — switch on (`rag.enabled: true`) only if better; the laptop's index must then be rebuilt from v3 |
 | **Raw chat history in prompts** (every mode except chat) | 2026-09-25 | Model answered the previous question / copied the previous answer instead of the new one | Chat mode got it back on 2026-09-26 (chat brain: the last 3 exchanges as real chat turns, code left out — `prompt_builder.chat_history`). Explain and the code modes still answer each message alone, with memory facts only: a follow-up like "explain that" doesn't see what "that" is. Bring back for explain when follow-ups go wrong; code modes need their trained prompts (retrain with history) |
 | **V's persona outside chat mode** | 2026-09-26 | Code modes keep the prompts their adapter was trained on; explain keeps its tested template | Explain as a conversation (persona + chat format) after a short test on the cloud; code modes only with a retrain. The plain brain (template format, fallback only) also has no persona |
 | **Repeat penalties in chat mode** | 2026-09-26 | They punished every word of the persona and earlier turns in the prompt; chat now 1.0 / 0 at temperature 0.7 | Back on (`generation.chat` in config: 1.1 / 4) if the chat brain starts repeating itself |
-| **Chat test (/8) with the new chat path** | 2026-09-26 | `eval_chat` now builds prompts like the app (persona, message as written); the scores in section 2 used the old wrapper | Next Kaggle run, or a short laptop run after telling the owner |
+| **Chat test (/8) with the new chat path** | 2026-09-26 | `eval_chat` now builds prompts like the app (persona, message as written); the scores in section 2 used the old wrapper | In the big Kaggle run: stage 12 (V as the app runs her) |
 | **Qwen3.5 in the brain check** (newest small Qwen, Feb 2026, Apache 2.0) | 2026-09-25 | Needs transformers 5; the laptop has 4.57 (the app runs on it) | Test on Kaggle or Colab (Colab has transformers 5; check Kaggle's version) as a pipeline stage, or when the laptop moves to transformers 5 |
 | **Qwen3-4B's two ~5,000-token long questions** | 2026-09-26 | Stopped to protect the laptop (RAM at 15.1 of 15.4 GB, free RAM ~1 GB) | Only if the laptop gets more RAM/GPU memory, or on the cloud T4 (Kaggle / Colab) |
-| **Speed work** (llama.cpp / GGUF, streaming) | 2026-09-25 | Memory chosen first | After Phase 11 |
-| **Phases 9 and 10** | 2026-09-25 | Phase 11 goes first | After Phase 11 |
+| **Speed work** (llama.cpp / GGUF) | 2026-09-25 | Memory, machine awareness, the panel and learning came first (streaming is done — panel 10.1) | Not placed yet — after the big Kaggle run |
+| **Phase 9** (multi-language adapters) | 2026-09-25 | Phase 11, then 12, 10 and 13 went first (owner's order) | After testing the Phase 10 / 13 work and the big Kaggle run |
 | **Colibri** | 2026-09-25 | Built for huge mixture-of-experts models; our dense 3–4B brains gain nothing from SSD streaming | Only if hardware grows (≥32 GB RAM, bigger GPU) |
 | **Removing `TRANSFORMERS_CACHE`** | 2026-09-25 | Needs admin rights | Owner removes it (steps in section 4, item 8) |
 | **Colab as the main GPU runner** | 2026-09-26 | Colab's free GPU time ran out (back ~noon 2026-09-27); Kaggle gives 30 GPU h/week, 12 h background runs and 2× T4 | Colab notebook still works (same pipeline, one T4) — use it when Kaggle's weekly hours are used up. Results stay where a job started (Drive vs Kaggle output) |
@@ -190,9 +205,14 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 | **Long questions use far more GPU memory than their length** | 2026-09-26 | Kaggle run 1: 3,000-token question peaked at 6.2 GB, 6,000 tokens at 14.4 GB → out of memory on the 15 GB T4 for every version (laptop 4 GB: the same wall at ~5,000). Growth faster than the length points at the attention method used | Later: check which attention method the brain loads with and whether a memory-saving one fits — decides how long a file V can read on the laptop |
 | **Machine busy lines are first guesses** | 2026-09-26 | Set without the brain running: RAM 2.5 / 1.0 GB free, GPU 0.6 / 0.3 GB free for V, CPU 85 / 97 % (busy / tight) | Tune in `machine:` (config) after the owner's first chats — `test_chat.py` shows `laptop=` per answer |
 | **Gentle pace outside Windows** | 2026-09-26 | Lowering process priority can't be undone without admin rights on Linux / macOS, so there only the CPU threads are halved | If V runs on Linux / macOS: a separate worker process at low priority |
-| **Phase 13 learning** (web lookup after asking, study sessions, learning from chats, topic training) | 2026-09-26 | Machine awareness and the chat panel come first (owner's order) | After Phase 10 — design in section 6; the first study session ("learn about Python code for 2 hours") runs in the big Kaggle run |
-| **Other languages: quality untested, not remembered between messages** | 2026-09-26 | Answered by the plain chat brain with a general prompt (no training for them, no RAG); a follow-up that doesn't name the language falls back to Python | Phase 9 (per-language data and adapters); a language test in the big Kaggle run; remember the chat's language when follow-ups go wrong |
-| **Kaggle test of RAG over training examples** | 2026-09-26 | Owner chose the chat panel first; all Kaggle work goes into one big run after the code through Phase 13 | In the big Kaggle run (section 6) — the index rebuild, cut-off and CPU embedder get built before it |
+| **Everything after commit 4a31ad1 untried with the brain** | 2026-09-26 | Built through Phase 13 first (owner: "we do the code part right now till phase 13"), checked without the brain only | The test list in section 2 ("Needs testing"), then the big Kaggle run |
+| **Approved chat answers and other-language answers in training** | 2026-09-26 | "Good answer" saves every answer, but `learning/export.py` exports only write / fix / improve / explain in Python: the trainer builds each example with the mode template, while V's chat is a persona conversation and other languages use their own templates | When training learns the persona chat format (chat) or Phase 9 (other languages) — the saved answers are kept in the memory database |
+| **"Fixes whose tests pass" as training examples** (Phase 13 design) | 2026-09-26 | The app doesn't run the user's tests; only "Good answer" (the owner's approval) marks examples | Later: when V can run a project's tests (after 10.5), a fix that makes them pass could be offered for approval |
+| **A retrain with what V learned** | 2026-09-26 | Nothing in the big run is approved yet (the study notes come back from it); the owner approves topics / answers first | After approving: `python -m learning.export`, upload `data/learned/learned_*.jsonl` with the Kaggle data, redo stages 4, 5, 6 (`scripts/pipeline_redo.json`) — a Kaggle run the owner starts |
+| **Study pace on the laptop, lookup quality** | 2026-09-26 | Unmeasured: how many pages per minute the GTX 1650 manages (estimate: tens per 30 min), whether DuckDuckGo's HTML page keeps working without a key (Wikipedia is the fallback), how well the 3B brain writes notes / answers from pages | The owner's first study session and lookups (section 2 "Needs testing" 7-8); the Kaggle study stage measures notes per 2 hours on the T4 |
+| **Project search on the laptop's RAM** | 2026-09-26 | The index uses the shared CPU embedder (one copy for memory, project search, notes, RAG) — the first indexing of a big folder embeds every piece on the CPU while V waits | Watch RAM on the first try; if too heavy: `memory.semantic_search: false` (keyword only) or `project.enabled: false` |
+| **Other languages: quality untested, not remembered between messages** | 2026-09-26 | Answered by the plain chat brain with a general prompt (no training for them, no RAG); a follow-up that doesn't name the language falls back to Python (in the panel the open file's language covers most follow-ups, 10.2) | Phase 9 (per-language data and adapters); the language test in the big Kaggle run (stage 14, `experiments/eval_languages.py`); remember the chat's language when follow-ups go wrong |
+| **Kaggle test of RAG over training examples** | 2026-09-26 | All Kaggle work goes into one big run after the code through Phase 13 (owner) | Built as pipeline stages 11-13 — runs with the big Kaggle run |
 | **Kaggle P100 GPU** | 2026-09-26 | Kaggle's PyTorch dropped it (since 2026-04: "no kernel image is available") | Only if Kaggle's PyTorch supports it again — use GPU T4 x2 |
 
 ---
@@ -201,21 +221,28 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 
 Order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel (+ file reading, file updating, memory view, project-file search) → Phase 13 learning → Phase 9 multi-language. Speed work not placed yet.
 
-**One big Kaggle run after the code (owner, 2026-09-26):** all code through Phase 13 first — the panel steps, RAG over training examples, the learning features — then a single large Kaggle run that gives the most results at once: RAG on vs off (MBPP, fix / improve), the chat test with the new chat path, and V's first study session: **learn about Python code for 2 hours**. Each new piece adds its pipeline stage as it is built.
+**One big Kaggle run after the code (owner, 2026-09-26):** all code through Phase 13 first — the panel steps, RAG over training examples, the learning features — then a single large Kaggle run that gives the most results at once. **The code is done; its stages are in `scripts/gpu_pipeline.py`** (stages 1-10 are done and get skipped):
+- **11** RAG index over training set v3 (GPU, ~a minute; installs faiss / sentence-transformers if Kaggle lacks them)
+- **12** V as the app runs her — chat version + its adapter for fix / improve only (`--adapter-modes debug refactor`): MBPP, long files, chat (new chat path: persona, no emojis, only what is asked), fix / improve
+- **13** RAG test — 12's setup + RAG examples (MBPP, fix / improve); the report puts 12 and 13 side by side
+- **14** other-languages test (`experiments/eval_languages.py`): 20 requests in 20 languages; programs run where Kaggle has the tool (C, C++, JavaScript, Bash, Java, … — others graded on the code block)
+- **15** V's first study session: **learn about Python code for 2 hours** (`learning.study`, on the second GPU next to the tests; needs the notebook's internet — it has it, the code is cloned from GitHub). Notes come back in `results/study/python_code.jsonl` → `python -m learning.study --import <file>` on the laptop
+Checked with a dry run (fake jobs): order, skip logic, report. Rough time: chat lane ~3 h, study lane ~2.5 h — well within the 11 h stop.
 
 ### Phase 12 — Machine awareness (**built 2026-09-26**)
 V knows the computer (parts read once, load read before every answer: free RAM, free GPU memory, CPU). Free / busy / tight by config lines (first guesses — tune after the first try). Busy: shorter chat history, fewer memories, shorter chat/explain answers (always ending on a full sentence), lower priority and half the CPU threads so other programs stay smooth, and a casual heads-up in different words, not every message (owner: "warnings must not be rigid… casual"). In chat she sees the numbers and can talk about the laptop. Rules: `.github/CLAUDE.md` → `inference/engine/machine.py`.
 
 ### RAG — both kinds (owner, 2026-09-26)
-- **Your project files** — V searches the code you're working on; built with the chat panel's file reading (Phase 10).
-- **Training examples** — rebuild the index from dataset v3 (today's index is from May, over v1), keep strong matches only (a score cut-off — today there is none), run the embedder on the CPU like memory (today it takes the GPU), then one Kaggle run with RAG on vs off (MBPP, fix/improve); switch on only if scores go up.
+- **Your project files** — **built** as project search (10.5): `retrieval/project.py`, its own index per project folder.
+- **Training examples** — **prep built 2026-09-26:** the index reads dataset v3 (`paths.dataset`) and records which file it was built from (`build_info.json`), strong matches only (`rag.min_score` 0.8 — first guess), the retriever uses the shared CPU embedder (`rag.device: cpu`), Py-V's own code no longer mixed in (`rag.sources`). The tests take `--rag` (`experiments/eval_common.retrieve`, strong matches only, counted in the summary). Kaggle stages 11-13 score it on vs off; switch on only if scores go up.
 
-### Phase 13 — Learning (planned 2026-09-26, owner's design)
-- **Look things up, after asking** — when she doesn't know, V asks "Want me to look that up online?"; yes in any wording → she searches, no in any wording → she doesn't. Useful facts go to memory with their source.
-- **Study sessions** — "learn about <topic> for <time>": she reads about the topic until the time is up (pacing with machine awareness), saves her progress per topic (notes, sources, what's covered, what's next, time spent). A later session on a related topic, in any chat, picks up the earlier notes and links the topics — she knows what she has studied and uses it when answering.
-- **Learning from chats** — answers you approve (and fixes whose tests pass) become training examples for the next Kaggle retrain.
-- **Training on a topic** — only when you approve the topic; the retrain is a Kaggle run you start. Nothing changes her weights on its own.
-- Only search words leave the laptop. Estimate (not measured): tens of pages per 30 minutes on the GTX 1650.
+### Phase 13 — Learning (owner's design; **code built 2026-09-26**, not yet tried with the brain)
+- **Look things up, after asking** — **built** (`learning/lookup.py`, `learning/web.py`). After a chat / explain answer that shows she doesn't know (or a question needing new facts: "latest", "newest version", a year), she adds "Want me to look that up online?" (the panel offers Yes / No buttons; typing works). Yes in any wording (yes, yea, yeah sure, ok go ahead, look it up, …) → she searches DuckDuckGo (Wikipedia as fallback), reads the best 2 pages and answers from them, sources listed under the answer; a short fact with the source goes to memory. No in any wording (no, nah, nope, not now, never mind, …) → "Okay, I won't look it up." without the brain. "Look up X" / "search the web for X" / "can you look it up?" is itself the yes. 27 yes and 19 no wordings in the test.
+- **Study sessions** — **built** (`learning/study.py`). "learn about asyncio for 30 minutes" (also "study rust for 2 hours", "spend 45 minutes learning about numpy", "… for half an hour") starts a background session: search (topic + a subtopic) → read a page not read before → the part that matches → the brain writes 3-6 notes in her own words + up to 3 subtopics next → saved with its source. Starts with an overview, then the page's own leads, then seeds (key concepts, examples, common mistakes, best practices). She waits while you chat (a note being written is stopped and redone later) and while the laptop is busy; the panel shows a study bar (topic, minutes left, notes, Stop). A later session on the same or a related topic ("asyncio tasks" after "asyncio") picks up "what's next", links the topics and says so ("Back to asyncio… Last time I covered …"). Notes relevant to a question go into her answers ("notes N" in the badge); "what have you studied?" gets her topics.
+- **Learning from chats** — **built:** "Good answer" under any answer saves question + answer (undo possible). `python -m learning.export` → `data/learned/learned_answers.jsonl` (write / fix / improve / explain in Python — section 5 for the rest). Fixes whose tests pass: postponed (section 5).
+- **Training on a topic** — **built:** Memory view → Studied topics → "Use for training" per topic; export writes those notes as explain examples (`learned_topics.jsonl`). The dataset build (`build_dataset_v2.py`) adds every `learned_*.jsonl`; the pipeline copies uploaded ones in. A retrain is still a Kaggle run you start. Nothing changes her weights on its own.
+- Only search words and page addresses leave the laptop (`learning/lookup.build_query` strips code and chat words). Notes, approvals, topics: V's memory database (private, gitignored).
+- Tested without the brain: `python -m experiments.eval_learning` 35/35 (yes/no wordings, lookup requests, study requests, a whole session with a fake web, the store, export/import, the ask → yes → lookup flow through the chat engine).
 Rules: "Phase 13 Rules" in `.github/CLAUDE.md`.
 
 ### Next — better training data (researched 2026-09-25, nothing downloaded yet)
@@ -300,8 +327,11 @@ Copilot-style chat panel inside VS Code with streaming answers (words appear as 
   - a **long file in pieces**: the function / class at the cursor first, pieces the message names, the imports at the top, the cursor's neighbours; ~850 tokens (busy ~450, tight ~230); improve gets only the code at the cursor (it rewrites all it gets, and must fit in one answer)
   - the **file's language** sets the answer's when you don't name one ("fix the bug" in app.ts → TypeScript)
   - every answer that read the file says "read app.py, lines 10-24"
-  - Tested without the brain (`python -m experiments.eval_file_context`, 29/29; stand-in server + the compiled panel with a fake editor). **Not yet tried with the brain** — how well the 3B brain uses pieces of a file is unmeasured
-- Next: 10.3 file updating (show the change, write only on your click) → 10.4 memory view → 10.5 search over your project files
+  - Tested without the brain (`python -m experiments.eval_file_context`; stand-in server + the compiled panel with a fake editor). **Not yet tried with the brain** — how well the 3B brain uses pieces of a file is unmeasured
+- **10.3 file updating — built 2026-09-26.** Every code block has "Apply to file": the server works out where it goes (`inference/engine/file_update.py`: the selection the answer read — found again if it moved; else functions / classes / methods with the same name, decorators and all, new ones after them, missing imports to the imports; else the whole file when the code is most of it; else after the cursor line). VS Code's diff view shows the change; the panel shows what it does ("replaces add() and adds 1 import") with **Apply** / **Discard**. Apply changes the file (unsaved — Ctrl+S saves, Ctrl+Z undoes); if the file changed meanwhile she works the change out again and asks once more. Python by syntax tree; other languages by definition lines and braces / indentation (TypeScript, Java, Go checked). Never writes on her own (owner's rule).
+- **10.4 memory view — built 2026-09-26.** "Memory" in the panel's top bar (or `/memory`): facts, newest first, each with Forget; studied topics (time, notes, covered, next, "Use for training", Forget); answers saved for training; project search status.
+- **10.5 project search — built 2026-09-26.** The panel sends the workspace folder (trusted folders only; setting `pyv.projectSearch`); the server indexes its code files in the background (`retrieval/project.py`: `git ls-files` or a walk that skips build / dependency folders; files up to 200 KB; pieces like file reading; keyword search + meaning search with the shared CPU embedder; one SQLite file per project in `data/projects/`, gitignored), pausing while V answers. Updated when V is ready and after saves (`/index` re-reads). Used when a question is about the project ("where is the config loaded?", "which file handles …", a function name the open file doesn't have): up to 3 relevant pieces (~430 tokens; busy ~230, tight none) go into the prompt; the badge shows "project N". Stays on the laptop.
+- Tests (no brain): `python -m experiments.eval_file_context` — 50/50 (reading, updating, project search); end-to-end: the compiled panel against a stand-in server — 14/14 (fix → Apply → file changed, Discard, memory view, Forget, Good answer, project question, study start / bar / stop)
 
 ### Phase 11 — Long-term memory (**built 2026-09-26** — `memory/`; smoke test `python -m memory.test_memory` passes; next: try it with the trained Granite)
 
@@ -391,6 +421,12 @@ Options, all need measuring on this laptop first:
 | 2026-09-26 | **V's server follows the chat panel**: opening the panel starts it, 2 minutes closed stops it (frees ~3 GB RAM + the GPU), closing VS Code stops it; a server started in a terminal is never stopped | Owner: "everytime i click the left pannel V it should run the server and when i close it it should close the server"; owner chose a 2-minute wait so quick trips to other views don't reload the brain (~1 min) |
 | 2026-09-26 | **V's extension is installed into the normal VS Code** (`npm run install-local` + Reload Window), not run with F5 | F5's second window closed at once (the Nightly JavaScript debugger couldn't connect); installing needs no second window (less RAM) and no debugger — owner's choice |
 | 2026-09-26 | **All code through Phase 13 first, then one big Kaggle run** (RAG test, chat test, V studies Python code for 2 hours) | Owner: "we will update as much as we can on the code side so kaggle run gives us the most outputs" |
+| 2026-09-26 | **Built 10.3–10.5, RAG prep, Phase 13 and Kaggle stages 11-15 in one go; testing from commit 4a31ad1 on comes next** | Owner: "continue the build and dont stop until done. and when done update project status that we need to test out from there" |
+| 2026-09-26 | **File updating: the server places the code, VS Code's diff shows it, Apply in the panel writes it (unsaved)** | Owner's rule: never write on her own. Placing by name / selection keeps the rest of the file untouched; the diff makes every change visible first |
+| 2026-09-26 | **One shared CPU embedder** (`retrieval/embedder.cpu_embedder`) for memory, project search, study notes and RAG | RAM runs full on the laptop — one copy instead of four |
+| 2026-09-26 | **Project search has its own index per project** (SQLite in `data/projects/`), separate from RAG over training examples | Your code changes all the time (incremental updates, stays private); training examples are fixed and are scored on Kaggle first |
+| 2026-09-26 | **Web lookup and study sessions use DuckDuckGo's HTML page + Wikipedia, standard-library HTML parsing** | No key, no account, nothing to install; only search words leave the laptop |
+| 2026-09-26 | **The brain goes to the user first**: a study note being written stops when a message arrives; study waits 45 s after the user's last message and while the laptop is busy; the project index waits while V writes | One 4 GB GPU; the owner's chat must never wait for background learning |
 | 2026-09-26 | **V is a girl (she/her)** — in her persona | Owner: "yes V is a girl. dont ask me why" |
 | 2026-09-26 | **V answers only what is asked; no emojis**; her maker, gender and "AI language model on Granite" only when asked — "who / what are you" = V, an AI assistant, and what she can do | Owner's second try: she volunteered her maker and gender and used an emoji |
 | 2026-09-26 | **Build order: machine awareness → chat panel (file reading, file updating, memory view, project-file search) + Kaggle RAG test → learning → multi-language** | Owner's plan; machine awareness first because every later feature adds load on the laptop |
@@ -453,8 +489,19 @@ Options, all need measuring on this laptop first:
 # Config check
 python -c "from model.training.config_loader import CFG; print(CFG.model.name, CFG.paths.dataset)"
 
-# Build RAG index (after any dataset or code change)
+# Build RAG index over the training set (after a dataset change; --device cuda on Kaggle)
 python -m retrieval.indexer
+
+# No-brain tests: languages, mode rules, panel files (reading / updating / project search), learning, memory
+python -m experiments.eval_language
+python -m experiments.eval_intent
+python -m experiments.eval_file_context
+python -m experiments.eval_learning
+python -m memory.test_memory
+
+# What V learned → training records (data/learned/); notes from the Kaggle study session → V's memory
+python -m learning.export
+python -m learning.study --import "Kaggle downloads/<run>/results/study/python_code.jsonl"
 
 # Test retrieval / model / chat
 python -m retrieval.test_rag
@@ -464,8 +511,8 @@ python test_chat.py
 # Start the server
 uvicorn inference.api.main:app --host 0.0.0.0 --port 8000
 
-# Extension
-cd extension && npm install && npm run compile   # then F5 in VS Code
+# Extension: install into this VS Code, then "Developer: Reload Window"
+cd extension && npm run install-local
 
 # Kaggle run status / results (Kaggle CLI + key in ~/.kaggle/)
 kaggle kernels list --mine

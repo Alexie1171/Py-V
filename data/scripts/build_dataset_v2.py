@@ -37,6 +37,20 @@ def load_source(name: str) -> list:
         return [json.loads(line) for line in f if line.strip()]
 
 
+def load_learned() -> list:
+    """What V learned and the owner approved (learning/export.py): every learned_*.jsonl in the raw
+    source folder or config learning.learned_dir. Few and hand-approved — all of them go in."""
+    records, seen = [], set()
+    for folder in (CFG.dataset_v2.output_dir, CFG.learning.learned_dir):
+        for path in sorted(folder.glob("learned_*.jsonl")) if folder.exists() else []:
+            if path.name in seen:
+                continue
+            seen.add(path.name)
+            with open(path, encoding="utf-8") as f:
+                records += [json.loads(line) for line in f if line.strip()]
+    return records
+
+
 def clean(records: list, benchmarks, tokenizer, max_tokens: int, drops: Counter) -> list:
     """Drop duplicates (output or instruction), benchmark overlap and over-long records."""
     seen, kept = set(), []
@@ -86,6 +100,16 @@ def main():
         short = "  <- SHORT" if len(chosen) < take else ""
         print(f"  {name:<20} loaded {len(records):>5}  usable {len(usable):>5}  "
               f"taken {len(chosen):>5}/{take}{short}  dropped {dict(drops)}")
+
+    learned = load_learned()      # Phase 13: approved answers + approved study topics, all of them
+    if learned:
+        drops  = Counter()
+        usable = clean(learned, benchmarks, tokenizer, build["max_tokens"], drops)
+        for record in usable:
+            by_task[record["metadata"]["task"]].append(record)
+        report["learned"] = {"loaded": len(learned), "usable": len(usable), "taken": len(usable),
+                             "wanted": len(learned), "dropped": dict(drops)}
+        print(f"  {'learned (Phase 13)':<20} loaded {len(learned):>5}  usable {len(usable):>5}  dropped {dict(drops)}")
 
     out_dir = build["output_dir"]
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -146,19 +146,42 @@ export interface ChatDone {
   load: string | null;
   note: string | null;
   file: string | null; // what of the open file V read ("app.py, lines 10-24")
+  notes?: number; // study notes used (Phase 13)
+  project?: number; // project pieces used (10.5)
+  project_files?: string[];
+  sources?: { title: string; url: string }[] | null; // a web lookup's pages
+  asks?: string[] | null; // quick replies ("Yes, look it up" / "No thanks")
+  study?: StudyStatus | null;
+}
+
+export interface StudyStatus {
+  running: boolean;
+  topic?: string;
+  minutes?: number;
+  minutes_left?: number;
+  notes?: number;
+  state?: string;
+  paused?: boolean;
+}
+
+/** What goes with a message besides its text. */
+export interface ChatExtras {
+  file?: OpenFilePayload; // the open file (10.2)
+  project?: string; // the workspace folder (10.5)
 }
 
 export type ChatEvent =
   | { kind: "start"; mode: string; confidence: number; load: string | null; language: string | null; file: string | null }
+  | { kind: "status"; text: string } // she is looking something up online (Phase 13)
   | { kind: "piece"; text: string }
   | { kind: "done"; result: ChatDone }
   | { kind: "error"; detail: string };
 
 /**
  * Send a chat message and receive V's answer as it is written
- * (POST /api/v1/chat/stream, server-sent events). file = the open file
- * (file_context.ts), undefined = none / not shared. onEvent gets start →
- * piece… → done, or error. Returns a function that stops the answer —
+ * (POST /api/v1/chat/stream, server-sent events). extras: the open file
+ * (file_context.ts; none = not shared) and the workspace folder (project
+ * search). onEvent gets start → status… → piece… → done, or error. Returns a function that stops the answer —
  * closing the connection makes the server stop the brain.
  *
  * Uses fetch and reads the body itself: with Node's http module the event
@@ -168,7 +191,7 @@ export type ChatEvent =
 export function chatStream(
   sessionId: string,
   message: string,
-  file: OpenFilePayload | undefined,
+  extras: ChatExtras,
   onEvent: (event: ChatEvent) => void
 ): () => void {
   const { serverUrl } = getConfig();
@@ -200,7 +223,7 @@ export function chatStream(
       res = await fetch(`${serverUrl}/api/v1/chat/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, message, file }),
+        body: JSON.stringify({ session_id: sessionId, message, file: extras.file, project: extras.project }),
         signal: controller.signal,
       });
     } catch (err) {
@@ -302,6 +325,8 @@ function parseSse(block: string): ChatEvent | null {
         language: body.language ?? null,
         file: body.file ?? null,
       };
+    case "status":
+      return { kind: "status", text: body.text ?? "" };
     case "piece":
       return { kind: "piece", text: body.text ?? "" };
     case "done":
@@ -311,6 +336,126 @@ function parseSse(block: string): ChatEvent | null {
     default:
       return null;
   }
+}
+
+// ─── Small JSON calls (fetch) ─────────────────────────────────────────────────
+
+/** A JSON request to the server; throws with the server's own reason ("detail") when it says no. */
+async function requestJson<T>(method: string, path: string, body?: object): Promise<T> {
+  const { serverUrl } = getConfig();
+  let res: Response;
+  try {
+    res = await fetch(`${serverUrl}/api/v1${path}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (err) {
+    throw new Error(describeError(err));
+  }
+  const text = await res.text();
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    // not JSON — reported below
+  }
+  if (!res.ok) {
+    const detail = typeof data?.detail === "string" ? data.detail : `Server answered ${res.status}`;
+    throw new Error(detail);
+  }
+  return data as T;
+}
+
+export interface ChangeProposal {
+  content: string;
+  how: string;
+  summary: string;
+}
+
+/** Where a code block goes in the file (Phase 10.3) — the whole file with the change; nothing is written. */
+export function proposeChange(code: string, file: OpenFilePayload): Promise<ChangeProposal> {
+  return requestJson<ChangeProposal>("POST", "/file/change", { code, file });
+}
+
+export interface MemoryFact {
+  id: number;
+  key: string;
+  text: string;
+  created: number;
+}
+
+export interface MemoryList {
+  enabled: boolean;
+  facts: MemoryFact[];
+  messages: number;
+  sessions: number;
+}
+
+/** What V remembers (Phase 10.4 memory view). */
+export function getMemory(): Promise<MemoryList> {
+  return requestJson<MemoryList>("GET", "/memory");
+}
+
+/** Make V forget one fact for good. */
+export function forgetFact(id: number): Promise<unknown> {
+  return requestJson("DELETE", `/memory/${id}`);
+}
+
+// ─── Project search (10.5) ────────────────────────────────────────────────────
+
+export interface ProjectStatus {
+  root: string;
+  status: string;
+  files?: number;
+  pieces?: number;
+  embedded?: number;
+}
+
+/** Index (or bring up to date) the workspace folder — in the background on the server; stays local. */
+export function indexProject(root: string): Promise<ProjectStatus> {
+  return requestJson<ProjectStatus>("POST", "/project/index", { root });
+}
+
+export function projectStatus(root: string): Promise<ProjectStatus> {
+  return requestJson<ProjectStatus>("GET", `/project/status?root=${encodeURIComponent(root)}`);
+}
+
+// ─── Learning (Phase 13) ──────────────────────────────────────────────────────
+
+export interface LearningOverview {
+  topics: any[];
+  approved: number;
+  study: StudyStatus | null;
+}
+
+export function getLearning(): Promise<LearningOverview> {
+  return requestJson<LearningOverview>("GET", "/learning");
+}
+
+export function approveAnswer(question: string, answer: string, mode: string | null, language: string | null,
+                              sessionId: string): Promise<{ id: string }> {
+  return requestJson("POST", "/learning/approve", { question, answer, mode, language, session_id: sessionId });
+}
+
+export function unapproveAnswer(id: string): Promise<unknown> {
+  return requestJson("DELETE", `/learning/approve/${encodeURIComponent(id)}`);
+}
+
+export function approveTopic(id: number, approved: boolean): Promise<unknown> {
+  return requestJson("POST", `/learning/topics/${id}/approve`, { approved });
+}
+
+export function forgetTopic(id: number): Promise<unknown> {
+  return requestJson("DELETE", `/learning/topics/${id}`);
+}
+
+export function studyStatus(): Promise<StudyStatus> {
+  return requestJson<StudyStatus>("GET", "/learning/study");
+}
+
+export function stopStudy(): Promise<{ reply: string }> {
+  return requestJson("POST", "/learning/study/stop");
 }
 
 /**

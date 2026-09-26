@@ -1,5 +1,13 @@
 # retrieval/indexer.py
+# Builds the RAG index over the training set (config paths.dataset — v3 since
+# 2026-09-26) and, when config rag.sources says so, Py-V's own code.
+#   python -m retrieval.indexer                  # laptop: CPU (config rag.device)
+#   python -m retrieval.indexer --device cuda    # Kaggle pipeline stage 11: a minute on the T4
+# Writes build_info.json next to the index (dataset + its md5, counts, date).
 
+import argparse
+import datetime
+import hashlib
 import os
 import json
 from retrieval.embedder import Embedder
@@ -139,8 +147,10 @@ def load_dataset():
             }
 
 
-def build_index():
-    embedder   = Embedder()
+def build_index(device: str = None, sources: list = None):
+    device     = device or CFG.rag.device
+    sources    = sources or CFG.rag.sources
+    embedder   = Embedder(device=device)
     all_chunks = []
 
     dataset_count  = 0
@@ -152,11 +162,12 @@ def build_index():
         dataset_count += 1
     print(f"  → {dataset_count} dataset chunks")
 
-    print("Loading codebase (AST function-level chunks)...")
-    for item in load_codebase():
-        all_chunks.append(item)
-        codebase_count += 1
-    print(f"  → {codebase_count} codebase chunks")
+    if "codebase" in sources:
+        print("Loading codebase (AST function-level chunks)...")
+        for item in load_codebase():
+            all_chunks.append(item)
+            codebase_count += 1
+        print(f"  → {codebase_count} codebase chunks")
 
     print(f"TOTAL chunks: {len(all_chunks)}")
 
@@ -177,12 +188,21 @@ def build_index():
 
     print("Saving index...")
     store.save(INDEX_PATH)
+    md5 = hashlib.md5(open(DATASET_PATH, "rb").read()).hexdigest() if os.path.exists(DATASET_PATH) else None
+    with open(os.path.join(INDEX_PATH, "build_info.json"), "w", encoding="utf-8") as f:
+        json.dump({"dataset": DATASET_PATH, "dataset_md5": md5, "dataset_chunks": dataset_count,
+                   "codebase_chunks": codebase_count, "sources": sources, "device": device,
+                   "built": datetime.datetime.now().isoformat(timespec="seconds")}, f, indent=1)
 
     print(f"\nIndex built successfully → {INDEX_PATH}")
     print(f"  dataset:  {dataset_count} chunks")
-    print(f"  codebase: {codebase_count} chunks  (was 27 whole-file chunks before)")
+    print(f"  codebase: {codebase_count} chunks")
     print(f"  total:    {len(all_chunks)} chunks")
 
 
 if __name__ == "__main__":
-    build_index()
+    parser = argparse.ArgumentParser(description="Build the RAG index over the training set")
+    parser.add_argument("--device", default=None, help="embedder device (default: config rag.device)")
+    parser.add_argument("--with-codebase", action="store_true", help="also index Py-V's own code")
+    args = parser.parse_args()
+    build_index(args.device, (["dataset", "codebase"] if args.with_codebase else None))

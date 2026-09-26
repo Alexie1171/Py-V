@@ -25,8 +25,11 @@ export function getChatHtml(webview: vscode.Webview, extensionUri: vscode.Uri): 
   <header class="bar">
     <span id="status" class="status" title="Server status"></span>
     <span class="name">V</span>
+    <button id="memoryButton" class="link" title="What V remembers and has studied (forget things here)">Memory</button>
     <button id="newChat" class="link" title="Start a new chat (V still remembers facts from old chats)">New chat</button>
   </header>
+  <div id="studyBar" class="study-bar" hidden></div>
+  <section id="memoryView" class="memory-view" hidden></section>
   <main id="messages" class="messages" aria-live="polite"></main>
   <div id="fileChip" class="file-chip" hidden></div>
   <footer class="composer">
