@@ -94,6 +94,25 @@ class MemoryConfig:
 
 
 @dataclass
+class WorkLimits:
+    history_turns:    int
+    memory_facts:     int
+    memory_code:      int
+    prose_max_tokens: Optional[int]   # None = model.max_tokens
+
+
+@dataclass
+class MachineConfig:
+    enabled:          bool
+    busy:             dict            # {ram_free_gb, gpu_free_gb, cpu_percent} — any one → busy
+    tight:            dict            # same keys — any one → tight
+    busy_work:        WorkLimits
+    tight_work:       WorkLimits
+    gentle:           bool
+    heads_up_minutes: float
+
+
+@dataclass
 class DatasetV2Config:
     output_dir:  Path
     sample_size: int
@@ -124,6 +143,7 @@ class AppConfig:
     paths:      PathsConfig
     rag:        RAGConfig
     memory:     MemoryConfig
+    machine:    MachineConfig
     intent:     IntentConfig
     dataset_v2: DatasetV2Config
     evaluation: EvaluationConfig
@@ -203,6 +223,19 @@ def load_config() -> AppConfig:
         semantic_search   = m.get("semantic_search",   True),
     )
 
+    mc = raw.get("machine", {})
+    machine_cfg = MachineConfig(
+        enabled          = mc.get("enabled",          False),
+        busy             = mc.get("busy",             {"ram_free_gb": 2.5, "gpu_free_gb": 0.6, "cpu_percent": 85}),
+        tight            = mc.get("tight",            {"ram_free_gb": 1.0, "gpu_free_gb": 0.3, "cpu_percent": 97}),
+        busy_work        = WorkLimits(**mc.get("busy_work",  {"history_turns": 4, "memory_facts": 3,
+                                                               "memory_code": 1, "prose_max_tokens": 384})),
+        tight_work       = WorkLimits(**mc.get("tight_work", {"history_turns": 2, "memory_facts": 1,
+                                                               "memory_code": 0, "prose_max_tokens": 256})),
+        gentle           = mc.get("gentle",           True),
+        heads_up_minutes = mc.get("heads_up_minutes", 10),
+    )
+
     intent_cfg = IntentConfig(brain_for_unclear=raw.get("intent", {}).get("brain_for_unclear", False))
 
     d = raw.get("dataset_v2", {})
@@ -232,6 +265,7 @@ def load_config() -> AppConfig:
         paths      = paths_cfg,
         rag        = rag_cfg,
         memory     = memory_cfg,
+        machine    = machine_cfg,
         intent     = intent_cfg,
         dataset_v2 = dataset_v2_cfg,
         evaluation = evaluation_cfg,

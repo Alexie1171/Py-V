@@ -95,6 +95,26 @@ memory:
   active_code_modes: ["generate", "debug", "refactor"]   # only these get code from memory
   semantic_search: true     # meaning search (retrieval/embedder.py on CPU); false = keyword search only
 
+machine:
+  # V knows the computer she runs on (inference/engine/machine.py): what it has
+  # (GPU, RAM, CPU — read once) and how busy it is (read before every answer).
+  # When it's busy she takes on less (below), runs gently (lower priority, half
+  # the CPU threads) so other programs stay smooth, and says so casually now
+  # and then. Never uses the brain. First guesses for the GTX 1650 laptop
+  # (2026-09-26) — tune after trying (test_chat.py shows the level): with
+  # nothing loaded 3.2 of the 4 GB GPU was free (other apps ~0.8 GB), V's brain
+  # takes ~2.5 GB, so ~0.7 GB stays free for her answers on a quiet laptop; RAM
+  # got to ~1 GB free (14.5 of 15.4 GB used) in the first laptop check.
+  enabled: true
+  busy:  {ram_free_gb: 2.5, gpu_free_gb: 0.6, cpu_percent: 85}   # any one of these → busy
+  tight: {ram_free_gb: 1.0, gpu_free_gb: 0.3, cpu_percent: 97}   # any one → tight (freezing territory)
+  # The most V takes on at each level; a free machine uses the normal settings
+  # (memory.history_turns / top_k / code_top_k, model.max_tokens). Prose = chat + explain.
+  busy_work:  {history_turns: 4, memory_facts: 3, memory_code: 1, prose_max_tokens: 384}
+  tight_work: {history_turns: 2, memory_facts: 1, memory_code: 0, prose_max_tokens: 256}
+  gentle: true               # lower priority + half the CPU threads while busy / tight
+  heads_up_minutes: 10       # a casual heads-up at most this often at the same level (sooner when it gets worse)
+
 rag:
   # Off since 2026-09-25: weak matches were copied into answers instead of
   # helping. Turn back on after the dataset is improved — see PROJECT_STATUS.md.

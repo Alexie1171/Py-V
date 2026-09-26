@@ -14,6 +14,7 @@ bitsandbytes
 fastapi
 uvicorn
 pydantic
+psutil          # machine awareness: free RAM / CPU load (inference/engine/machine.py)
 
 # =========================
 # DATA PIPELINE

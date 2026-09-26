@@ -14,6 +14,11 @@
  {"message": "what can you do?", "mode": "chat"},
  {"message": "how do you work?", "mode": "chat"},
  {"message": "what's your favorite programming language?", "mode": "chat"},
+ {"message": "how's my laptop doing?", "mode": "chat"},
+ {"message": "what gpu do i have?", "mode": "chat"},
+ {"message": "is my computer busy right now?", "mode": "chat"},
+ {"message": "how much ram is free right now?", "mode": "chat"},
+ {"message": "write a script that shows my cpu usage", "mode": "generate"},
 
  {"message": "Write a function that reverses a string.", "mode": "generate"},
  {"message": "Can you give me a function that sorts a list of dicts by age?", "mode": "generate"},

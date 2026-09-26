@@ -24,9 +24,12 @@ def main():
 
         print("\nV:")
         print(result["response"])
+        if result.get("note"):
+            print(f"\n({result['note']})")
 
         rag_info = f" | rag_chunks={result['rag_chunks']}" if result["rag_chunks"] > 0 else ""
-        print(f"\n[mode={result['mode']} | confidence={result['confidence']}{rag_info}]\n")
+        load_info = f" | laptop={result['load']}" if result.get("load") else ""
+        print(f"\n[mode={result['mode']} | confidence={result['confidence']}{rag_info}{load_info}]\n")
 
 
 if __name__ == "__main__":

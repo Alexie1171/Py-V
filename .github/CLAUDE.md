@@ -37,8 +37,10 @@ It ensures:
 | Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
 | Phase 10 | VS Code chat panel (full UI, no terminal) | Planned |
 | Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Built 2026-09-26 (`memory/`, on by default) — smoke test passes; tried with the trained Granite chat on the laptop (2026-09-26): unrelated facts derailed an answer → recall now needs real relevance |
+| Phase 12 | Machine awareness (V knows the computer and how busy it is, takes on less when busy) | Built 2026-09-26 (`inference/engine/machine.py`, config `machine:`) — busy lines are first guesses, to tune after the owner's first try |
+| Phase 13 | Learning (web lookup after asking, learning from chats, study sessions on a topic) | Planned 2026-09-26 — design in `PROJECT_STATUS.md` section 6 |
 
-Build order: better training data + GPU retrain (the 8.1.x commits; Granite retrain runs in the one-button GPU pipeline — Kaggle first, Colab as backup) and Phase 11 (built 2026-09-26) → then Phases 9 and 10 and speed work (numbering kept stable on purpose). Current phase: **Phase 11** — commits are numbered 11.x from here ("Phase 11: …", then 11.1, 11.1.1, …)
+Build order (owner, 2026-09-26): Phase 12 machine awareness (built) → Phase 10 chat panel with file reading, file updating (applied only on the owner's click), memory view and project-file search (RAG over the user's files) + the Kaggle test of RAG over training examples → Phase 13 learning → Phase 9 multi-language; speed work not placed yet (numbering kept stable on purpose). Current phase: **Phase 12** — commits "Phase 12: …", then 12.1, 12.1.1, …
 
 Live status, open issues and next steps: see `PROJECT_STATUS.md` in the repo root.
 
@@ -149,9 +151,10 @@ Rules:
 - `to_native_chat(prompt, tokenizer)` re-wraps a template prompt in the model's own chat format (`apply_chat_template`, `enable_thinking=False`) for chat-tuned brains; unchanged for models without a chat template
 - `format_for_model(prompt, model, tokenizer)` — the prompt exactly as the loaded model gets it: template, or `to_native_chat()` when `model.v_prompt_format == "native_chat"`. The generator calls it for every generation; `dataset_loader.py` does the same wrap for training — so app, tests and training always match. Everything else passes plain template prompts
 - Never define prompt format in any other file
-- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `to_native_chat()`, `format_for_model()`, `uses_chat_format()`, `build_chat_prompt()`, `chat_history()`, `format_context()`, `format_retrieved_context()`
+- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `to_native_chat()`, `format_for_model()`, `uses_chat_format()`, `build_chat_prompt()`, `chat_history()`, `format_machine()`, `format_context()`, `format_retrieved_context()`
 - **Chat mode on a chat brain (since 2026-09-26)** — `build_chat_prompt(user_input, context, memories, tokenizer)`, used when `uses_chat_format(model, tokenizer)` (`native_chat` + a chat template): a real conversation instead of the chat template — system message = `V_PERSONA` (+ remembered facts), then `chat_history()`, then the user's message exactly as written. Returns the prompt already in the brain's format → `generate_from_prompt(..., formatted=True)`. The template wrapper ("Answer the following question using only plain English...") made V answer like homework, with no name. Brains without a chat format keep `build_prompt("chat", ...)`
-- `chat_history(context)` — the last `CFG.memory.history_turns` messages of the current chat (6 = 3 exchanges), chat mode only. No code goes in (same reason as memory/RAG): code-mode turns keep the request's first line and a short note instead of V's code; code blocks elsewhere become "(code left out)"; each message cut to `HISTORY_CHARS` (400). Persona alone ~264 prompt tokens, with 3 exchanges + a fact ~470
+- `build_chat_prompt(..., history_turns=None, machine="")` — fewer turns when the machine is busy; `machine` = `format_machine(specs, snap)` (what V knows about the computer), placed before the remembered facts
+- `chat_history(context, turns=None)` — the last `turns` (None = `CFG.memory.history_turns`) messages of the current chat (6 = 3 exchanges), chat mode only. No code goes in (same reason as memory/RAG): code-mode turns keep the request's first line and a short note instead of V's code; code blocks elsewhere become "(code left out)"; each message cut to `HISTORY_CHARS` (400). Persona alone ~264 prompt tokens, with 3 exchanges + a fact ~470
 - History stays OFF for every other mode (since 2026-09-25) — the old brain copied previous answers and answered previous questions instead of the new one; code modes keep the prompts their adapters were trained on. `format_context()` (last two user questions only) is kept but unused
 - RAG context is only injected for `generate`, `debug`, `refactor` modes
 
@@ -163,7 +166,8 @@ Rules:
 - Modes: `generate`, `debug`, `explain`, `refactor`, `chat`
 - `generate`, `debug`, `refactor` templates have `{retrieved_context}` slot
 - `explain` and `chat` templates do NOT have `{retrieved_context}` slot
-- `V_PERSONA` — V's own voice in chat mode (name V, made by Ador "Alexie" Haq aka Alexie, friendly and casual, "I'm V" instead of "a language model", says it is an AI language model on IBM's Granite when asked, words only). Kept out of `TEMPLATES`: it is the system message of `build_chat_prompt()`, not a mode template
+- `V_MACHINE` / `V_MACHINE_BUSY` — what V knows about the computer, in the chat system message (Phase 12)
+- `V_PERSONA` — V's own voice in chat mode (name V, a girl — she/her, made by Ador "Alexie" Haq aka Alexie, friendly and casual, "I'm V" instead of "a language model", says it is an AI language model on IBM's Granite when asked, words only). Kept out of `TEMPLATES`: it is the system message of `build_chat_prompt()`, not a mode template
 - Never define templates outside this file
 
 ---
@@ -180,6 +184,7 @@ Rules:
 - `stop_strings` also match across the prompt/answer boundary (the prompt ends in "\n"), so a stop word must never match the start of a legitimate answer — code-mode test stops need a blank line first (`"\n\ndef test_"`); `"\ndef test_"` killed a function named `test_duplicate`
 - The current adapter (`model/lora/`) was trained without an end-of-text token, so it does not stop on its own — stop words are its only brake. The v2 adapter stops on its own (end token learned); stop words stay as a safety net
 - Retry logic: a second attempt at temperature ≥ 0.5 when a chat/explain answer comes out empty
+- A chat/explain answer cut off by its token limit ends after its last full sentence (`_drop_unfinished()`), so a shorter limit on a busy machine never ends mid-word
 - `generate_from_prompt(..., temperature=None, formatted=False)`: temperature None = the mode's config `generation.<mode>.temperature` (default 0.2, chat 0.7); tests pass 0.0. `formatted=True` = the prompt is already in the brain's chat format (`build_chat_prompt`), not re-wrapped
 - `adapter_for_mode(model, mode)` — the context every generation runs in: the LoRA adapter switched off (`model.disable_adapter()`, no reload) when the mode is not in the adapter's `use_in_modes`. Checked on the laptop (2026-09-26): chat / generate / explain answered with it off, debug / refactor with it on
 - Repeat settings come from `CFG.generation.for_mode(mode)` (config `generation:` section, `default` for unlisted modes) — never hard-code them here. Code modes (generate/debug/refactor): `repetition_penalty` 1.0 and `no_repeat_ngram_size` 0 — code must copy names and the user's code from the prompt (1.1 renamed `find_Volume` → `find_volume`, 13 of 49 MBPP failures). Explain: 1.1 and 4, against loops. Chat (2026-09-26): 1.0 and 0, temperature 0.7 — the penalties also punished every word of the persona and the earlier turns in the prompt; turn them back on if the chat brain starts repeating itself
@@ -191,7 +196,8 @@ Rules:
 - Word rules (rebuilt 2026-09-26): `RULES` = (mode, weight, regex) — a mode's score is the sum of its matching rules; a real error name (`TypeError`, case-sensitive) counts 1.5 for debug; phrases like "give me a function", "not working", "more pythonic", "difference between"
 - Flags `"unclear"` when no rule matched but the message is pasted code (→ explain) or technical (→ generate, explain if it is a question), or when the two best modes are within `TIE_MARGIN` 0.5 (the best stands). Nothing matched, nothing technical → chat
 - Questions about V itself (`your name`, `what can you do`, `are you an AI`, `who made you`, …) → chat, weight 1.5 — beats explain's "what is / what are" (the laptop test sent "what is your name?" to explain: "The concept 'what is your name?' refers to…")
-- Test: `experiments/intent_cases.json` (49 messages, git) + `python -m experiments.eval_intent` — rules 48/49 (written together with the rules; add real messages V gets wrong)
+- Questions about the user's computer (`my laptop`, `the gpu`, `ram usage`, …) → chat, weight 1.2 — V sees its numbers there (Phase 12); "write a script that shows my cpu usage" still wins for generate
+- Test: `experiments/intent_cases.json` (54 messages, git) + `python -m experiments.eval_intent` — rules 53/54 (written together with the rules; add real messages V gets wrong)
 
 ---
 
@@ -211,6 +217,18 @@ Rules:
 ### `inference/engine/context_schema.py`
 - Defines `SessionContext` and `ChatTurn` dataclasses
 - No logic — types only
+
+---
+
+### `inference/engine/machine.py` (Phase 12, built 2026-09-26)
+- V knows the computer she runs on: `Machine.specs` (GPU, VRAM, RAM, CPU name / cores — read once) and `Machine.check()` → `Snapshot` (free RAM, free GPU memory for V = free on the card + what her brain has cached, CPU %) before every answer. Never uses the brain; psutil + torch only
+- Levels `free` / `busy` / `tight` from config `machine.busy` / `machine.tight` (any one resource past its line; `reasons` = which ones). First guesses for the GTX 1650: on a quiet laptop only ~0.7 GB of GPU memory stays free next to the brain (3.2 GB free with nothing loaded, brain ~2.5 GB), so the GPU lines are 0.6 / 0.3 GB
+- `work(snap)` → `WorkLimits`: busy / tight cap chat history turns, memory facts / code items and prose (chat + explain) answer tokens (`machine.busy_work` / `tight_work`); free = the normal settings
+- Gentle pace while busy / tight (`machine.gentle`): below-normal process priority (Windows only — elsewhere it can't be raised back without admin rights) and half the CPU threads, so other programs stay smooth
+- `heads_up(snap)` — V's casual note (owner: "warnings must not be rigid… casual"): built from random parts with the live numbers, said when it gets busier, again after `machine.heads_up_minutes` at the same level (never within `MIN_GAP_SECONDS`), and once "all good now" when it is free again. Returned as the `note` of the chat reply, never mixed into the answer or memory
+- In chat mode her system message gets `prompt_builder.format_machine()` (template `V_MACHINE`): the parts, this answer's numbers, "keep this answer short" when busy — so she can answer "how's my laptop doing?". Other modes' prompts stay as trained
+- Can't read the machine → chat carries on with the normal settings (same as memory / RAG)
+- Smoke check (no brain): `python -m inference.engine.machine`
 
 ---
 
@@ -486,6 +504,23 @@ Phase 10 replaces terminal interaction with a Copilot-style chat panel inside VS
 - The existing `pyv.generate` and `pyv.generateFromInput` commands remain unchanged
 - The panel is activated by a new command: `pyv.openChat`
 - No Python logic in any extension file — all backend calls go through `api.ts`
+- Added to the plan 2026-09-26 (owner): file reading, file updating, a memory view (list / forget facts) and search over the user's project files (RAG over their own code, built here — the Kaggle test of RAG over training examples runs separately)
+- File updating: V shows the change (a diff) and writes the file only when the user clicks apply — never on her own
+- Machine awareness applies to file reading: a long file goes in pieces, fewer when the machine is busy (Phase 12)
+
+---
+
+## Phase 13 Rules — Learning (planned 2026-09-26, nothing built)
+
+The owner's design. Nothing here changes the brain's weights on its own — retraining stays a Kaggle run the owner starts.
+
+- **Look things up, after asking**: when V doesn't know something she asks first ("Want me to look that up online?"); she searches only on a yes in any wording ("yes", "yea", "sure, look it up") and not on a no ("no", "nah", "don't"). Useful facts go into memory with their source
+- **Study sessions**: "learn about <topic> for <time>" (e.g. "learn about asyncio for 30 minutes") is itself the permission to go online for that topic. She reads sources on it until the time is up, pacing herself with machine awareness, and saves her progress per topic: short notes in her own words, sources read (address + date), what is covered, what's next, time spent
+- **Picking up again**: a later session on a related topic, in any chat, finds the earlier notes (keyword + meaning search), continues from "what's next" and links the topics. She knows what she has studied ("I spent 30 minutes on asyncio last week, covered the event loop, not tasks yet") and uses her notes when answering
+- **Learning from chats**: answers the owner approves (and fixes whose tests pass) are saved as training examples for the next Kaggle retrain
+- **Training on a topic**: study notes become training examples only when the owner approves that topic; the retrain is a Kaggle run the owner starts
+- Only the search words leave the laptop — never chat history, code or memory. Notes live in the local memory database (gitignored, never committed)
+- Honest limit: on the GTX 1650 reading one web page and writing a note should take the brain roughly half a minute to a minute (estimate from the 21–41 s answers of the first laptop check, not measured), so 30 minutes of study is tens of pages, not hundreds
 
 ---
 
@@ -592,6 +627,7 @@ Scraping → Cleaning → Deduplication → Formatting → Dataset → RAG Index
 - Run with: `uvicorn inference.api.main:app --host 0.0.0.0 --port 8000`
 - Routes: `GET /api/v1/health`, `POST /api/v1/generate`, `POST /api/v1/chat`
 - Phase 10 adds: `POST /api/v1/chat/stream` (SSE streaming)
+- `/chat` replies carry `load` (free / busy / tight) and `note` (V's casual heads-up about the computer, or null) — Phase 12
 - Model loads once at startup via lifespan — never per request
 - LoRA adapter applied on top of base model via `load_lora_model()` before serving
 
@@ -666,6 +702,9 @@ python -m experiments.eval_long_context --adapter model/lora_v2
 
 # Memory smoke test (no brain, CPU only)
 python -m memory.test_memory
+
+# What V sees about the computer (no brain): parts, live numbers, busy level, limits
+python -m inference.engine.machine
 
 # Mode detection test: word rules (instant, no brain) / with the brain for unclear messages (loads it)
 python -m experiments.eval_intent

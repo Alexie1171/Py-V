@@ -64,6 +64,9 @@ RULES = [
                              r"favou?rite)\b|\bwhat can you do\b|\bwhat are you\b|\babout yourself\b|"
                              r"\bwho (made|created|built|trained|owns) you\b|\bhow (do|does) (you|v) work\b|"
                              r"\bare you (an? )?(ai|bot|robot|human|real|person|machine|model|language model|llm)\b", _I)),
+    # Questions about the user's computer — V sees its numbers in chat mode (machine.py)
+    ("chat", 1.2, re.compile(r"\b(my|this|the) (laptop|computer|pc|machine|gpu|graphics card|ram|cpu|processor)\b|"
+                             r"\b(ram|memory|gpu|cpu) (usage|load)\b", _I)),
 ]
 
 # Pasted code: a fenced block or a line that starts like Python

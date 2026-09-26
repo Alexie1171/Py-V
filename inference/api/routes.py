@@ -81,6 +81,8 @@ def chat(request: ChatRequest):
         confidence  = result["confidence"],
         rag_chunks  = result["rag_chunks"],
         memories    = result.get("memories", 0),
+        load        = result.get("load"),
+        note        = result.get("note"),
     )
 
 

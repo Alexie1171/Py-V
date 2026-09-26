@@ -4,6 +4,8 @@ Pydantic request and response models for the FastAPI layer.
 No business logic here — types only.
 """
 
+from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -56,6 +58,8 @@ class ChatResponse(BaseModel):
     confidence:  float = Field(..., description="Controller confidence score for the detected mode.")
     rag_chunks:  int   = Field(..., description="Number of RAG chunks injected into the prompt.")
     memories:    int   = Field(0,   description="Number of memory items (facts / earlier code) added to the prompt.")
+    load:        Optional[str] = Field(None, description="How busy the computer was: free / busy / tight (V takes on less when busy).")
+    note:        Optional[str] = Field(None, description="V's casual heads-up about the computer, when she has one.")
 
 
 class MemoryFact(BaseModel):

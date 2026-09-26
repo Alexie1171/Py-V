@@ -72,11 +72,14 @@ class MemoryManager:
             self._index("message", assistant_id, f"{user_text}\n{assistant_text}")
         return fact_ids
 
-    def recall(self, query: str, mode: str) -> dict:
-        """{"facts": [MemoryHit], "code": [MemoryHit]} — code only in the code modes."""
-        facts = self.search.facts(query, self.cfg.top_k)
-        code  = (self.search.code(query, self.cfg.active_code_modes, self.cfg.code_top_k)
-                 if mode in self.cfg.active_code_modes else [])
+    def recall(self, query: str, mode: str, top_k: int = None, code_top_k: int = None) -> dict:
+        """{"facts": [MemoryHit], "code": [MemoryHit]} — code only in the code modes.
+        top_k / code_top_k: fewer items when the machine is busy (None = config)."""
+        top_k      = self.cfg.top_k      if top_k      is None else top_k
+        code_top_k = self.cfg.code_top_k if code_top_k is None else code_top_k
+        facts = self.search.facts(query, top_k) if top_k > 0 else []
+        code  = (self.search.code(query, self.cfg.active_code_modes, code_top_k)
+                 if mode in self.cfg.active_code_modes and code_top_k > 0 else [])
         return {"facts": facts, "code": code}
 
     # ─── the user's view ──────────────────────────────────────────────────────

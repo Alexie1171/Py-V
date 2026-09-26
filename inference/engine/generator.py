@@ -227,16 +227,27 @@ def adapter_for_mode(model, mode):
     return model.disable_adapter()
 
 
+_SENTENCE_END = re.compile(r"""[.!?]["')\]]?(?=\s|$)""")
+
+
+def _drop_unfinished(text: str) -> str:
+    """A prose answer that ran out of tokens: cut after its last full sentence
+    (kept as is when it has none)."""
+    ends = list(_SENTENCE_END.finditer(text))
+    return text[:ends[-1].end()] if ends else text
+
+
 def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None, formatted=False):
     if not formatted:
         prompt = format_for_model(prompt, model, tokenizer)
     inputs   = tokenizer(prompt, return_tensors="pt").to(model.device)
     settings = CFG.generation.for_mode(mode)
+    limit    = max_tokens or max_new_tokens()
 
     with torch.inference_mode(), adapter_for_mode(model, mode):
         output_ids = model.generate(
             **inputs,
-            max_new_tokens       = max_tokens or max_new_tokens(),
+            max_new_tokens       = limit,
             do_sample            = temperature > 0,
             temperature          = temperature if temperature > 0 else 1.0,
             repetition_penalty   = settings.repetition_penalty,
@@ -248,7 +259,10 @@ def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None
         )
 
     new_ids = output_ids[0][inputs["input_ids"].shape[-1]:]
-    return tokenizer.decode(new_ids, skip_special_tokens=True)
+    text    = tokenizer.decode(new_ids, skip_special_tokens=True)
+    if mode in ("chat", "explain") and len(new_ids) >= limit:   # cut off by the token limit
+        text = _drop_unfinished(text)
+    return text
 
 
 # ─── Public interface ─────────────────────────────────────────────────────────

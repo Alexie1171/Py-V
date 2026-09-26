@@ -1,7 +1,7 @@
 import re
 
 from model.training.config_loader import CFG
-from inference.engine.prompt_templates import TEMPLATES, INTENT_TEMPLATE, V_PERSONA
+from inference.engine.prompt_templates import TEMPLATES, INTENT_TEMPLATE, V_PERSONA, V_MACHINE, V_MACHINE_BUSY
 
 # Modes that receive RAG context — kept in sync with config, but also
 # checked here so prompt_builder stays self-contained.
@@ -147,22 +147,26 @@ def format_for_model(prompt: str, model, tokenizer) -> str:
     return prompt
 
 
-def build_chat_prompt(user_input: str, context: dict, memories: dict, tokenizer) -> str:
+def build_chat_prompt(user_input: str, context: dict, memories: dict, tokenizer,
+                      history_turns: int = None, machine: str = "") -> str:
     """
     Chat mode for brains with their own chat format, as a real conversation:
-    V's persona (+ remembered facts) as the system message, the last turns of
-    this chat, then the message exactly as the user wrote it. Wrapping it in
-    "Answer the following question using only plain English..." made V answer
-    like homework. Returned in the brain's format — generate_from_prompt(...,
-    formatted=True). Brains without a chat format use build_prompt("chat", ...).
+    V's persona (+ what she knows about the computer, + remembered facts) as
+    the system message, the last turns of this chat, then the message exactly
+    as the user wrote it. Wrapping it in "Answer the following question using
+    only plain English..." made V answer like homework. Returned in the brain's
+    format — generate_from_prompt(..., formatted=True). Brains without a chat
+    format use build_prompt("chat", ...). history_turns None = config;
+    machine = format_machine() output.
     """
     system = V_PERSONA
     facts  = format_memories(memories, "chat") if memories else ""
-    if facts:
-        system += "\n\n" + facts.strip()
+    for block in (machine, facts):
+        if block:
+            system += "\n\n" + block.strip()
 
     messages = [{"role": "system", "content": system}]
-    messages += chat_history(context)
+    messages += chat_history(context, history_turns)
     messages.append({"role": "user", "content": user_input})
     return tokenizer.apply_chat_template(
         messages,
@@ -172,17 +176,18 @@ def build_chat_prompt(user_input: str, context: dict, memories: dict, tokenizer)
     )
 
 
-def chat_history(context: dict) -> list:
+def chat_history(context: dict, turns: int = None) -> list:
     """
-    The last CFG.memory.history_turns messages of this chat as chat turns
-    (chat mode only). No code goes in, same reason as memory and RAG: a turn
+    The last `turns` messages of this chat as chat turns (chat mode only;
+    None = CFG.memory.history_turns — fewer when the machine is busy). No code goes in, same reason as memory and RAG: a turn
     from a code mode keeps just the first line of the request, and V's code
     answer becomes a short note; code blocks elsewhere become "(code left
     out)". Each message is cut to HISTORY_CHARS.
     """
-    turns = ((context or {}).get("history") or [])[-CFG.memory.history_turns:] if CFG.memory.history_turns > 0 else []
-    out   = []
-    for turn in turns:
+    turns  = CFG.memory.history_turns if turns is None else turns
+    recent = ((context or {}).get("history") or [])[-turns:] if turns > 0 else []
+    out    = []
+    for turn in recent:
         role, text = turn.get("role"), (turn.get("content") or "").strip()
         if role not in ("user", "assistant") or not text:
             continue
@@ -201,6 +206,26 @@ def chat_history(context: dict) -> list:
     while out and out[0]["role"] == "assistant":   # a conversation starts with the user
         out.pop(0)
     return out
+
+
+def format_machine(specs: dict, snap) -> str:
+    """
+    What V knows about the computer for the chat system message: its parts
+    (machine.Machine.specs) and this answer's live numbers (machine.Snapshot).
+    """
+    parts = []
+    if specs.get("gpu"):
+        parts.append(f"{specs['gpu']} graphics card ({specs['gpu_gb']:.1f} GB)")
+    parts.append(f"{specs['ram_gb']:.1f} GB of usable RAM")
+    parts.append(f"{specs['cpu']} ({specs['cores']} cores, {specs['threads']} threads)")
+
+    usage = [f"{snap.ram_free_gb:.1f} GB of RAM free"]
+    if snap.gpu_free_gb is not None:
+        usage.append(f"{snap.gpu_free_gb:.1f} GB of graphics memory free for V")
+    usage.append(f"CPU at {snap.cpu_percent:.0f}%")
+
+    return V_MACHINE.format(specs=", ".join(parts), usage=", ".join(usage),
+                            busy=V_MACHINE_BUSY if snap.level != "free" else "")
 
 
 def build_inference_prompt(instruction: str) -> str:
