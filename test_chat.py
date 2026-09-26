@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from inference.engine.chat import ChatEngine
 
 
@@ -5,9 +7,11 @@ def main():
 
     chat = ChatEngine()
 
-    session_id = "test_session_1"
+    # A new chat each run: V sees this chat's last turns, and long-term
+    # memory (facts) carries over from all chats
+    session_id = f"terminal-{datetime.now():%Y%m%d-%H%M%S}"
 
-    print("PY-V Phase 8 Test Started")
+    print("V is ready")
     print("Type 'exit' to stop\n")
 
     while True:
@@ -18,7 +22,7 @@ def main():
 
         result = chat.chat(session_id, user_input)
 
-        print("\nPY-V:")
+        print("\nV:")
         print(result["response"])
 
         rag_info = f" | rag_chunks={result['rag_chunks']}" if result["rag_chunks"] > 0 else ""

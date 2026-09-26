@@ -59,6 +59,11 @@ RULES = [
     ("chat", 1.0, re.compile(r"^\s*(hi|hello|hey|thanks|thank you|good (morning|afternoon|evening|night))\b", _I)),
     ("chat", 1.0, re.compile(r"\b(remember|my name|who are you|how are you|last (week|time))\b|"
                              r"\b(what|did) (did )?(we|i) (decide|decided|chose|say|said|talk|talked)\b", _I)),
+    # Questions about V itself — beats explain's "what is / what are" ("what is your name?")
+    ("chat", 1.5, re.compile(r"\byour (name|capabilities|abilities|skills|features|purpose|job|creator|maker|"
+                             r"favou?rite)\b|\bwhat can you do\b|\bwhat are you\b|\babout yourself\b|"
+                             r"\bwho (made|created|built|trained|owns) you\b|\bhow (do|does) (you|v) work\b|"
+                             r"\bare you (an? )?(ai|bot|robot|human|real|person|machine|model|language model|llm)\b", _I)),
 ]
 
 # Pasted code: a fenced block or a line that starts like Python

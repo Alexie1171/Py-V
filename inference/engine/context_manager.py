@@ -30,7 +30,7 @@ class ContextManager:
             state   = self.memory.load_session(session_id) or {}
             context = SessionContext(session_id=session_id,
                                      **{k: v for k, v in state.items() if k in _STATE_FIELDS})
-            context.history = [ChatTurn(m.role, m.text) for m in self.memory.history(session_id)]
+            context.history = [ChatTurn(m.role, m.text, m.mode) for m in self.memory.history(session_id)]
             return context
         except Exception as e:
             logger.warning(f"Memory: could not load session {session_id} ({e}) - starting fresh")
@@ -47,11 +47,12 @@ class ContextManager:
             logger.warning(f"Memory: could not save session {context.session_id} ({e})")
 
     def append_history(self, context: SessionContext, user: str, assistant: str, mode: str = None):
-        context.history.append(ChatTurn("user", user))
-        context.history.append(ChatTurn("assistant", assistant))
+        mode = mode or context.mode
+        context.history.append(ChatTurn("user", user, mode))
+        context.history.append(ChatTurn("assistant", assistant, mode))
         if self.memory is not None:
             try:
-                self.memory.remember_turn(context.session_id, mode or context.mode, user, assistant)
+                self.memory.remember_turn(context.session_id, mode, user, assistant)
             except Exception as e:
                 logger.warning(f"Memory: could not save the turn ({e})")
         self.save(context)

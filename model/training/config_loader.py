@@ -37,6 +37,7 @@ class ModelConfig:
 class GenerationModeConfig:
     repetition_penalty:   float
     no_repeat_ngram_size: int
+    temperature:          float   # 0 = always the likeliest word (used when the caller passes none)
 
 
 @dataclass
@@ -152,6 +153,7 @@ def load_config() -> AppConfig:
         mode: GenerationModeConfig(
             repetition_penalty   = s.get("repetition_penalty",   1.0),
             no_repeat_ngram_size = s.get("no_repeat_ngram_size", 0),
+            temperature          = s.get("temperature",          g["default"].get("temperature", 0.2)),
         )
         for mode, s in g.items()
     })

@@ -227,8 +227,9 @@ def adapter_for_mode(model, mode):
     return model.disable_adapter()
 
 
-def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None):
-    prompt   = format_for_model(prompt, model, tokenizer)
+def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None, formatted=False):
+    if not formatted:
+        prompt = format_for_model(prompt, model, tokenizer)
     inputs   = tokenizer(prompt, return_tensors="pt").to(model.device)
     settings = CFG.generation.for_mode(mode)
 
@@ -258,13 +259,18 @@ def generate_from_prompt(
     prompt:      str,
     mode:        str   = None,
     max_tokens:  int   = None,
-    temperature: float = 0.2,
+    temperature: float = None,
+    formatted:   bool  = False,
 ) -> str:
+    """
+    temperature None = the mode's setting (config generation.<mode>.temperature).
+    formatted = the prompt is already in the brain's own chat format
+    (prompt_builder.build_chat_prompt) — V's templates are re-wrapped otherwise.
+    """
+    if temperature is None:
+        temperature = CFG.generation.for_mode(mode).temperature
 
-    if mode in ["explain", "chat"]:
-        temperature = min(temperature, 0.3)
-
-    text = _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode)
+    text = _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode, formatted)
     text = _apply_stop_words(text, mode)
     text = _strip_prompt_echo(text)
     text = remove_code_if_not_allowed(text, mode)
@@ -272,7 +278,7 @@ def generate_from_prompt(
 
     # Retry at higher temperature if output is empty
     if not text.strip() and mode in ["chat", "explain"]:
-        text = _run_generation(model, tokenizer, prompt, max_tokens, 0.5, mode)
+        text = _run_generation(model, tokenizer, prompt, max_tokens, max(temperature, 0.5), mode, formatted)
         text = _apply_stop_words(text, mode)
         text = _strip_prompt_echo(text)
         text = remove_code_if_not_allowed(text, mode)

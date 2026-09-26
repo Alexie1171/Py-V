@@ -25,7 +25,7 @@ import time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from model.training.config_loader import CFG
-from inference.engine.prompt_builder import build_prompt
+from inference.engine.prompt_builder import build_prompt, build_chat_prompt, uses_chat_format
 from inference.engine.generator import generate_from_prompt
 from experiments.eval_common import add_model_args, load_for_eval
 
@@ -120,9 +120,11 @@ def run(model, tokenizer, tag: str, args):
     with open(out_dir / f"chat_{tag}.jsonl", "w", encoding="utf-8") as out:
         for q in QUESTIONS:
             t      = time.perf_counter()
-            prompt = build_prompt("chat", q["ask"], {})
+            formatted = uses_chat_format(model, tokenizer)   # chat brain: persona + the message as written, like the app
+            prompt = (build_chat_prompt(q["ask"], {}, None, tokenizer) if formatted
+                      else build_prompt("chat", q["ask"], {}))
             answer = generate_from_prompt(model, tokenizer, prompt, mode="chat",
-                                          max_tokens=MAX_NEW, temperature=0.0)
+                                          max_tokens=MAX_NEW, temperature=0.0, formatted=formatted)
             row = {"id": q["id"], "skill": q["skill"], "passed": bool(q["check"](answer)),
                    "seconds": round(time.perf_counter() - t, 1), "answer": answer}
             results.append(row)

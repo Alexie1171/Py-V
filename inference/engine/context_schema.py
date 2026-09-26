@@ -8,6 +8,7 @@ from typing import List, Dict, Any, Optional
 class ChatTurn:
     role: str  # "user" or "assistant"
     content: str
+    mode: Optional[str] = None  # the mode the turn was answered in (chat history leaves code-mode turns' code out)
 
 
 @dataclass
@@ -40,7 +41,7 @@ class SessionContext:
             "mode": self.mode,
             "current_task": self.current_task,
             "history": [
-                {"role": h.role, "content": h.content}
+                {"role": h.role, "content": h.content, "mode": h.mode}
                 for h in self.history
             ],
             "entities": self.entities,

@@ -1,9 +1,14 @@
+import re
+
 from model.training.config_loader import CFG
-from inference.engine.prompt_templates import TEMPLATES, INTENT_TEMPLATE
+from inference.engine.prompt_templates import TEMPLATES, INTENT_TEMPLATE, V_PERSONA
 
 # Modes that receive RAG context — kept in sync with config, but also
 # checked here so prompt_builder stays self-contained.
 _RAG_MODES = {"generate", "debug", "refactor"}
+
+_CODE_MODES    = {"generate", "debug", "refactor"}
+HISTORY_CHARS  = 400   # per earlier message in chat mode (~100 tokens) — the laptop GPU slows down past ~1,500 prompt tokens
 
 
 def build_prompt(
@@ -121,16 +126,81 @@ def to_native_chat(prompt: str, tokenizer) -> str:
     )
 
 
+def uses_chat_format(model, tokenizer) -> bool:
+    """
+    True when the loaded brain takes prompts in its own chat format: prompt
+    format "native_chat" (set by the loaders as model.v_prompt_format — from the
+    adapter's v_adapter.json, else config model.prompt_format) and a tokenizer
+    with a chat template.
+    """
+    return (getattr(model, "v_prompt_format", CFG.model.prompt_format) == "native_chat"
+            and bool(getattr(tokenizer, "chat_template", None)))
+
+
 def format_for_model(prompt: str, model, tokenizer) -> str:
     """
     The prompt exactly as the loaded model receives it: V's template, or
-    re-wrapped in the brain's own chat format when the model was loaded with
-    prompt format "native_chat" (set by the loaders as model.v_prompt_format —
-    from the adapter's v_adapter.json, else config model.prompt_format).
+    re-wrapped in the brain's own chat format (uses_chat_format).
     """
-    if getattr(model, "v_prompt_format", CFG.model.prompt_format) == "native_chat":
+    if uses_chat_format(model, tokenizer):
         return to_native_chat(prompt, tokenizer)
     return prompt
+
+
+def build_chat_prompt(user_input: str, context: dict, memories: dict, tokenizer) -> str:
+    """
+    Chat mode for brains with their own chat format, as a real conversation:
+    V's persona (+ remembered facts) as the system message, the last turns of
+    this chat, then the message exactly as the user wrote it. Wrapping it in
+    "Answer the following question using only plain English..." made V answer
+    like homework. Returned in the brain's format — generate_from_prompt(...,
+    formatted=True). Brains without a chat format use build_prompt("chat", ...).
+    """
+    system = V_PERSONA
+    facts  = format_memories(memories, "chat") if memories else ""
+    if facts:
+        system += "\n\n" + facts.strip()
+
+    messages = [{"role": "system", "content": system}]
+    messages += chat_history(context)
+    messages.append({"role": "user", "content": user_input})
+    return tokenizer.apply_chat_template(
+        messages,
+        tokenize              = False,
+        add_generation_prompt = True,
+        enable_thinking       = False,
+    )
+
+
+def chat_history(context: dict) -> list:
+    """
+    The last CFG.memory.history_turns messages of this chat as chat turns
+    (chat mode only). No code goes in, same reason as memory and RAG: a turn
+    from a code mode keeps just the first line of the request, and V's code
+    answer becomes a short note; code blocks elsewhere become "(code left
+    out)". Each message is cut to HISTORY_CHARS.
+    """
+    turns = ((context or {}).get("history") or [])[-CFG.memory.history_turns:] if CFG.memory.history_turns > 0 else []
+    out   = []
+    for turn in turns:
+        role, text = turn.get("role"), (turn.get("content") or "").strip()
+        if role not in ("user", "assistant") or not text:
+            continue
+        if turn.get("mode") in _CODE_MODES:
+            if role == "assistant":
+                text = "(I answered with code here, left out of this chat.)"
+            else:
+                first, _, rest = text.partition("\n")
+                text = first.strip() + (" ..." if rest.strip() else "")
+        else:
+            text = re.sub(r"```.*?```", "(code left out)", text, flags=re.DOTALL)
+        if len(text) > HISTORY_CHARS:
+            text = text[:HISTORY_CHARS].rsplit(" ", 1)[0] + " ..."
+        out.append({"role": role, "content": text})
+
+    while out and out[0]["role"] == "assistant":   # a conversation starts with the user
+        out.pop(0)
+    return out
 
 
 def build_inference_prompt(instruction: str) -> str:

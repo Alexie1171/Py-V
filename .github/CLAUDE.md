@@ -149,9 +149,10 @@ Rules:
 - `to_native_chat(prompt, tokenizer)` re-wraps a template prompt in the model's own chat format (`apply_chat_template`, `enable_thinking=False`) for chat-tuned brains; unchanged for models without a chat template
 - `format_for_model(prompt, model, tokenizer)` — the prompt exactly as the loaded model gets it: template, or `to_native_chat()` when `model.v_prompt_format == "native_chat"`. The generator calls it for every generation; `dataset_loader.py` does the same wrap for training — so app, tests and training always match. Everything else passes plain template prompts
 - Never define prompt format in any other file
-- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `to_native_chat()`, `format_for_model()`, `format_context()`, `format_retrieved_context()`
-- For `explain` and `chat` modes, context history is NOT injected to prevent code pattern bias
-- History is currently OFF for all modes (since 2026-09-25) — the model copied previous answers and answered previous questions instead of the new one. `format_context()` (last two user questions only, never assistant answers) is kept for Phase 11 to replace with memory facts
+- Exposes: `build_prompt()`, `build_training_prompt()`, `build_inference_prompt()`, `to_native_chat()`, `format_for_model()`, `uses_chat_format()`, `build_chat_prompt()`, `chat_history()`, `format_context()`, `format_retrieved_context()`
+- **Chat mode on a chat brain (since 2026-09-26)** — `build_chat_prompt(user_input, context, memories, tokenizer)`, used when `uses_chat_format(model, tokenizer)` (`native_chat` + a chat template): a real conversation instead of the chat template — system message = `V_PERSONA` (+ remembered facts), then `chat_history()`, then the user's message exactly as written. Returns the prompt already in the brain's format → `generate_from_prompt(..., formatted=True)`. The template wrapper ("Answer the following question using only plain English...") made V answer like homework, with no name. Brains without a chat format keep `build_prompt("chat", ...)`
+- `chat_history(context)` — the last `CFG.memory.history_turns` messages of the current chat (6 = 3 exchanges), chat mode only. No code goes in (same reason as memory/RAG): code-mode turns keep the request's first line and a short note instead of V's code; code blocks elsewhere become "(code left out)"; each message cut to `HISTORY_CHARS` (400). Persona alone ~264 prompt tokens, with 3 exchanges + a fact ~470
+- History stays OFF for every other mode (since 2026-09-25) — the old brain copied previous answers and answered previous questions instead of the new one; code modes keep the prompts their adapters were trained on. `format_context()` (last two user questions only) is kept but unused
 - RAG context is only injected for `generate`, `debug`, `refactor` modes
 
 ---
@@ -162,6 +163,7 @@ Rules:
 - Modes: `generate`, `debug`, `explain`, `refactor`, `chat`
 - `generate`, `debug`, `refactor` templates have `{retrieved_context}` slot
 - `explain` and `chat` templates do NOT have `{retrieved_context}` slot
+- `V_PERSONA` — V's own voice in chat mode (name V, made by Ador "Alexie" Haq aka Alexie, friendly and casual, "I'm V" instead of "a language model", says it is an AI language model on IBM's Granite when asked, words only). Kept out of `TEMPLATES`: it is the system message of `build_chat_prompt()`, not a mode template
 - Never define templates outside this file
 
 ---
@@ -177,9 +179,10 @@ Rules:
 - Stop words are per mode via `_stop_words_for()`: base list + code-mode list (test/demo code starts) or prose-mode list (code starts)
 - `stop_strings` also match across the prompt/answer boundary (the prompt ends in "\n"), so a stop word must never match the start of a legitimate answer — code-mode test stops need a blank line first (`"\n\ndef test_"`); `"\ndef test_"` killed a function named `test_duplicate`
 - The current adapter (`model/lora/`) was trained without an end-of-text token, so it does not stop on its own — stop words are its only brake. The v2 adapter stops on its own (end token learned); stop words stay as a safety net
-- Retry logic uses temperature 0.5 on second attempt for chat/explain modes
+- Retry logic: a second attempt at temperature ≥ 0.5 when a chat/explain answer comes out empty
+- `generate_from_prompt(..., temperature=None, formatted=False)`: temperature None = the mode's config `generation.<mode>.temperature` (default 0.2, chat 0.7); tests pass 0.0. `formatted=True` = the prompt is already in the brain's chat format (`build_chat_prompt`), not re-wrapped
 - `adapter_for_mode(model, mode)` — the context every generation runs in: the LoRA adapter switched off (`model.disable_adapter()`, no reload) when the mode is not in the adapter's `use_in_modes`. Checked on the laptop (2026-09-26): chat / generate / explain answered with it off, debug / refactor with it on
-- Repeat settings come from `CFG.generation.for_mode(mode)` (config `generation:` section, `default` for unlisted modes) — never hard-code them here. Code modes (generate/debug/refactor): `repetition_penalty` 1.0 and `no_repeat_ngram_size` 0 — code must copy names and the user's code from the prompt (1.1 renamed `find_Volume` → `find_volume`, 13 of 49 MBPP failures). Prose modes (chat/explain): 1.1 and 4, against loops
+- Repeat settings come from `CFG.generation.for_mode(mode)` (config `generation:` section, `default` for unlisted modes) — never hard-code them here. Code modes (generate/debug/refactor): `repetition_penalty` 1.0 and `no_repeat_ngram_size` 0 — code must copy names and the user's code from the prompt (1.1 renamed `find_Volume` → `find_volume`, 13 of 49 MBPP failures). Explain: 1.1 and 4, against loops. Chat (2026-09-26): 1.0 and 0, temperature 0.7 — the penalties also punished every word of the persona and the earlier turns in the prompt; turn them back on if the chat brain starts repeating itself
 
 ---
 
@@ -187,7 +190,8 @@ Rules:
 - Picks the mode for every message (the user never chooses): `generate`, `debug`, `explain`, `refactor`, `chat` — and with it whether the adapter is on
 - Word rules (rebuilt 2026-09-26): `RULES` = (mode, weight, regex) — a mode's score is the sum of its matching rules; a real error name (`TypeError`, case-sensitive) counts 1.5 for debug; phrases like "give me a function", "not working", "more pythonic", "difference between"
 - Flags `"unclear"` when no rule matched but the message is pasted code (→ explain) or technical (→ generate, explain if it is a question), or when the two best modes are within `TIE_MARGIN` 0.5 (the best stands). Nothing matched, nothing technical → chat
-- Test: `experiments/intent_cases.json` (41 messages, git) + `python -m experiments.eval_intent` — rules 40/41 (written together with the rules; add real messages V gets wrong)
+- Questions about V itself (`your name`, `what can you do`, `are you an AI`, `who made you`, …) → chat, weight 1.5 — beats explain's "what is / what are" (the laptop test sent "what is your name?" to explain: "The concept 'what is your name?' refers to…")
+- Test: `experiments/intent_cases.json` (49 messages, git) + `python -m experiments.eval_intent` — rules 48/49 (written together with the rules; add real messages V gets wrong)
 
 ---
 
@@ -198,8 +202,8 @@ Rules:
 ---
 
 ### `inference/engine/context_manager.py`
-- Loads and saves session context to `sessions/{session_id}.json`
-- Appends conversation history per turn
+- Loads and saves session context through memory (SQLite, Phase 11); RAM only when memory is off
+- Appends conversation history per turn — each `ChatTurn` keeps the mode it was answered in (chat history leaves code-mode turns' code out)
 - Updates session state (mode, entities, etc.)
 
 ---
@@ -523,7 +527,7 @@ Rules:
 - All memory settings come from `CFG.memory.*` — never hardcode the DB path, top_k or token budget
 - Memory gets a small, fixed prompt budget (a few short items) — Granite can read 128K tokens, but on the 4 GB laptop GPU prompts over ~1,500 tokens spill into system RAM and slow down (long-question test); RAG shares the same budget
 - `explain` and `chat` modes receive facts only — never code snippets from memory (same code-bias reason as the RAG rule)
-- Facts are short tagged statements, not raw past messages — the existing ban on injecting context history into `explain` / `chat` prompts still applies
+- Facts are short tagged statements, not raw past messages. Raw past messages go only into chat mode on a chat brain, as the current chat's last turns with code left out (`prompt_builder.chat_history`, since 2026-09-26) — never into explain
 - Facts carry a timestamp and a key; a newer fact with the same key replaces the older one (older one marked inactive, not silently lost)
 - Fact extraction is rule-based first — a 3B brain is not reliable enough to judge what is important (revisit with Granite's chat version)
 - If the database is missing or broken, chat continues without memory — no crash (same as RAG)
@@ -606,7 +610,7 @@ AI MUST NOT:
 - Define prompt templates outside `prompt_templates.py`
 - Add heavy logic inside FastAPI route handlers
 - Write extension logic in Python
-- Inject context history into explain or chat mode prompts
+- Inject context history into explain mode prompts, or into chat mode other than `chat_history()` (the current chat's last `memory.history_turns` messages, code left out, chat brains only)
 - Inject RAG context into explain or chat mode prompts
 - Reload the base model when switching LoRA adapters (Phase 9)
 - Add Python logic to any extension TypeScript file (Phase 10)
@@ -649,7 +653,7 @@ python -m retrieval.test_rag
 # Brain answers — short chat test (big tests go to Kaggle / Colab)
 python -m experiments.eval_chat --adapter model/lora
 
-# Chat system (terminal — Phase 7/8)
+# Chat with V in the terminal (loads the brain — tell the user first; a new chat each run, long-term memory carries over)
 python test_chat.py
 
 # Scoring test (big test — run it on Kaggle / Colab via a runner notebook; ~15–25 min on the T4, 30–110 min on the laptop)

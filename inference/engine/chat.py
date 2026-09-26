@@ -1,7 +1,7 @@
 from inference.engine.controller import Controller, IntentResult
 from inference.engine.context_manager import ContextManager
 from inference.engine.intent_classifier import classify_with_brain
-from inference.engine.prompt_builder import build_prompt
+from inference.engine.prompt_builder import build_prompt, build_chat_prompt, uses_chat_format
 from inference.engine.model_loader import load_lora_model
 from inference.engine.generator import generate_from_prompt
 from model.training.config_loader import CFG
@@ -116,20 +116,26 @@ class ChatEngine:
         retrieved_chunks = self._retrieve(intent.mode, user_input)
         memories         = self._recall(intent.mode, user_input)
 
-        prompt = build_prompt(
-            mode             = intent.mode,
-            user_input       = user_input,
-            context          = context.to_dict(),
-            retrieved_chunks = retrieved_chunks,
-            memories         = memories,
-        )
+        # Chat mode on a chat brain: a real conversation (persona, the last
+        # turns, the message as written); every other mode: V's templates
+        formatted = intent.mode == "chat" and uses_chat_format(self.model, self.tokenizer)
+        if formatted:
+            prompt = build_chat_prompt(user_input, context.to_dict(), memories, self.tokenizer)
+        else:
+            prompt = build_prompt(
+                mode             = intent.mode,
+                user_input       = user_input,
+                context          = context.to_dict(),
+                retrieved_chunks = retrieved_chunks,
+                memories         = memories,
+            )
 
         response = generate_from_prompt(
-            model       = self.model,
-            tokenizer   = self.tokenizer,
-            prompt      = prompt,
-            mode        = intent.mode,
-            temperature = 0.2,
+            model     = self.model,
+            tokenizer = self.tokenizer,
+            prompt    = prompt,
+            mode      = intent.mode,
+            formatted = formatted,
         )
 
         # Saves the turn to memory (and tags facts from the user's message)

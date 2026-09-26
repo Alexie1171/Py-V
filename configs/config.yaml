@@ -23,16 +23,24 @@ generation:
   # any mode not listed. Code modes must copy names and code from the prompt,
   # so no repeat penalties there — repetition_penalty 1.1 renamed functions
   # (find_Volume → find_volume) and cost 13 of 49 MBPP failures (2026-09-25).
-  # Prose modes keep them against loops.
+  # temperature = how much randomness goes into word choice (0 = always the
+  # likeliest word; tests pass 0 themselves).
   default:
     repetition_penalty: 1.0
     no_repeat_ngram_size: 0
+    temperature: 0.2
+  # Chat (2026-09-26, Granite chat): natural talk, not the safest words. No
+  # repeat penalties — they also punish every word of the persona and the
+  # earlier turns in the prompt. They were on against loops (a Phi-2 problem):
+  # turn them back on if the chat brain starts repeating itself.
   chat:
-    repetition_penalty: 1.1
-    no_repeat_ngram_size: 4
+    repetition_penalty: 1.0
+    no_repeat_ngram_size: 0
+    temperature: 0.7
   explain:
     repetition_penalty: 1.1
     no_repeat_ngram_size: 4
+    temperature: 0.2
 
 training:
   # Runs on Colab (train_lora_t4.py, its own T4 batch settings); batch_size and
@@ -83,7 +91,7 @@ memory:
   top_k: 5                  # facts added to a prompt (all modes)
   code_top_k: 2             # earlier code answers added (code modes only)
   max_prompt_tokens: 300    # the whole memory block — the 4 GB laptop GPU slows down past ~1,500 prompt tokens
-  history_turns: 6          # recent messages kept per session (session state, not injected into prompts)
+  history_turns: 6          # recent messages of the current chat V sees in chat mode (3 exchanges, code left out — prompt_builder.chat_history); other modes don't get them
   active_code_modes: ["generate", "debug", "refactor"]   # only these get code from memory
   semantic_search: true     # meaning search (retrieval/embedder.py on CPU); false = keyword search only
 
