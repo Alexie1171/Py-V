@@ -23,6 +23,17 @@ def _strip_artifacts(text: str) -> str:
     return text.strip()
 
 
+# ─── Emojis ──────────────────────────────────────────────────────────────────
+# Owner: no emojis. The persona says so; this catches the ones the brain adds
+# anyway (chat / explain answers only — code is left alone).
+
+_EMOJI = re.compile(r"[ \t]*[\U0001F000-\U0001FAFF☀-➿⭐⭕️‍]+")
+
+
+def _strip_emojis(text: str) -> str:
+    return _EMOJI.sub("", text)
+
+
 # ─── Prompt echo filter ──────────────────────────────────────────────────────
 # The model sometimes copies the template's instruction sentences into its
 # answer (e.g. into a docstring). Only the fixed template text is matched —
@@ -284,21 +295,22 @@ def generate_from_prompt(
     if temperature is None:
         temperature = CFG.generation.for_mode(mode).temperature
 
-    text = _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode, formatted)
-    text = _apply_stop_words(text, mode)
-    text = _strip_prompt_echo(text)
-    text = remove_code_if_not_allowed(text, mode)
-    text = _strip_artifacts(text)
+    text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, temperature, mode, formatted), mode)
 
     # Retry at higher temperature if output is empty
     if not text.strip() and mode in ["chat", "explain"]:
-        text = _run_generation(model, tokenizer, prompt, max_tokens, max(temperature, 0.5), mode, formatted)
-        text = _apply_stop_words(text, mode)
-        text = _strip_prompt_echo(text)
-        text = remove_code_if_not_allowed(text, mode)
-        text = _strip_artifacts(text)
+        text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, max(temperature, 0.5), mode, formatted), mode)
 
     return text.strip()
+
+
+def _clean(text: str, mode: str) -> str:
+    text = _apply_stop_words(text, mode)
+    text = _strip_prompt_echo(text)
+    text = remove_code_if_not_allowed(text, mode)
+    if mode in ["chat", "explain"]:
+        text = _strip_emojis(text)
+    return _strip_artifacts(text)
 
 
 def generate_code(

@@ -167,7 +167,7 @@ Rules:
 - `generate`, `debug`, `refactor` templates have `{retrieved_context}` slot
 - `explain` and `chat` templates do NOT have `{retrieved_context}` slot
 - `V_MACHINE` / `V_MACHINE_BUSY` — what V knows about the computer, in the chat system message (Phase 12)
-- `V_PERSONA` — V's own voice in chat mode (name V, a girl — she/her, made by Ador "Alexie" Haq aka Alexie, friendly and casual, "I'm V" instead of "a language model", says it is an AI language model on IBM's Granite when asked, words only). Kept out of `TEMPLATES`: it is the system message of `build_chat_prompt()`, not a mode template
+- `V_PERSONA` — V's own voice in chat mode: V, an AI assistant, friendly and casual, answers only what was asked (no extra facts, no "How can I help you today?"), no emojis, "I'm V" instead of "a language model", words only. Shared only when asked (owner, 2026-09-26): who made her (Ador "Alexie" Haq aka Alexie), that she is a girl (she/her), and that she is an AI language model on IBM's Granite. Kept out of `TEMPLATES`: it is the system message of `build_chat_prompt()`, not a mode template
 - Never define templates outside this file
 
 ---
@@ -184,6 +184,7 @@ Rules:
 - `stop_strings` also match across the prompt/answer boundary (the prompt ends in "\n"), so a stop word must never match the start of a legitimate answer — code-mode test stops need a blank line first (`"\n\ndef test_"`); `"\ndef test_"` killed a function named `test_duplicate`
 - The current adapter (`model/lora/`) was trained without an end-of-text token, so it does not stop on its own — stop words are its only brake. The v2 adapter stops on its own (end token learned); stop words stay as a safety net
 - Retry logic: a second attempt at temperature ≥ 0.5 when a chat/explain answer comes out empty
+- No emojis in chat/explain answers (`_strip_emojis()`, owner's rule — the persona says so too, this catches the rest); code answers are left alone. All answer cleanup runs in `_clean()`
 - A chat/explain answer cut off by its token limit ends after its last full sentence (`_drop_unfinished()`), so a shorter limit on a busy machine never ends mid-word
 - `generate_from_prompt(..., temperature=None, formatted=False)`: temperature None = the mode's config `generation.<mode>.temperature` (default 0.2, chat 0.7); tests pass 0.0. `formatted=True` = the prompt is already in the brain's chat format (`build_chat_prompt`), not re-wrapped
 - `adapter_for_mode(model, mode)` — the context every generation runs in: the LoRA adapter switched off (`model.disable_adapter()`, no reload) when the mode is not in the adapter's `use_in_modes`. Checked on the laptop (2026-09-26): chat / generate / explain answered with it off, debug / refactor with it on
