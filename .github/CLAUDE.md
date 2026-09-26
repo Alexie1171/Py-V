@@ -166,6 +166,7 @@ Rules:
 - Modes: `generate`, `debug`, `explain`, `refactor`, `chat`
 - `generate`, `debug`, `refactor` templates have `{retrieved_context}` slot
 - `explain` and `chat` templates do NOT have `{retrieved_context}` slot
+- `OTHER_LANGUAGE_TEMPLATES` — write / fix / improve / explain in another language (`{language}`, `{tag}`), kept apart from `TEMPLATES` so the tested Python prompts and the adapter trained on them stay unchanged
 - `V_MACHINE` / `V_MACHINE_BUSY` — what V knows about the computer, in the chat system message (Phase 12)
 - `V_PERSONA` — V's own voice in chat mode: V, an AI assistant, friendly and casual, answers only what was asked (no extra facts, no "How can I help you today?"), no emojis, "I'm V" instead of "a language model", words only. Shared only when asked (owner, 2026-09-26): who made her (Ador "Alexie" Haq aka Alexie), that she is a girl (she/her), and that she is an AI language model on IBM's Granite. Kept out of `TEMPLATES`: it is the system message of `build_chat_prompt()`, not a mode template
 - Never define templates outside this file
@@ -196,7 +197,17 @@ Rules:
 ---
 
 ### `inference/engine/chat.py`
-- `ChatEngine.chat()` = `_prepare()` (mode, machine check, memory, prompt → `_Turn`) → `generate_from_prompt` → `_finish()` (save the turn, result dict); `chat_stream()` (Phase 10.1) = the same steps with `stream_from_prompt`, yielding `start` / `piece` / `done` for `/chat/stream`
+- An empty answer after cleanup never reaches the user: chat / explain say they couldn't put it into words (and how to ask for code), code modes ask for more detail (`_EMPTY_WORDS`, `_EMPTY_CODE`; tests call the generator directly, so their raw answers are unchanged)
+- `ChatEngine.chat()` = `_prepare()` (mode, language, machine check, memory, prompt → `_Turn`) → `generate_from_prompt` → `_finish()` (save the turn, result dict); `chat_stream()` (Phase 10.1) = the same steps with `stream_from_prompt`, yielding `start` / `piece` / `done` for `/chat/stream`
+
+---
+
+### `inference/engine/language_detector.py` (2026-09-26 — where Phase 9 starts)
+- `detect_language(message)` → `{"name": "Haskell", "tag": "haskell"}` for another language named in the message, `None` = Python (V's own: tested templates, adapter). **Any language** (owner: "from assembly to the latest … dont be rigid") — layers: `KNOWN` (~150 names safe as bare words, assembly dialects to Mojo), `FRAMEWORKS` (Arduino → C++, Unity → C#, Godot → GDScript, Spring → Java, Android → Kotlin, Kubernetes / Ansible → YAML, Excel formula, shaders → GLSL, …; everyday words like unity / spring / qt only next to a tech word), `SHORT` (go, c, d, r, swift, julia, … only after "in / using / convert … to" or before "code / program / function / …"), `WORDY` (basic, red, lean, move, … only next to "language / compiler"), `FORMATS` (json, yaml, xml, html, css, csv: only when she is asked to make one — "read a json file" stays Python), and any other word in a clear phrase ("hello world in foo", "written in foo", "the foo language", "a language called foo"). Several named: the target after "to / into" wins ("convert this python to typescript"), then Python or one of its libraries ("sqlite in python", "parse html with beautifulsoup"), then the first; at the same spot the longest name ("in c sharp" → C#). The prompts take any name, so a language only has to be recognised. Can't catch: a language shown only by pasted code (file reading brings the file's type)
+- Test: `experiments/language_cases.json` (113 messages, incl. traps like "in plain english", "I want to go home", "unity of the team") + `python -m experiments.eval_language` — 113/113 (written with the rules; unseen probes found the framework gap — add real misses)
+- The mode rules count a recognised language as technical (`controller.TECH` or `detect_language`)
+- Owner, 2026-09-26: until Phase 9 a request for another language is answered in it — `OTHER_LANGUAGE_TEMPLATES` (generate / debug / refactor / explain), code in a fenced block tagged with the language, memory facts only (earlier code is Python), no RAG, adapter off (`generate_from_prompt(..., adapter=False)` — it was trained on Python only). Chat mode ignores it (she talks about any language). The language isn't remembered between messages
+- File reading (10.2) adds file extensions / VS Code's `languageId`
 
 ---
 
@@ -206,7 +217,8 @@ Rules:
 - Flags `"unclear"` when no rule matched but the message is pasted code (→ explain) or technical (→ generate, explain if it is a question), or when the two best modes are within `TIE_MARGIN` 0.5 (the best stands). Nothing matched, nothing technical → chat
 - Questions about V itself (`your name`, `what can you do`, `are you an AI`, `who made you`, …) → chat, weight 1.5 — beats explain's "what is / what are" (the laptop test sent "what is your name?" to explain: "The concept 'what is your name?' refers to…")
 - Questions about the user's computer (`my laptop`, `the gpu`, `ram usage`, …) → chat, weight 1.2 — V sees its numbers there (Phase 12); "write a script that shows my cpu usage" still wins for generate
-- Test: `experiments/intent_cases.json` (54 messages, git) + `python -m experiments.eval_intent` — rules 53/54 (written together with the rules; add real messages V gets wrong)
+- "give / show / write (me) an example…", "example of / on / in…" → generate (2026-09-26: "give an example on type script" matched nothing, went to chat and came out empty); other languages' names count as technical words
+- Test: `experiments/intent_cases.json` (62 messages, git) + `python -m experiments.eval_intent` — rules 61/62; "hello world …" is a code request, not a greeting (written together with the rules; add real messages V gets wrong)
 
 ---
 
@@ -459,7 +471,7 @@ Rules:
 - `media/chat.js` — (Phase 10) everything that runs inside the page: rendering messages (text from V always via `textContent`, never HTML), input, scrolling, the live answer while V writes, page state (`vscode.setState`: messages + session id survive hiding the panel and reloads)
 - `media/chat.css` — (Phase 10) panel styling, colors from the VS Code theme
 - `media/v.svg` — V's activity-bar icon
-- `src/server.ts` — (Phase 10) `ServerManager`: V's server follows the chat panel (owner, 2026-09-26). Panel opens → starts `python -m uvicorn inference.api.main:app --host 127.0.0.1 --port <from pyv.serverUrl>` in the Py-V folder (dot: yellow while the brain loads, ~1 min; green when `/health` answers). Panel closed for `pyv.stopServerAfterSeconds` (default 120 — owner chose 2 minutes so quick trips to Explorer don't reload the brain) → stops it (`taskkill /T /F` on Windows), freeing RAM and the GPU; closing VS Code stops it too. A server started elsewhere (a terminal) is used and never stopped. Starts only from a trusted workspace folder with `inference/api/main.py` or `pyv.projectPath`. Settings: `pyv.manageServer`, `pyv.stopServerAfterSeconds`, `pyv.pythonPath`, `pyv.projectPath`. Server output: Output → "V Server". The chat view keeps its page alive while hidden (`retainContextWhenHidden`), so an answer being written isn't lost
+- `src/server.ts` — (Phase 10) `ServerManager`: V's server follows the chat panel (owner, 2026-09-26). Panel opens → starts `python -m uvicorn inference.api.main:app --host 127.0.0.1 --port <from pyv.serverUrl>` in the Py-V folder (dot: yellow while the brain loads, ~1 min; green when `/health` answers). Panel closed for `pyv.stopServerAfterSeconds` (default 120 — owner chose 2 minutes so quick trips to Explorer don't reload the brain) → stops it (`taskkill /T /F` on Windows), freeing RAM and the GPU; closing VS Code stops it too. A server started elsewhere (a terminal) is used and never stopped. Starts only from a trusted workspace folder with `inference/api/main.py` or `pyv.projectPath`. Settings: `pyv.manageServer`, `pyv.stopServerAfterSeconds`, `pyv.pythonPath`, `pyv.projectPath`. Server output: Output → "V Server". Chat commands (owner): `/stop-server` stops her server now and keeps it stopped (no automatic start when the panel reopens) until `/start-server`; `/help` lists them — handled by the extension, never sent to the brain, not saved. A server started in a terminal can't be stopped from the panel (she says so). The chat view keeps its page alive while hidden (`retainContextWhenHidden`), so an answer being written isn't lost
 - Communicates with backend via `POST /api/v1/generate`, `POST /api/v1/chat` and `POST /api/v1/chat/stream` (the panel — `chatStream()` in `api.ts` reads the server-sent events with `fetch`: with Node's `http` module the event handling ran inside the HTTP parser and failed in VS Code's extension host with "Parse Error: JS Exception"; a server that can't be reached shows as offline — "fetch failed, ECONNREFUSED" — with the start command, and the panel rechecks every 5 s while offline)
 - Run it (owner's choice, 2026-09-26): **installed into the normal VS Code window** — `cd extension && npm run install-local` (compiles, packages `v.vsix` with `@vscode/vsce`, installs it), then "Developer: Reload Window". No second window (less RAM), no debugger. The package holds only `out/`, `media/`, `package.json`, README (`.vscodeignore`; the code needs no npm packages at run time). F5 ("Run V extension", `.vscode/launch.json`) is kept but failed on this laptop: the "JavaScript Debugger (Nightly)" extension kept connecting to `::1:<port>` (ECONNREFUSED) and VS Code closed the new window
 - Handles ECONNREFUSED and timeout errors gracefully
@@ -722,6 +734,9 @@ python -m memory.test_memory
 
 # What V sees about the computer (no brain): parts, live numbers, busy level, limits
 python -m inference.engine.machine
+
+# Language detection test (instant, no brain)
+python -m experiments.eval_language
 
 # Mode detection test: word rules (instant, no brain) / with the brain for unclear messages (loads it)
 python -m experiments.eval_intent

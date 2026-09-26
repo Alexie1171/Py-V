@@ -28,6 +28,7 @@ export class ServerManager implements vscode.Disposable {
   private pollTimer?: NodeJS.Timeout;
   private state: ServerState = "offline";
   private detail?: string;
+  private heldByUser = false; // after /stop-server: no automatic start until /start-server
   private readonly listeners = new Set<Listener>();
   private readonly output = vscode.window.createOutputChannel("V Server");
 
@@ -48,11 +49,40 @@ export class ServerManager implements vscode.Disposable {
       this.set("online");
       return;
     }
-    if (settings().manageServer) {
+    if (settings().manageServer && !this.heldByUser) {
       this.start();
     } else {
-      this.set("offline");
+      this.set("offline", this.heldByUser ? "My server is stopped. Type /start-server to start it." : undefined);
     }
+  }
+
+  /** /stop-server in the chat: stop now and stay stopped until /start-server. Returns V's reply. */
+  async stopByUser(): Promise<string> {
+    this.heldByUser = true;
+    if (this.proc) {
+      this.stop("/stop-server");
+      this.set("offline", "My server is stopped. Type /start-server to start it.");
+      return "Okay, my server is stopped. Type /start-server when you want me back.";
+    }
+    if (await isUp()) {
+      return "That server was started outside VS Code (in a terminal?), so I can't stop it from here. Press Ctrl+C in its terminal.";
+    }
+    this.set("offline", "My server is stopped. Type /start-server to start it.");
+    return "My server isn't running.";
+  }
+
+  /** /start-server in the chat (or the Start V button). Returns V's reply. */
+  async startByUser(): Promise<string> {
+    this.heldByUser = false;
+    if (this.proc) {
+      return this.state === "online" ? "I'm already running." : "I'm already starting, give me a moment.";
+    }
+    if (await isUp()) {
+      this.set("online");
+      return "I'm already running.";
+    }
+    this.start();
+    return this.proc ? "Starting my server... this takes about a minute." : this.detail || "I couldn't start my server.";
   }
 
   /** The panel was closed or hidden: stop our server after the grace time. */

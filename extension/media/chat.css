@@ -76,6 +76,8 @@ button.link:hover { text-decoration: underline; }
 
 .msg.v.error .body { color: var(--vscode-errorForeground); }
 
+.msg.v.reply .text { font-style: italic; color: var(--vscode-descriptionForeground); }
+
 .text {
   white-space: pre-wrap;
   word-wrap: break-word;

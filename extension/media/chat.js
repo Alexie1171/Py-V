@@ -96,7 +96,7 @@
 
   function renderMeta(m) {
     const meta = el("div", "meta");
-    if (m.mode) meta.appendChild(el("span", "badge", MODE_LABELS[m.mode] || m.mode));
+    if (m.mode) meta.appendChild(el("span", "badge", (MODE_LABELS[m.mode] || m.mode) + (m.language ? ` · ${m.language}` : "")));
     if (m.memories) meta.appendChild(el("span", "info", `memory ${m.memories}`));
     if (m.rag_chunks !== undefined && m.rag_chunks !== null) meta.appendChild(el("span", "info", `rag ${m.rag_chunks}`));
     if (m.load && m.load !== "free") meta.appendChild(el("span", "info load", `laptop ${m.load}`));
@@ -212,10 +212,26 @@
 
   // ─── Sending ────────────────────────────────────────────────────────────────
 
+  // /stop-server, /start-server, /help — handled by the extension, never sent to
+  // the brain, not saved with the chat
+  function command(text) {
+    inputEl.value = "";
+    autoGrow();
+    const welcome = messagesEl.querySelector(".welcome");
+    if (welcome) welcome.remove();
+    messagesEl.appendChild(renderMessage({ role: "user", text }));
+    scrollDown(true);
+    vscode.postMessage({ type: "command", name: text.slice(1).trim().toLowerCase() });
+  }
+
   function send() {
     if (live) return;
     const text = inputEl.value.trim();
     if (!text) return;
+    if (text.startsWith("/")) {
+      command(text);
+      return;
+    }
     if (server.state !== "online") {
       notice(server.state === "starting" ? "I'm still waking up, give me a moment." : "My server isn't running yet.");
       return;
@@ -275,7 +291,8 @@
         if (!live) return;
         live.mode = msg.mode;
         live.load = msg.load;
-        live.metaEl.replaceWith((live.metaEl = renderMeta({ mode: msg.mode, load: msg.load })));
+        live.language = msg.language;
+        live.metaEl.replaceWith((live.metaEl = renderMeta({ mode: msg.mode, load: msg.load, language: msg.language })));
         break;
 
       case "piece":
@@ -288,12 +305,12 @@
       case "done":
         finishLive({
           role: "v", text: msg.response, mode: msg.mode, memories: msg.memories,
-          rag_chunks: msg.rag_chunks, load: msg.load, note: msg.note,
+          rag_chunks: msg.rag_chunks, load: msg.load, note: msg.note, language: msg.language,
         });
         break;
 
       case "stopped":
-        if (live) finishLive({ role: "v", text: live.text.trim(), mode: live.mode, load: live.load, stopped: true });
+        if (live) finishLive({ role: "v", text: live.text.trim(), mode: live.mode, load: live.load, language: live.language, stopped: true });
         break;
 
       case "error":
@@ -304,6 +321,14 @@
           });
         }
         break;
+
+      case "reply": {
+        const box = el("div", "msg v reply");
+        box.appendChild(el("div", "text", msg.text));
+        messagesEl.appendChild(box);
+        scrollDown(true);
+        break;
+      }
 
       case "cleared":
         if (live) {

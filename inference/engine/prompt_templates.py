@@ -48,6 +48,51 @@ Question: {user_input}
 ### Answer:
 """,
 }
+# Other languages (language_detector.py found one in the message; owner,
+# 2026-09-26: answer in that language until Phase 9). Separate from TEMPLATES,
+# so the tested Python prompts and the adapter trained on them stay as they
+# are; no RAG slot (the index is Python). Code goes in a fenced block tagged
+# {tag}, so the chat panel shows it as code whatever the language.
+OTHER_LANGUAGE_TEMPLATES = {
+
+"generate": """### Instruction:
+You are an expert {language} programmer. Write complete, working {language} code for the following task. Put the code in a ```{tag} block, then add at most two short sentences about it.
+
+{context}
+Task: {user_input}
+
+### Answer:
+""",
+
+"debug": """### Instruction:
+A {language} program has the following error. Identify the bug and write the corrected {language} code in a ```{tag} block. Then explain the fix in one sentence.
+
+Error reported: {user_input}
+
+{context}
+
+### Answer:
+""",
+
+"explain": """### Instruction:
+Explain the following {language} concept in plain English. Write only sentences and paragraphs. Do not write any code, functions, or code comments. If you want to give an example, describe it in words only — do not show code syntax.
+
+{context}
+Concept: {user_input}
+
+### Answer:
+""",
+
+"refactor": """### Instruction:
+You are an expert {language} programmer. Refactor and improve the following {language} code. Return only the improved code in a ```{tag} block.
+
+{context}
+Code: {user_input}
+
+### Answer:
+""",
+}
+
 # V's own voice in chat mode: the system message for brains with their own chat
 # format (prompt_builder.build_chat_prompt — the user's message goes in as
 # written, after the last turns of the chat). Kept out of TEMPLATES: the code

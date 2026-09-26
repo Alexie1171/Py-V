@@ -18,6 +18,8 @@ import re
 from dataclasses import dataclass
 from typing import List
 
+from inference.engine.language_detector import detect_language
+
 
 @dataclass
 class IntentResult:
@@ -48,6 +50,9 @@ RULES = [
     ("generate", 0.8, re.compile(r"\b(function|script|program|class|method|snippet|code|regex|query)\s+"
                                  r"(that|which|to|for)\b", _I)),
     ("generate", 0.8, re.compile(r"\bmake (a|an|me a|me an) \w+", _I)),
+    # "give an example on type script" — without "me" it matched nothing and came out empty in chat
+    ("generate", 0.8, re.compile(r"\b(give|show|write)( me)? (an? |some )?(quick |short |simple |small )?examples?\b|"
+                                 r"\bexamples? (of|on|in|for|with)\b|\bhello,? world\b", _I)),
     ("generate", 0.8, re.compile(r"\bhow (do|can|would|should) (i|you|we)\b|\bhow to\b", _I)),
 
     ("explain", 0.9, re.compile(r"\b(explain|describe|meaning|definition)\b", _I)),
@@ -56,7 +61,7 @@ RULES = [
     ("explain", 0.9, re.compile(r"\bdifference between\b|\bwhy (is|are|does|do|would|should)\b|"
                                 r"\btell me about\b|\bwhat happens\b", _I)),
 
-    ("chat", 1.0, re.compile(r"^\s*(hi|hello|hey|thanks|thank you|good (morning|afternoon|evening|night))\b", _I)),
+    ("chat", 1.0, re.compile(r"^\s*(hi|hello|hey|thanks|thank you|good (morning|afternoon|evening|night))\b(?!,? world)", _I)),
     ("chat", 1.0, re.compile(r"\b(remember|my name|who are you|how are you|last (week|time))\b|"
                              r"\b(what|did) (did )?(we|i) (decide|decided|chose|say|said|talk|talked)\b", _I)),
     # Questions about V itself — beats explain's "what is / what are" ("what is your name?")
@@ -72,10 +77,11 @@ RULES = [
 # Pasted code: a fenced block or a line that starts like Python
 CODE = re.compile(r"```|^\s*(def|class)\s+\w+|^\s*(import\s+\w+|from\s+\w+\s+import)\b|^\s*return\b|"
                   r"^\s*(for|while|if|elif)\b.*:\s*$", re.MULTILINE)
-# Something technical in a message no rule matched ("sort a list of tuples in python")
+# Something technical in a message no rule matched ("sort a list of tuples in python");
+# any programming language language_detector.py recognises counts too ("fibonacci in haskell")
 TECH = re.compile(r"\b(python|code|lists?|dicts?|dictionar(y|ies)|tuples?|sets?|strings?|arrays?|loops?|"
                   r"functions?|class(es)?|files?|csv|json|regex|sql|api|variables?|modules?|import|numpy|"
-                  r"pandas|sort(ed|ing)?|recursion|decorators?|generators?)\b", _I)
+                  r"pandas|sort(ed|ing)?|recursion|decorators?|generators?|scripts?)\b", _I)
 TIE_MARGIN = 0.5   # best − second-best below this → unclear
 
 
@@ -91,7 +97,7 @@ class Controller:
         if not scores:
             if has_code:
                 return IntentResult(mode="explain", confidence=0.3, flags=["unclear", "code_without_request"])
-            if TECH.search(user_input):   # "sort a list of tuples by …" wants code; a question wants words
+            if TECH.search(user_input) or detect_language(user_input):   # wants code; a question wants words
                 mode = "explain" if "?" in user_input else "generate"
                 return IntentResult(mode=mode, confidence=0.3, flags=["unclear", "no_rule_technical"])
             return IntentResult(mode="chat", confidence=0.4, flags=["fallback"])

@@ -1,7 +1,8 @@
 import re
 
 from model.training.config_loader import CFG
-from inference.engine.prompt_templates import TEMPLATES, INTENT_TEMPLATE, V_PERSONA, V_MACHINE, V_MACHINE_BUSY
+from inference.engine.prompt_templates import (TEMPLATES, OTHER_LANGUAGE_TEMPLATES, INTENT_TEMPLATE, V_PERSONA,
+                                               V_MACHINE, V_MACHINE_BUSY)
 
 # Modes that receive RAG context — kept in sync with config, but also
 # checked here so prompt_builder stays self-contained.
@@ -17,6 +18,7 @@ def build_prompt(
     context:            dict,
     retrieved_chunks:   list = None,
     memories:           dict = None,
+    language:           dict = None,
 ) -> str:
     """
     Build the final prompt string for the model.
@@ -28,7 +30,19 @@ def build_prompt(
     memories is MemoryManager.recall() output (Phase 11) — formatted into the
     template's existing {context} slot, so the templates (and the adapters
     trained on them) stay unchanged.
+
+    language is language_detector.detect_language() output: another language
+    than Python gets OTHER_LANGUAGE_TEMPLATES — memory facts only (earlier
+    code is Python), no RAG (the index is Python).
     """
+    if language and mode in OTHER_LANGUAGE_TEMPLATES:
+        return OTHER_LANGUAGE_TEMPLATES[mode].format(
+            language   = language["name"],
+            tag        = language["tag"],
+            user_input = user_input,
+            context    = format_memories(memories, "explain") if memories else "",
+        )
+
     template = TEMPLATES.get(mode, TEMPLATES["chat"])
 
     # Raw chat history stays off (the model answered the previous question

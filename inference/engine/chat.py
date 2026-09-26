@@ -2,6 +2,7 @@ from inference.engine.controller import Controller, IntentResult
 from inference.engine.context_manager import ContextManager
 from inference.engine.context_schema import SessionContext
 from inference.engine.intent_classifier import classify_with_brain
+from inference.engine.language_detector import detect_language
 from inference.engine.prompt_builder import build_prompt, build_chat_prompt, uses_chat_format, format_machine
 from inference.engine.model_loader import load_lora_model
 from inference.engine.generator import generate_from_prompt, stream_from_prompt
@@ -15,6 +16,13 @@ logger = logging.getLogger(__name__)
 
 # Modes that benefit from RAG context — must match prompt_templates.py slots
 _RAG_MODES = set(CFG.rag.active_modes)
+
+# When cleanup leaves nothing (in chat / explain usually: she started writing
+# code, which is cut there), she says so instead of an empty answer
+# ("give an example on type script" came out empty, 2026-09-26)
+_EMPTY_WORDS = ("Hmm, I couldn't put that into words. If you wanted code, ask me to write it "
+                "(like \"write an example of ...\") and I'll show it.")
+_EMPTY_CODE  = "Sorry, I came up empty on that one. Could you describe it a bit more?"
 
 
 def _load_retriever():
@@ -149,7 +157,8 @@ class ChatEngine:
         """
         turn = self._prepare(session_id, user_input)
         yield "start", {"mode": turn.intent.mode, "confidence": turn.intent.confidence,
-                        "load": turn.snap.level if turn.snap else None}
+                        "load": turn.snap.level if turn.snap else None,
+                        "language": turn.language["name"] if turn.language else None}
         response = ""
         for kind, text in stream_from_prompt(self.model, self.tokenizer, turn.prompt, stop=stop, **turn.generation):
             if kind == "piece":
@@ -164,12 +173,16 @@ class ChatEngine:
 
         intent = self._detect_mode(user_input)
 
+        # Another language than Python named → her answer in that language
+        # (own templates, adapter off); chat mode talks about any language
+        language = detect_language(user_input) if intent.mode != "chat" else None
+
         # How busy the computer is decides how much V takes on for this answer
         snap = self._check_machine()
         work = self.machine.work(snap) if snap else None
 
         # Retrieve relevant context and memories before building the prompt
-        retrieved_chunks = self._retrieve(intent.mode, user_input)
+        retrieved_chunks = self._retrieve(intent.mode, user_input) if not language else []
         memories         = self._recall(intent.mode, user_input, work)
 
         # Chat mode on a chat brain: a real conversation (persona, what she
@@ -189,18 +202,22 @@ class ChatEngine:
                 context          = context.to_dict(),
                 retrieved_chunks = retrieved_chunks,
                 memories         = memories,
+                language         = language,
             )
 
         generation = {
             "mode":       intent.mode,
             "formatted":  formatted,
             "max_tokens": work.prose_max_tokens if work and intent.mode in ("chat", "explain") else None,
+            "adapter":    language is None,
         }
-        return _Turn(user_input, context, intent, snap, retrieved_chunks, memories, prompt, generation)
+        return _Turn(user_input, context, intent, snap, retrieved_chunks, memories, prompt, generation, language)
 
     def _finish(self, turn: "_Turn", response: str) -> dict:
         """After the brain wrote: save the turn to memory (and tag facts from the
         user's message), return the result."""
+        if not response.strip():
+            response = _EMPTY_WORDS if turn.intent.mode in ("chat", "explain") else _EMPTY_CODE
         self.context_manager.append_history(turn.context, turn.user_input, response, turn.intent.mode)
         self.context_manager.update(turn.context, mode=turn.intent.mode)
 
@@ -211,6 +228,7 @@ class ChatEngine:
             "flags":         turn.intent.flags,
             "rag_chunks":    len(turn.retrieved_chunks),   # useful for debugging
             "memories":      len(turn.memories.get("facts", [])) + len(turn.memories.get("code", [])),
+            "language":      turn.language["name"] if turn.language else None,     # None = Python
             "load":          turn.snap.level if turn.snap else None,               # free / busy / tight
             "note":          self.machine.heads_up(turn.snap) if turn.snap else None,   # V's casual heads-up, if any
         }
@@ -226,4 +244,5 @@ class _Turn:
     retrieved_chunks: list
     memories:         dict
     prompt:           str
-    generation:       dict            # mode / formatted / max_tokens for the generator
+    generation:       dict            # mode / formatted / max_tokens / adapter for the generator
+    language:         dict = None     # language_detector result (None = Python)

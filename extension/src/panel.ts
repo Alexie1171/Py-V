@@ -5,8 +5,10 @@
  * editor work the page asks for (insert code, copy), and tells the server
  * manager (server.ts) when the panel opens and closes — her server follows it.
  *
- * Page → extension: ready {sessionId}, send {text}, stop, newChat, insert {code}, copy {code}, startServer
- * Extension → page: session {sessionId}, status {state, detail}, start / piece / done / error (the answer), stopped, cleared
+ * Page → extension: ready {sessionId}, send {text}, stop, newChat, insert {code}, copy {code}, startServer,
+ *                   command {name} (/stop-server, /start-server typed in the chat)
+ * Extension → page: session {sessionId}, status {state, detail}, start / piece / done / error (the answer), stopped,
+ *                   cleared, reply {text} (V's answer to a command — not saved, not sent to the brain)
  */
 
 import * as vscode from "vscode";
@@ -72,7 +74,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.post({ type: "status", ...this.status });
         break;
       case "startServer":
-        this.server.start();
+        await this.server.startByUser();
+        break;
+      case "command":
+        await this.command(String(msg.name ?? ""));
         break;
       case "send":
         this.send(String(msg.text ?? ""));
@@ -126,6 +131,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /** Chat commands — handled here, never sent to the brain. */
+  private async command(name: string): Promise<void> {
+    switch (name) {
+      case "stop-server":
+        this.stop();
+        this.post({ type: "reply", text: await this.server.stopByUser() });
+        break;
+      case "start-server":
+        this.post({ type: "reply", text: await this.server.startByUser() });
+        break;
+      default:
+        this.post({ type: "reply", text: COMMANDS_HELP });
+    }
+  }
+
   private async insert(code: string): Promise<void> {
     const editor = vscode.window.activeTextEditor ?? vscode.window.visibleTextEditors[0];
     if (!editor) {
@@ -135,6 +155,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     await insertCode(editor, code);
   }
 }
+
+const COMMANDS_HELP = "Commands: /stop-server stops my server (the panel stays open), /start-server starts it again, /help shows this.";
 
 function newSessionId(): string {
   return `panel-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;

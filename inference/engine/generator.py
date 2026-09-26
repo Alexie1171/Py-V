@@ -268,8 +268,16 @@ class _StopWhenSet(StoppingCriteria):
         return torch.full((input_ids.shape[0],), self.event.is_set(), dtype=torch.bool, device=input_ids.device)
 
 
+def _brain_for(model, mode, adapter: bool):
+    """adapter_for_mode, or the plain brain when adapter=False (another language
+    than Python — the adapter was trained on Python only)."""
+    if adapter or not hasattr(model, "disable_adapter"):
+        return adapter_for_mode(model, mode)
+    return model.disable_adapter()
+
+
 def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None, formatted=False,
-                    streamer=None, stop=None):
+                    streamer=None, stop=None, adapter=True):
     if not formatted:
         prompt = format_for_model(prompt, model, tokenizer)
     inputs   = tokenizer(prompt, return_tensors="pt").to(model.device)
@@ -281,7 +289,7 @@ def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None
     if stop is not None:
         extra["stopping_criteria"] = StoppingCriteriaList([_StopWhenSet(stop)])
 
-    with BRAIN_LOCK, torch.inference_mode(), adapter_for_mode(model, mode):
+    with BRAIN_LOCK, torch.inference_mode(), _brain_for(model, mode, adapter):
         output_ids = model.generate(
             **inputs,
             max_new_tokens       = limit,
@@ -313,20 +321,24 @@ def generate_from_prompt(
     max_tokens:  int   = None,
     temperature: float = None,
     formatted:   bool  = False,
+    adapter:     bool  = True,
 ) -> str:
     """
     temperature None = the mode's setting (config generation.<mode>.temperature).
     formatted = the prompt is already in the brain's own chat format
     (prompt_builder.build_chat_prompt) — V's templates are re-wrapped otherwise.
+    adapter = False: the plain brain even in the adapter's modes (another language).
     """
     if temperature is None:
         temperature = CFG.generation.for_mode(mode).temperature
 
-    text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, temperature, mode, formatted), mode)
+    text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, temperature, mode, formatted,
+                                  adapter=adapter), mode)
 
     # Retry at higher temperature if output is empty
     if not text.strip() and mode in ["chat", "explain"]:
-        text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, max(temperature, 0.5), mode, formatted), mode)
+        text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, max(temperature, 0.5), mode, formatted,
+                                      adapter=adapter), mode)
 
     return text.strip()
 
@@ -340,6 +352,7 @@ def stream_from_prompt(
     temperature: float = None,
     formatted:   bool  = False,
     stop:        threading.Event = None,
+    adapter:     bool  = True,
 ):
     """
     generate_from_prompt, streamed (the chat panel): yields ("piece", text) as
@@ -358,7 +371,7 @@ def stream_from_prompt(
     def work():
         try:
             result["text"] = _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode,
-                                             formatted, streamer, stop)
+                                             formatted, streamer, stop, adapter)
         except Exception as e:   # handed to the caller below; ends the stream so it can't hang
             result["error"] = e
             streamer.end()
@@ -383,7 +396,7 @@ def stream_from_prompt(
     text = _clean(result["text"], mode)
     if not text.strip() and mode in ["chat", "explain"] and not stop.is_set():
         text = _clean(_run_generation(model, tokenizer, prompt, max_tokens, max(temperature, 0.5), mode,
-                                      formatted, stop=stop), mode)
+                                      formatted, stop=stop, adapter=adapter), mode)
     yield "answer", text.strip()
 
 
