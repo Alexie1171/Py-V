@@ -37,22 +37,23 @@ Work paused on **2026-05-04** and resumed on **2026-09-25**.
 | 8 | RAG | Done, but **turned off** since 2026-09-25 — see section 5 |
 | 9 | Multi-language adapters (JS/TS etc.) | Planned — nothing started |
 | 10 | VS Code chat panel | Planned — nothing started |
-| 11 | Long-term memory | **Built 2026-09-26** (`memory/`, on by default; smoke test passes) — not yet tried with a trained Granite |
+| 11 | Long-term memory | **Built 2026-09-26** (`memory/`, on by default; smoke test passes) — tried with the trained Granite chat on the laptop: an unrelated fact derailed an answer, fixed (recall needs real relevance) |
 
 **Build order:** better training data + GPU retrain (8.1.x commits — the Granite retrain now runs in the one-button GPU pipeline) and **Phase 11 memory (built 2026-09-26) — current phase, commits numbered 11.x** → then Phases 9, 10 and speed work (order of those three not decided yet).
 
-**Now (2026-09-26):** the Granite retrain moved to **Kaggle** (Colab's GPU time used up until about noon 2026-09-27). **Kaggle run 1** (3.7 h, results in `Kaggle downloads/run1/`): untrained tests done, both trainings failed after 1 min (training size check measured in eval mode), plain version's tests broken by Kaggle's transformers 5.0.0 tokenizer bug. Fixes built and checked on the laptop CPU. **Next: Kaggle run 2** with run 1's output attached — plain test redone, chat version tested with the Granite splitting rule, both trained and tested.
+**Now (2026-09-26): Granite retrain done — V's brain is the Granite chat version with its adapter per mode.** Both Granite versions were tested, trained and tested on Kaggle (run 1: 3.7 h — untrained tests, trainings failed; run 2: 6.2 h — fixes, both trained; ~10 of 30 weekly GPU hours; results in `Kaggle downloads/run1/`, `run2/`). Then built on the laptop: adapter on/off per mode, better mode-detection word rules, memory relevance fix — laptop check passed (fits: 2.5 GB after loading, ~3.5 GB peak; 21–41 s per answer).
 
-**Kaggle run 1 scores (untrained, Kaggle T4, transformers 5.0.0):**
+**Granite scores (Kaggle T4; plain untrained from run 2 after the tokenizer fix):**
 
-| Test | Chat, own chat format | Chat, V's template | Plain (broken tokenizer — not a real score) | Plain on the laptop (for comparison) |
-|---|---|---|---|---|
-| Write code (MBPP /100) | **76** | 58 | 17 | 69 |
-| Long-file bug fix (/10) | 5 | **8** | 4 | 7 |
-| Chat (/8) | 4 | 5 | 5 | — |
-| Fix / improve (/40 each) | **29 / 29** | 27 / 28 | 25 / 24 | — |
+| Test | Chat untrained | Chat trained | **V: chat + adapter per mode** | Plain untrained | Plain trained |
+|---|---|---|---|---|---|
+| Write code (MBPP /100) | **76** | 62 | **76** (adapter off) | 69 | 70 |
+| Long-file bug fix (/10) | 5 | **8** | **8** (on) | 7 | **8** |
+| Chat (/8) | 4 | 3 | 4 (off) | 4 | **5** |
+| Fix / improve (/40 each) | 29 / 29 | **34 / 34** | **34 / 34** (on) | 29 / 26 | 32 / 32 |
+| Total | 143 | 141 | **156** | 135 | 147 |
 
-Chat version in its own format: short clean answers, fails mostly on logic; on long files it "thinks out loud" and runs out of answer space before the fixed code (what the long-file training examples teach). With V's template it doesn't stop (62 of 100 answers over 1,500 characters). All versions ran out of GPU memory on the 6,000-token questions even on the T4 (section 5).
+The "V" column combines tested setups (adapter off = the untrained test, on = the trained test) — same prompts, greedy, so the same answers. Training taught what the new examples teach (fix, improve, long files) but cost the chat version code-writing skill (answers simpler, sometimes wrong — e.g. prism volume without the ÷2). Chat version with V's template instead of its own format: 58 MBPP, doesn't stop. The chat version's own tokenizer file won over the Granite family's rule (143 vs 131). The 6,000-token questions ran out of memory even on the T4 (section 5).
 
 **Things switched off or put off for later** are listed in section 5 — check it before starting new work.
 
@@ -72,7 +73,7 @@ Chat version in its own format: short clean answers, fails mostly on logic; on l
 | Part | Works | Problems / unknowns |
 |------|-------|---------------------|
 | **Data** | Pipeline runs; 5,508 / 612 examples | 99% GitHub functions, ~50% "Write a Python function…"; only 0.5% debug, 0.5% refactor, 0.2% explain examples; some Chinese instructions. Cleaner v4 not applied — it would drop 266 of 5,508 training rows (~5%) |
-| **Model** | **Brain: IBM Granite 3B** (since 2026-09-26) — plain, untested in the app so far; 69/100 MBPP, 7/10 long questions on the laptop | No LoRA adapter for Granite yet — retrain and plain-vs-chat comparison run in the one-button GPU pipeline (Kaggle). The Phi-2 rows below are history |
+| **Model** | **Brain: IBM Granite 3B, chat version** (`granite-4.2-3b`, since 2026-09-26) with its Kaggle-trained adapter for fix / improve only (`model/lora/`); laptop check passed: fits (2.5 GB, ~3.5 GB peak), good answers in all modes | 21–41 s per answer on the laptop; RAM tight with other programs open (below); long files hit a GPU-memory wall (section 5). The plain version's adapter is kept in `model/lora_granite-4.1-plain/`. The Phi-2 rows below are history |
 | **Chat engine** | Intent routing, 5 modes; answers in 10–30 s; explain mode works; clean simple code answers | Debug and refactor don't really do the task (training data gap); history turned off (see section 5); model can't stop on its own (trained without an end marker); no memory |
 | **RAG** | Index built 2026-09-25: 5,508 dataset + 160 codebase chunks | **Turned off** (see section 5). Weak matches — "quicksort" returns merge sort and unrelated code; many dataset instructions are auto-generated ("Write a function named `setup` that takes self") |
 | **Server** | FastAPI with `/health`, `/generate`, `/chat` | — |
@@ -170,22 +171,17 @@ Everything switched off, disabled or put off for later goes here (rule in `.gith
 |------|-------|-----|-----------------------|
 | **RAG (code search)** | 2026-09-25 | Weak dataset matches were pasted into answers instead of helping (2 of 3 code answers broken in test 2) | After the dataset is improved (cleaner v4 + better instructions). Maybe add a "strong matches only" cut-off. Switch: `rag.enabled: true` in `configs/config.yaml`. The index must be rebuilt first — it now reads dataset v2 (`paths.dataset`) |
 | **Raw chat history in prompts** (all modes) | 2026-09-25 | Model answered the previous question / copied the previous answer instead of the new one | Replaced by Phase 11 memory (built 2026-09-26): short facts in every mode, earlier code only in code modes. Raw history stays out of prompts; `format_context()` is unused |
-| **Fine-tuned adapter — V runs the plain brain** | 2026-09-26 | Brain upgraded Phi-2 → Granite; Phi-2 adapters don't fit Granite and were deleted. The end-token / answer-only training fixes are built and worked on Phi-2 v2 (it learned to stop) | Granite retrain in the one-button GPU pipeline on Kaggle (with the long-file examples below), then download the better version's adapter into `model/lora/` |
-| **Debug / refactor / explain training examples** | 2026-09-25 | Dataset is 99% "write a function"; model can't debug or refactor (test 3) | In dataset v2 now (2,945 fix / 2,062 improve / 1,800 explain). Comes back with the v2 adapter above |
-| **Cleaner v4 dataset rebuild** | 2026-05-04 | Not applied yet; drops 266 of 5,508 rows (~5%) | Probably never needed: dataset v2 takes only the best 800 old examples, through the same English filter. Drop this row once the v2 adapter is in use |
 | **Qwen3.5 in the brain check** (newest small Qwen, Feb 2026, Apache 2.0) | 2026-09-25 | Needs transformers 5; the laptop has 4.57 (the app runs on it) | Test on Kaggle or Colab (Colab has transformers 5; check Kaggle's version) as a pipeline stage, or when the laptop moves to transformers 5 |
-| **"Long file → return only the fixed part" training examples** | 2026-09-26 | Long-question test: Phi-2 copied the whole file instead of writing the fixed function; every v2 fix example was one short function | **Built** (`data/scripts/sources/long_file_fix.py`, 1,200 in dataset v3); generated + trained in the one-button GPU run (Kaggle). Remove this row once the trained Granite is scored |
 | **Qwen3-4B's two ~5,000-token long questions** | 2026-09-26 | Stopped to protect the laptop (RAM at 15.1 of 15.4 GB, free RAM ~1 GB) | Only if the laptop gets more RAM/GPU memory, or on the cloud T4 (Kaggle / Colab) |
-| **Scoring test for fixing / improving code** | 2026-09-25 | MBPP only measures writing functions | **Built** (`experiments/eval_fix.py`, 40 fix + 40 improve held-out MBPP questions); runs for every brain in the one-button GPU run (Kaggle). Remove this row once it has run |
 | **Speed work** (llama.cpp / GGUF, streaming) | 2026-09-25 | Memory chosen first | After Phase 11 |
 | **Phases 9 and 10** | 2026-09-25 | Phase 11 goes first | After Phase 11 |
 | **Colibri** | 2026-09-25 | Built for huge mixture-of-experts models; our dense 3–4B brains gain nothing from SSD streaming | Only if hardware grows (≥32 GB RAM, bigger GPU) |
 | **Removing `TRANSFORMERS_CACHE`** | 2026-09-25 | Needs admin rights | Owner removes it (steps in section 4, item 8) |
 | **Colab as the main GPU runner** | 2026-09-26 | Colab's free GPU time ran out (back ~noon 2026-09-27); Kaggle gives 30 GPU h/week, 12 h background runs and 2× T4 | Colab notebook still works (same pipeline, one T4) — use it when Kaggle's weekly hours are used up. Results stay where a job started (Drive vs Kaggle output) |
 | **Kaggle's VS Code connection** (Run ▸ Kaggle Jupyter Server) | 2026-09-26 | Big runs go as background runs instead: the VS Code session needs the laptop connected for hours and loses `/kaggle/working` when it ends | For short interactive checks on Kaggle's GPUs, if wanted |
-| **Tokenizer fix + plain Granite redo on Kaggle** | 2026-09-26 | Kaggle's transformers 5.x rebuilds the plain Granite 4.1 tokenizer with GPT-2's default splitting instead of the model's `tokenizer.json` (same text: 558 → 683 tokens); plain MBPP fell 69 → 17 in Kaggle run 1, and its training there uses wrongly split text. Chat version unaffected. Checked on the laptop without the AI: transformers 5.0.0 wrong, 5.17.0 and 4.57 right; fix tested — take normalizer / pre-tokenizer / decoder from the model's `tokenizer.json` → identical ids in 4.57, 5.0, 5.17 | **Built 2026-09-26** after run 1: `load_tokenizer()` in the shared loader (+ dataset build, long-question builder); redo list `scripts/pipeline_redo.json` re-runs stage 2 (plain test) and 4 (training set) once. Kaggle confirmed 5.0.0 (run 1 summaries). Remove this row once Kaggle run 2 shows the plain version back near 69 |
-| **Granite training (both versions) — Kaggle run 1 trained nothing** | 2026-09-26 | `pick_batch_setup()` probes before the model is in training mode, so gradient checkpointing is ignored (Hugging Face only uses it when `model.training`); without it not even one 1,024-token example fits under 85% of the T4 → "Not even one max-length example fits on this GPU" for both versions after 1 min. Only ever tried with a tiny model before | **Built 2026-09-26** after run 1: `model.train()` before probing, every try printed with its peak memory. Checked on the laptop CPU (tiny Granite, 4.57 and 5.0.0): eval mode → checkpointing not used, train mode → used. Remove this row once Kaggle run 2 has trained both |
-| **Granite chat with the plain version's splitting rules** | 2026-09-26 | The chat version's own `tokenizer.json` has GPT-2's rule (probably saved by IBM with the transformers 5.0 bug): same 100,000 merges and words as 4.1, only the rule differs (1650 → `16` `50` instead of `165` `0`); it wrote "GTX 1 650" in the chat test and still scored 76/100 MBPP | Owner chose (after run 1): test first, train the better one — **in Kaggle run 2** as stage 10; stage 5 trains the chat version with whichever rule passed more questions. Remove this row once run 2 has decided |
+| **Chat adapter in write-code / explain / chat modes** | 2026-09-26 | Kaggle run 2: the trained adapter wrote worse new code (MBPP 76 → 62: simpler, sometimes wrong solutions) and chat got 4 → 3, while fix 29 → 34, improve 29 → 34, long files 5 → 8. So `model/lora/v_adapter.json` has `"use_in_modes": ["debug", "refactor"]`; the explain training examples go unused for now | After a gentler retrain (next row) keeps the code-writing skill — test it in all modes (`--adapter-all-modes`) and widen `use_in_modes` |
+| **Gentler retrain of the chat version** | 2026-09-26 | Offered after run 2; owner chose the adapter-per-mode setup instead | A Kaggle run (~5 h): lower learning rate (e.g. 5e-5) and/or fewer write-code examples, so the chat version keeps its own coding skill; compare with the current adapter |
+| **Brain picks the mode for unclear messages** | 2026-09-26 | Laptop checks: brain alone 28/41 test messages (it says "chat" / "explain" for many code requests), word rules + brain 39/41 = no better than the rules, and 3.4 s extra per unclear message on the GTX 1650 (reading the question). Owner's plan: turn it off if it doesn't beat the rules. Rules alone now 40/41 | Switch: config `intent.brain_for_unclear: true`. Bring back with a better question (examples in it), a faster brain / speed work, or once real messages show the rules failing |
 | **Long questions use far more GPU memory than their length** | 2026-09-26 | Kaggle run 1: 3,000-token question peaked at 6.2 GB, 6,000 tokens at 14.4 GB → out of memory on the 15 GB T4 for every version (laptop 4 GB: the same wall at ~5,000). Growth faster than the length points at the attention method used | Later: check which attention method the brain loads with and whether a memory-saving one fits — decides how long a file V can read on the laptop |
 | **Kaggle P100 GPU** | 2026-09-26 | Kaggle's PyTorch dropped it (since 2026-04: "no kernel image is available") | Only if Kaggle's PyTorch supports it again — use GPU T4 x2 |
 
@@ -347,6 +343,9 @@ Options, all need measuring on this laptop first:
 | 2026-09-26 | **Tokenizers always take their splitting rules from a `tokenizer.json`** (`load_tokenizer()`, the only way to load a brain's tokenizer) | Kaggle's transformers 5.0.0 rebuilt the plain Granite's tokenizer with GPT-2's rule (MBPP 69 → 17). Same ids in every version now — results and adapters never depend on the library version |
 | 2026-09-26 | Chat version: **test Granite's splitting rule first, train with the better one** (pipeline stage 10 + automatic choice) | Owner's choice. Its own file probably carries the same bug; training once with the right rule beats training twice |
 | 2026-09-26 | One-time redo list in git (`scripts/pipeline_redo.json`) instead of hand-deleting results on Kaggle | Kaggle runs start empty and copy the earlier run in; wrong saved results would otherwise be skipped as "done" |
+| 2026-09-26 | **V's brain: Granite chat version + its adapter only for fix / improve** (config `model.name` `ibm-granite/granite-4.2-3b`, `native_chat`; `use_in_modes` in the adapter's note) | Owner's choice after Kaggle run 2: combines the best tested setups — 76 MBPP (adapter off), 34/34 fix/improve and 8/10 long files (on) = 156 vs 147 for the plain trained version. Fits the laptop (2.5 GB after loading, ~3.5 GB peak) |
+| 2026-09-26 | **Mode detection: word rules; the brain only for unclear messages — then switched off** | Owner chose "word rules + brain for unclear ones"; the laptop check showed the brain adds nothing (39/41 either way) at 3.4 s each, so it is off by the owner's own plan (section 5). Rules rebuilt: 40/41 on the 41 test messages |
+| 2026-09-26 | Memory recalls only relevant items (half the question's meaningful words, or close meaning); error facts never store code | Laptop check: an unrelated fact made the brain explain the memory instead of the question |
 | 2026-09-26 | SSD as extra GPU memory (colibri-style streaming) not used | Colibri streams only the small active part of huge mixture-of-experts models; our dense 3–4B brains read all their weights for every word, so SSD speed (~1.8 GB/s vs 128 GB/s GPU) would make answers take minutes. Windows already spills GPU → RAM → SSD, which is what made long questions take 13 min. Better: send V only the relevant parts (search), a leaner engine (llama.cpp), more RAM |
 
 ---
@@ -363,10 +362,10 @@ Options, all need measuring on this laptop first:
 | Storage | Intel 660p 512 GB NVMe (QLC — slow for heavy disk streaming) + SanDisk 240 GB SATA SSD; ~72 GB free on D: |
 | Big training | Kaggle GPU T4 x2 (main, 30 GPU h/week) / Google Colab T4 (backup) — local GPU too slow |
 
-**RAM is tight.** Loading Phi-2 needs several GB of RAM for a short time. With two VS Code windows (~4.4 GB), the PHP language server of the other project (~1.5 GB) and Claude Code (~1.1 GB) open, Windows pushed ~5 GB to the page file on 2026-09-25 and the laptop lagged afterwards. Close the other VS Code window before running Py-V.
+**RAM is tight.** Loading the brain needs several GB of RAM for a short time (Granite chat laptop check 2026-09-26: 14.5 of 15.4 GB used at the end with the other VS Code window open; 11.5 GB on the re-check). With two VS Code windows (~4.4 GB), the PHP language server of the other project (~1.5 GB) and Claude Code (~1.1 GB) open, Windows pushed ~5 GB to the page file on 2026-09-25 and the laptop lagged afterwards. Close the other VS Code window before running Py-V.
 
 ### Model rules
-- Phi-2 base, always 4-bit (BitsAndBytes)
+- Granite 3B chat version (`ibm-granite/granite-4.2-3b`), always 4-bit (BitsAndBytes)
 - LoRA / PEFT only — no training from scratch, no full fine-tuning
 - No models over 7B parameters
 - Always resume from checkpoint when one exists; back up `model/lora/` before training

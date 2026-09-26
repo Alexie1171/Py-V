@@ -36,7 +36,7 @@ It ensures:
 | Phase 8 | RAG (Retrieval Augmented Generation) | Complete — turned off since 2026-09-25 (see `PROJECT_STATUS.md`) |
 | Phase 9 | Multi-LoRA adapters (multi-language support) | Planned |
 | Phase 10 | VS Code chat panel (full UI, no terminal) | Planned |
-| Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Built 2026-09-26 (`memory/`, on by default) — smoke test passes; not yet tried with a trained Granite |
+| Phase 11 | Long-term memory (SQLite, across all chats, keyword + meaning search) | Built 2026-09-26 (`memory/`, on by default) — smoke test passes; tried with the trained Granite chat on the laptop (2026-09-26): unrelated facts derailed an answer → recall now needs real relevance |
 
 Build order: better training data + GPU retrain (the 8.1.x commits; Granite retrain runs in the one-button GPU pipeline — Kaggle first, Colab as backup) and Phase 11 (built 2026-09-26) → then Phases 9 and 10 and speed work (numbering kept stable on purpose). Current phase: **Phase 11** — commits are numbered 11.x from here ("Phase 11: …", then 11.1, 11.1.1, …)
 
@@ -81,9 +81,10 @@ All generated code must be optimized for:
 ## Model Constraints
 
 All work is based on:
-- **Brain: IBM Granite 3B** — `ibm-granite/granite-4.1-3b-base` (config `model.name`), Apache 2.0, 128K context. First brain upgrade on 2026-09-26, replacing Phi-2 (2.7B, 2,048-token limit) — see `PROJECT_STATUS.md`. The chat version `ibm-granite/granite-4.2-3b` (same layers, own chat format, optional thinking mode) is under test (GPU pipeline: both versions tested untrained, trained and tested) and may become the starting point
+- **Brain: IBM Granite 3B, chat version** — `ibm-granite/granite-4.2-3b` (config `model.name`, `prompt_format: native_chat`), Apache 2.0, 128K context. First brain upgrade on 2026-09-26, replacing Phi-2 (2.7B, 2,048-token limit); chat version chosen after Kaggle run 2 (2026-09-26) — see `PROJECT_STATUS.md`. On the laptop: 2.5 GB GPU after loading, ~3.5 GB peak for short questions (0.5 GB more than the plain version: separate output layer)
+- The plain version `ibm-granite/granite-4.1-3b-base` (template format) and its trained adapter (`model/lora_granite-4.1-plain/`, 147 total in run 2) stay available
 - Brains live only in the Hugging Face cache (`HF_HOME`, `E:\huggingface Assets`), never in the repo
-- Fine-tuned LoRA adapter at `model/lora/` — the adapter inference loads. **None exists for Granite yet**: until the GPU pipeline trains one, the app runs the plain brain (`load_lora_model()` falls back and says so)
+- Fine-tuned LoRA adapter at `model/lora/` — the adapter inference loads: the Granite chat adapter from Kaggle run 2 (copied from `Kaggle downloads/run2/`, without checkpoints), used **only in `debug` / `refactor`** (its `v_adapter.json` `"use_in_modes"`). Without an adapter the app runs the plain brain (`load_lora_model()` falls back and says so)
 - An adapter only fits the brain it was trained on — `load_lora_model()` refuses an adapter whose `base_model_name_or_path` differs from `model.name`
 - LoRA layer names depend on the brain: config `training.lora_target_modules` (Granite: q/k/v/o_proj, gate/up/down_proj) — change it together with `model.name`
 - Training runs in the GPU pipeline (Kaggle T4, Colab T4 as backup) into a folder named after the brain, `{root}/model_<brain>/lora` (Kaggle: the run's output `PY-V/model_<brain>/lora`; Colab: Drive `MyDrive/PY-V/model_<brain>/lora`); download the finished adapter into `model/lora/`
@@ -134,7 +135,8 @@ Rules:
 - Wraps `model/utils/model_loader.py`
 - Also exposes `load_lora_model()` — loads base model then applies LoRA adapter
 - This is what the API server calls at startup
-- The adapter's `v_adapter.json` sets `model.v_prompt_format` — an adapter is always used with the prompt format it was trained with, whatever config says
+- The adapter's `v_adapter.json` sets `model.v_prompt_format` — an adapter is always used with the prompt format it was trained with, whatever config says — and its splitting rules (`split_rules_from`, passed to `load_model()`)
+- `v_adapter.json` `"use_in_modes"` (added by hand after testing, with `"use_in_modes_why"`) → `model.v_adapter_modes`: the adapter is switched off in other modes (`generator.adapter_for_mode()`); missing = every mode. The chat adapter in `model/lora/`: `["debug", "refactor"]` (Kaggle run 2: fix 29→34, improve 29→34, long-file 5→8, but MBPP 76→62, chat 4→3)
 
 ---
 
@@ -176,14 +178,22 @@ Rules:
 - `stop_strings` also match across the prompt/answer boundary (the prompt ends in "\n"), so a stop word must never match the start of a legitimate answer — code-mode test stops need a blank line first (`"\n\ndef test_"`); `"\ndef test_"` killed a function named `test_duplicate`
 - The current adapter (`model/lora/`) was trained without an end-of-text token, so it does not stop on its own — stop words are its only brake. The v2 adapter stops on its own (end token learned); stop words stay as a safety net
 - Retry logic uses temperature 0.5 on second attempt for chat/explain modes
+- `adapter_for_mode(model, mode)` — the context every generation runs in: the LoRA adapter switched off (`model.disable_adapter()`, no reload) when the mode is not in the adapter's `use_in_modes`. Checked on the laptop (2026-09-26): chat / generate / explain answered with it off, debug / refactor with it on
 - Repeat settings come from `CFG.generation.for_mode(mode)` (config `generation:` section, `default` for unlisted modes) — never hard-code them here. Code modes (generate/debug/refactor): `repetition_penalty` 1.0 and `no_repeat_ngram_size` 0 — code must copy names and the user's code from the prompt (1.1 renamed `find_Volume` → `find_volume`, 13 of 49 MBPP failures). Prose modes (chat/explain): 1.1 and 4, against loops
 
 ---
 
 ### `inference/engine/controller.py`
-- Detects user intent and routes to correct mode
-- Modes: `generate`, `debug`, `explain`, `refactor`, `chat`
-- Keyword-weighted scoring with fallback to `chat` mode
+- Picks the mode for every message (the user never chooses): `generate`, `debug`, `explain`, `refactor`, `chat` — and with it whether the adapter is on
+- Word rules (rebuilt 2026-09-26): `RULES` = (mode, weight, regex) — a mode's score is the sum of its matching rules; a real error name (`TypeError`, case-sensitive) counts 1.5 for debug; phrases like "give me a function", "not working", "more pythonic", "difference between"
+- Flags `"unclear"` when no rule matched but the message is pasted code (→ explain) or technical (→ generate, explain if it is a question), or when the two best modes are within `TIE_MARGIN` 0.5 (the best stands). Nothing matched, nothing technical → chat
+- Test: `experiments/intent_cases.json` (41 messages, git) + `python -m experiments.eval_intent` — rules 40/41 (written together with the rules; add real messages V gets wrong)
+
+---
+
+### `inference/engine/intent_classifier.py`
+- The brain picks the mode for an `"unclear"` message — `ChatEngine._detect_mode()` asks it only when config `intent.brain_for_unclear` is on. **Off since 2026-09-26**: on the laptop the brain alone got 28/41 test messages (says "chat" / "explain" for many code requests), rules + brain 39/41 = no gain, 3.4 s per message (reading the question). Kept for a better question (examples in it) or a faster brain
+- `mode_scores()`: one forward pass, adapter off, the question `build_intent_prompt()` (template `INTENT_TEMPLATE` in `prompt_templates.py`, kept out of `TEMPLATES`) — compares how likely the answer starts with each mode word (all spellings; the five first tokens must differ)
 
 ---
 
@@ -202,7 +212,7 @@ Rules:
 
 ### `inference/engine/chat.py`
 - Top-level chat orchestrator
-- Wires together: controller → retriever → prompt builder → generator → context manager
+- Wires together: controller (+ brain for unclear messages when on) → retriever → memory → prompt builder → generator → context manager
 - Single public method: `chat(session_id, user_input)`
 - Instantiates `Retriever` at startup if RAG is enabled in config
 - Gracefully disables RAG if index is missing
@@ -495,8 +505,8 @@ Layout (as built):
 - `memory/` — new top-level package, same level as `retrieval/`
 - `memory/schema.py` — dataclasses only (`MemoryItem`, `Fact`), no logic
 - `memory/store.py` — SQLite access: tables for messages and facts, FTS5 index, save / update / delete / list
-- `memory/extractor.py` — rule-based fact tagging (explicit "remember", file names, error messages, versions, decisions) — no model calls
-- `memory/search.py` — hybrid search: FTS5 keyword score (stopwords dropped) + embedding similarity (≥ 0.60, bge-small) + recency boost (halves every 30 days), weights 0.45 / 0.45 / 0.10
+- `memory/extractor.py` — rule-based fact tagging (explicit "remember", file names, error messages, versions, decisions) — no model calls. An error's message is taken from the same line only and never contains code (a line break before a code fence once stored "ZeroDivisionError: ```python")
+- `memory/search.py` — hybrid search: FTS5 finds keyword candidates, embedding similarity (≥ 0.60, bge-small), recency boost (halves every 30 days), weights 0.45 / 0.45 / 0.10. **Only relevant items are recalled** (since 2026-09-26): an item must contain at least half (`MIN_WORD_SHARE`) of the question's meaningful words (`store.query_words()`: stopwords + "python", "code", "user" dropped; for earlier code answers the question that led to them counts too) or be close in meaning. Before, one shared word counted in full — the laptop check pulled "The user ran into ZeroDivisionError" into "sort a list of tuples … in python" and the brain explained the fact instead of the question
 - `memory/manager.py` — `MemoryManager`, the one entry point: `remember_turn()`, `recall()`, `list_facts()`, `forget()`, session state; embedder loaded lazily on the CPU (keyword-only if it can't load)
 - `memory/test_memory.py` — smoke test, no brain needed: `python -m memory.test_memory`
 - `configs/config.yaml` — `memory:` section (`enabled`, `db_path` = `data/memory/v_memory.db`, `top_k`, `code_top_k`, `max_prompt_tokens`, `history_turns`, `active_code_modes`, `semantic_search`)
@@ -652,6 +662,10 @@ python -m experiments.eval_long_context --adapter model/lora_v2
 
 # Memory smoke test (no brain, CPU only)
 python -m memory.test_memory
+
+# Mode detection test: word rules (instant, no brain) / with the brain for unclear messages (loads it)
+python -m experiments.eval_intent
+python -m experiments.eval_intent --brain
 
 # All four tests with one model load (big — Kaggle / Colab); fix/improve test alone
 python -m experiments.eval_all --adapter model/lora --skip-done

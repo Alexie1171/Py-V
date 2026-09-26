@@ -1,5 +1,5 @@
 from model.training.config_loader import CFG
-from inference.engine.prompt_templates import TEMPLATES
+from inference.engine.prompt_templates import TEMPLATES, INTENT_TEMPLATE
 
 # Modes that receive RAG context — kept in sync with config, but also
 # checked here so prompt_builder stays self-contained.
@@ -136,6 +136,15 @@ def format_for_model(prompt: str, model, tokenizer) -> str:
 def build_inference_prompt(instruction: str) -> str:
     """Prompt for the stateless /generate endpoint — the generate template, as in training."""
     return build_prompt("generate", instruction, {})
+
+
+INTENT_MAX_CHARS = 1500   # of the message — enough to see what is asked, keeps the question quick
+
+
+def build_intent_prompt(message: str) -> str:
+    """Question to the brain: which mode does this message need? (intent_classifier.py)"""
+    text = message if len(message) <= INTENT_MAX_CHARS else message[:INTENT_MAX_CHARS] + "\n..."
+    return INTENT_TEMPLATE.format(message=text)
 
 
 def format_retrieved_context(chunks: list) -> str:

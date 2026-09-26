@@ -48,3 +48,24 @@ Question: {user_input}
 ### Answer:
 """,
 }
+# Mode question for a message the word rules couldn't place (controller.py flags
+# it "unclear"; inference/engine/intent_classifier.py asks the brain). Kept out of
+# TEMPLATES: it is not an answer mode and must not feed the prompt-echo filter.
+INTENT_TEMPLATE = """### Instruction:
+A user sent this message to V, a Python coding assistant:
+
+\"\"\"
+{message}
+\"\"\"
+
+Which one fits best?
+chat - conversation, questions about the user or V, anything not about code
+explain - wants something explained in words: a concept, an error message, or what some code does
+generate - wants new code written
+debug - has an error or code that does not work and wants it fixed
+refactor - has working code and wants it improved, cleaned up or made faster
+
+Answer with one word: chat, explain, generate, debug or refactor.
+
+### Answer:
+"""

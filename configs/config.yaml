@@ -1,14 +1,16 @@
 model:
   # V's brain. First brain upgrade 2026-09-26: Phi-2 → IBM Granite 3B (see
-  # PROJECT_STATUS.md). Plain version for now; the chat version
-  # (ibm-granite/granite-4.2-3b, same layers) is being tested (GPU pipeline).
-  name: "ibm-granite/granite-4.1-3b-base"
+  # PROJECT_STATUS.md). Chat version since Kaggle run 2 (2026-09-26): its
+  # adapter (model/lora) is used only for fix / improve (v_adapter.json
+  # "use_in_modes"). Plain version: ibm-granite/granite-4.1-3b-base, template,
+  # adapter kept in model/lora_granite-4.1-plain.
+  name: "ibm-granite/granite-4.2-3b"
   max_tokens: 512
   # How prompts reach the brain: "template" = V's "### Instruction / ### Answer"
   # templates (plain/base brains); "native_chat" = the brain's own chat format,
   # thinking off (chat versions, e.g. granite-4.2-3b). A trained adapter's own
   # setting (v_adapter.json) wins over this — the format it was trained with.
-  prompt_format: "template"
+  prompt_format: "native_chat"
   # Whose tokenizer.json gives the text-splitting rules (model_loader.load_tokenizer).
   # null = the brain's own file. Set it to a brain with the same merges when the
   # brain's own file carries a wrong rule (granite-4.2-3b's has GPT-2's rule;
@@ -59,6 +61,17 @@ paths:
   dataset: "./data/datasets/v3/train.jsonl"
   val_dataset: "./data/datasets/v3/val.jsonl"
   model_output: "./model/lora"
+
+intent:
+  # Which mode a message needs (chat / explain / generate / debug / refactor):
+  # word rules first (inference/engine/controller.py, instant). A message they
+  # can't place clearly — no rule matched but it is about code, two modes nearly
+  # tied, or pasted code with no request — is decided by the brain
+  # (inference/engine/intent_classifier.py, adapter off, one step: scores the five mode words).
+  # false = word rules only. OFF since the 2026-09-26 laptop check: rules alone
+  # 39/41 test messages, rules + brain also 39/41 (fixed one, broke one), and
+  # 3.4 s extra per unclear message on the GTX 1650 — see PROJECT_STATUS.md section 5.
+  brain_for_unclear: false
 
 memory:
   # Phase 11 — long-term memory across all chats (memory/). SQLite file on

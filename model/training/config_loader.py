@@ -101,6 +101,11 @@ class DatasetV2Config:
 
 
 @dataclass
+class IntentConfig:
+    brain_for_unclear: bool   # a message the word rules can't place clearly → the brain picks the mode
+
+
+@dataclass
 class EvaluationConfig:
     dataset:         str
     config:          str
@@ -118,6 +123,7 @@ class AppConfig:
     paths:      PathsConfig
     rag:        RAGConfig
     memory:     MemoryConfig
+    intent:     IntentConfig
     dataset_v2: DatasetV2Config
     evaluation: EvaluationConfig
 
@@ -195,6 +201,8 @@ def load_config() -> AppConfig:
         semantic_search   = m.get("semantic_search",   True),
     )
 
+    intent_cfg = IntentConfig(brain_for_unclear=raw.get("intent", {}).get("brain_for_unclear", False))
+
     d = raw.get("dataset_v2", {})
     build = dict(d.get("build", {}))
     build["output_dir"] = Path(build.get("output_dir", "./data/datasets/v2"))
@@ -222,6 +230,7 @@ def load_config() -> AppConfig:
         paths      = paths_cfg,
         rag        = rag_cfg,
         memory     = memory_cfg,
+        intent     = intent_cfg,
         dataset_v2 = dataset_v2_cfg,
         evaluation = evaluation_cfg,
     )

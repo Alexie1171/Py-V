@@ -23,7 +23,8 @@ def load_lora_model(lora_path: str = None, require_adapter: bool = False):
     An adapter only fits the brain it was trained on: one made for another
     base model is refused. It is used with the prompt format and the
     text-splitting rules it was trained with (its v_adapter.json), whatever
-    config says. When no adapter exists
+    config says — and only in the modes its v_adapter.json lists under
+    "use_in_modes" (added after testing; missing = every mode). When no adapter exists
     yet (e.g. right after a brain upgrade) the plain brain is returned —
     unless require_adapter is set, so scoring a specific adapter never
     silently scores the plain brain.
@@ -59,6 +60,7 @@ def load_lora_model(lora_path: str = None, require_adapter: bool = False):
     model = PeftModel.from_pretrained(model, str(lora_path))
     model.eval()
     model.v_prompt_format = meta.get("prompt_format", CFG.model.prompt_format)
+    model.v_adapter_modes = meta.get("use_in_modes")   # None = every mode (generator.adapter_for_mode)
 
     print(f"LoRA model ready (prompt format: {model.v_prompt_format}).")
     return model, tokenizer

@@ -1,5 +1,6 @@
-from inference.engine.controller import Controller
+from inference.engine.controller import Controller, IntentResult
 from inference.engine.context_manager import ContextManager
+from inference.engine.intent_classifier import classify_with_brain
 from inference.engine.prompt_builder import build_prompt
 from inference.engine.model_loader import load_lora_model
 from inference.engine.generator import generate_from_prompt
@@ -90,11 +91,26 @@ class ChatEngine:
             logger.warning(f"Memory search failed: {e}")
             return {}
 
+    def _detect_mode(self, user_input: str) -> IntentResult:
+        """Word rules; a message they flag "unclear" is decided by the brain
+        (config intent.brain_for_unclear) — if it names no mode or fails, the rules' guess stands."""
+        intent = self.controller.detect_mode(user_input)
+        if "unclear" not in intent.flags or not CFG.intent.brain_for_unclear:
+            return intent
+        try:
+            picked = classify_with_brain(self.model, self.tokenizer, user_input)
+        except Exception as e:
+            logger.warning(f"Brain mode check failed: {e}")
+            return intent
+        if picked is None:
+            return intent
+        return IntentResult(mode=picked, confidence=intent.confidence, flags=intent.flags + [f"brain_{picked}"])
+
     def chat(self, session_id: str, user_input: str):
 
         context = self.context_manager.load(session_id)
 
-        intent = self.controller.detect_mode(user_input)
+        intent = self._detect_mode(user_input)
 
         # Retrieve relevant context and memories before building the prompt
         retrieved_chunks = self._retrieve(intent.mode, user_input)

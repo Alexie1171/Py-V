@@ -101,6 +101,7 @@ ENV     = {**os.environ, "PYTHONUNBUFFERED": "1",
            "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True"}   # less fragmentation → more of the T4 usable
 BAR       = re.compile(r"\d+%\|")   # a tqdm progress-bar line
 BAR_EVERY = 60                      # seconds between progress-bar lines per lane
+KEEP      = re.compile(r"Step \d+/\d+ \||EVAL @")   # training log lines that share a line with a bar
 
 
 @dataclasses.dataclass
@@ -165,7 +166,7 @@ class Pipeline:
     def echo(self, lane: Lane, line: str):
         """A job's output line — progress bars at most once a minute per lane
         (they would bury everything else, especially with lanes side by side)."""
-        if BAR.search(line) and "100%" not in line:
+        if BAR.search(line) and "100%" not in line and not KEEP.search(line):
             now = time.time()
             if now - lane.last_bar < BAR_EVERY:
                 return
@@ -268,15 +269,15 @@ class Pipeline:
 
     def test_args(self, brain: str, trained: bool, native: bool, split: str = None) -> list:
         args = ["--model", BRAINS[brain]["model"]]
-        if trained:
-            args += ["--adapter", str(self.adapter_dir(brain))]
+        if trained:   # a new adapter is measured in every mode — its use_in_modes is decided from these results
+            args += ["--adapter", str(self.adapter_dir(brain)), "--adapter-all-modes"]
         else:
             args += ["--base"] + (["--native-chat"] if native else []) + (["--split-rules-from", split] if split else [])
         return args
 
     def test_tag(self, brain: str, trained: bool, native: bool, split: str = None) -> str:
         args = argparse.Namespace(base=not trained, model=BRAINS[brain]["model"], adapter=str(self.adapter_dir(brain)),
-                                  native_chat=native and not trained, split_rules_from=split)
+                                  native_chat=native and not trained, split_rules_from=split, adapter_all_modes=True)
         return result_tag(args)
 
     def tests_done(self, brain, trained, native, split=None):

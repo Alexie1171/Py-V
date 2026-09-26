@@ -62,7 +62,9 @@ _STATEMENTS = [
 
 # ─── mention rules (questions count too): errors, versions, files ─────────────
 
-_ERROR   = re.compile(r"\b(?P<t>[A-Z][A-Za-z]*(?:Error|Exception))\b(?::\s*(?P<msg>[^\n]{1,120}))?")
+# the message must be on the same line (":[ \t]*" — "\s*" once swallowed the line break and stored
+# "ZeroDivisionError: ```python" as a fact)
+_ERROR   = re.compile(r"\b(?P<t>[A-Z][A-Za-z]*(?:Error|Exception))\b(?::[ \t]*(?P<msg>[^\n]{1,120}))?")
 _VERSION = re.compile(r"\b(?P<n>python|node|java|typescript|torch|pytorch|transformers|peft|django|flask|fastapi|"
                       r"react|numpy|pandas|cuda)\s*v?(?P<v>\d+(?:\.\d+){1,2})\b", re.I)
 _FILE    = re.compile(r"(?<![\w/\\.])(?P<p>[\w-]+(?:[/\\][\w.-]+)*\.(?:py|ipynb|js|ts|tsx|json|ya?ml|md|toml|cfg|ini|txt))\b")
@@ -82,7 +84,8 @@ def extract_facts(text: str) -> list:
                 facts[key(match)] = fact(match)
 
     for match in _ERROR.finditer(text):
-        msg = f": {_clean(match['msg'])}" if match["msg"] else ""
+        detail = _clean(match["msg"] or "").strip("`")
+        msg = f": {detail}" if detail and "```" not in (match["msg"] or "") else ""
         facts[f"error:{match['t'].lower()}"] = f"The user ran into {match['t']}{msg}."
     for match in _VERSION.finditer(text):
         name = {"pytorch": "torch"}.get(match["n"].lower(), match["n"].lower())

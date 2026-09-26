@@ -43,6 +43,9 @@ def test_extractor():
     mixed = keys("I get TypeError: unsupported operand in utils/helpers.py with Python 3.13")
     check("error + file + version", {"error:typeerror", "file:utils/helpers.py", "version:python"} <= set(mixed),
           sorted(mixed))
+    fenced = keys("This crashes with ZeroDivisionError:\n```python\ndef avg(xs):\n    return sum(xs) / len(xs)\n```")
+    check("error before code: no code in the fact", fenced.get("error:zerodivisionerror")
+          == "The user ran into ZeroDivisionError.", fenced.get("error:zerodivisionerror"))
 
 
 def test_memory(tmp: Path, semantic: bool):
@@ -64,6 +67,13 @@ def test_memory(tmp: Path, semantic: bool):
         hits = mem.recall("which graphics card do I own", "chat")["facts"]
         check("recall by meaning (no shared words)", any("1650" in h.text for h in hits), [h.text for h in hits])
         check("embedder runs on the CPU", str(mem._encoder.model.device) == "cpu", mem._encoder.model.device)
+
+    mem.remember_turn("s2", "debug", "This crashes with ZeroDivisionError:\n```python\nprint(1 / 0)\n```", "Fixed.")
+    unrelated = mem.recall("sort a list of tuples by the second element in python", "explain")["facts"]
+    check("unrelated fact not recalled (one shared word is not enough)",
+          not any("ZeroDivisionError" in h.text for h in unrelated), [h.text for h in unrelated])
+    check("related fact still recalled", any("ZeroDivisionError" in h.text for h in
+                                             mem.recall("why did I get a ZeroDivisionError", "debug")["facts"]))
 
     code = "```python\ndef add(a, b):\n    return a + b\n```"
     mem.remember_turn("s3", "generate", "Write a function to add two numbers", code)

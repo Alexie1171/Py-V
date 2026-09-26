@@ -59,14 +59,24 @@ _STOPWORDS = set("""
 a an and are as at be but by can could did do does for from had has have how i if in into is it its
 me my no not of on or our please should so than that the their them then there these they this to
 was we were what when where which who why will with would you your yours v us am been being also just
-""".split())
+python code user
+""".split())   # last line: in almost every message to V — a match on them means nothing
+
+
+def query_words(text: str) -> list:
+    """The meaningful words of a question (lower case, no stopwords, first 20) — what memory matches on."""
+    words = [w.lower() for w in _WORD.findall(text)]
+    return list(dict.fromkeys(w for w in words if w not in _STOPWORDS))[:20]
+
+
+def text_words(text: str) -> set:
+    """Every word of a stored text, lower case — to see which question words it contains."""
+    return {w.lower() for w in _WORD.findall(text)}
 
 
 def _fts_query(text: str) -> str:
     """User text → a safe FTS5 query: its meaningful words, any of them may match."""
-    words = [w.lower() for w in _WORD.findall(text)]
-    words = list(dict.fromkeys(w for w in words if w not in _STOPWORDS))[:20]
-    return " OR ".join(f'"{w}"' for w in words)
+    return " OR ".join(f'"{w}"' for w in query_words(text))
 
 
 class MemoryStore:

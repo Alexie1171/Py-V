@@ -1,5 +1,6 @@
 import torch
 import re
+from contextlib import nullcontext
 from model.training.config_loader import CFG
 from inference.engine.prompt_builder import max_new_tokens, format_for_model
 from inference.engine.prompt_templates import TEMPLATES
@@ -214,12 +215,24 @@ def _apply_stop_words(text: str, mode: str = None) -> str:
 # against loops; code modes turn them off — code must repeat names and the
 # user's code (with them on it produced is_palindrom, find_volume for find_Volume).
 
+def adapter_for_mode(model, mode):
+    """Context in which the model answers a question of this mode: the LoRA
+    adapter switched off when its v_adapter.json limits it to other modes
+    ("use_in_modes" → model.v_adapter_modes, None = every mode). The Granite
+    chat adapter helps fix / improve / long files but writes worse new code
+    (MBPP 76 → 62), so generate / explain / chat run on the plain brain."""
+    modes = getattr(model, "v_adapter_modes", None)
+    if modes is None or mode in modes or not hasattr(model, "disable_adapter"):
+        return nullcontext()
+    return model.disable_adapter()
+
+
 def _run_generation(model, tokenizer, prompt, max_tokens, temperature, mode=None):
     prompt   = format_for_model(prompt, model, tokenizer)
     inputs   = tokenizer(prompt, return_tensors="pt").to(model.device)
     settings = CFG.generation.for_mode(mode)
 
-    with torch.inference_mode():
+    with torch.inference_mode(), adapter_for_mode(model, mode):
         output_ids = model.generate(
             **inputs,
             max_new_tokens       = max_tokens or max_new_tokens(),
